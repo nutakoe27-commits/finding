@@ -1,0 +1,80 @@
+# Настройки коллекторов.
+#
+# mode:
+#   live    — ходим в реальный API (нужен ключ из окружения)
+#   offline — читаем фикстуры из data/fixtures, ничего не тратим
+#   off     — коллектор отключён
+#
+# Порядок включения соответствует этапам реализации: manual работает
+# с первого дня, остальные подключаются по мере готовности.
+
+manual:
+  mode: live
+  enabled: true
+  # Импорт CSV — не выкидывать никогда. Это и старт системы, и запасной
+  # путь, когда источник сломался, и способ добавить то, что нашли руками.
+  default_path: "data/manual/companies.csv"
+
+hh:
+  mode: live
+  enabled: true
+  base_url: "https://api.hh.ru"
+  # Бесплатный публичный API, ключ не нужен.
+  area: 1               # Москва
+  per_page: 100
+  max_pages: 10
+  rate_limit_rps: 3
+  search_period_days: 30
+  cost_rub_per_call: 0.0
+
+registry:
+  # ЕГРЮЛ: дата регистрации (сигнал юбилея) + штат и выручка (фильтр).
+  mode: offline
+  enabled: true
+  provider: dadata      # dadata | damia | ofdata
+  rate_limit_rps: 5
+  cost_rub_per_call: 0.3
+  # Кэш обязателен: одна и та же компания запрашивается многократно.
+  cache_ttl_days: 90
+  fixtures_path: "data/fixtures/registry"
+
+events_archive:
+  # Архивы прошедших мероприятий — основа сигнала «годовщина мероприятия».
+  # Разовая тяжёлая работа по сбору за 2-3 года, дальше почти бесплатно.
+  mode: offline
+  enabled: true
+  providers:
+    timepad:
+      base_url: "https://api.timepad.ru/v1"
+      # Токен не обязателен для публичных выборок, но с ним выше лимиты.
+      requires_token: false
+      cities: ["Москва"]
+      min_attendees: 200
+    expomap:
+      base_url: "https://expomap.ru"
+      mode: "off"   # парсинг, требует отдельной аккуратности
+  backfill_years: 3
+  fixtures_path: "data/fixtures/events"
+  cost_rub_per_call: 0.0
+
+zakupki:
+  # Откладываем в самый конец: прямой доступ к ЕИС с 2025 года требует
+  # токена или ЭЦП, есть посреднические API с пробными лимитами.
+  mode: "off"
+  enabled: false
+  provider: damia
+  laws: ["44", "223"]
+  keywords:
+    - "аренда помещения для проведения конференции"
+    - "организация форума"
+    - "аренда конференц-зала"
+    - "проведение конгресса"
+  region: "77"
+  cost_rub_per_call: 2.0
+
+# Общие ограничения для всех коллекторов.
+defaults:
+  timeout_seconds: 30
+  retries: 3
+  retry_backoff_seconds: 2
+  user_agent: "gtm-research/0.1"
