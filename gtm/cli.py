@@ -125,8 +125,14 @@ def import_outcomes(file: Path = typer.Option(..., "--file", "-f", exists=True))
 
 @app.command("collect")
 def collect(
-    source: str = typer.Argument(..., help="manual | hh | registry | events_archive | zakupki"),
+    source: str = typer.Argument(
+        ..., help="venue_pages | fns_open_data | manual | events_archive | registry | zakupki | hh"
+    ),
     backfill: int | None = typer.Option(None, help="Разовый сбор архива за N лет назад"),
+    check: bool = typer.Option(
+        False, "--check", help="Только сверить адреса, ничего не сохранять (venue_pages)"
+    ),
+    only: str | None = typer.Option(None, "--only", help="Одна площадка по части названия"),
 ) -> None:
     """Собрать один источник."""
     from gtm.collectors import get_collector
@@ -139,13 +145,38 @@ def collect(
             if not hasattr(collector, "backfill"):
                 raise typer.BadParameter(f"Источник {source} не поддерживает бэкфилл")
             result = collector.backfill(years=backfill)
+        elif check:
+            # Сверка адресов: обходим страницы, но ничего не пишем в базу.
+            # Нужна перед первым боевым запуском — список площадок в конфиге
+            # собран без доступа к сети, адреса надо подтвердить.
+            list(collector.collect(check=True, only=only))
+            console.print(collector.check_report())
+            return
         else:
-            result = collector.run()
+            kwargs = {"only": only} if only else {}
+            result = collector.run(**kwargs)
     console.print(
         f"[green]{source}[/green]: получено {result.count_in}, новых фактов {result.count_out}"
     )
     if result.details:
         console.print(f"Подробности: {result.details}")
+
+
+@app.command("inspect")
+def inspect_cmd(
+    path: Path = typer.Argument(..., exists=True, help="Скачанный набор: zip, xml, csv или json"),
+    limit: int = typer.Option(3, "--limit", help="Сколько записей показать"),
+) -> None:
+    """Что лежит в скачанном наборе открытых данных.
+
+    Имена полей в наборах ФНС меняются между выпусками, а разметка
+    в config/sources.yaml — предположение. Эта команда печатает фактическую
+    структуру файла, чтобы расхождение правилось одной строкой в конфиге,
+    а не выглядело как «коллектор ничего не нашёл».
+    """
+    from gtm.collectors.fns_open_data import inspect_file
+
+    console.print(inspect_file(path, limit=limit))
 
 
 # --------------------------------------------------------- expectations

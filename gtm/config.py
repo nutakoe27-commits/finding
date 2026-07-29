@@ -90,6 +90,22 @@ class IcpConfig(_Model):
 # ------------------------------------------------------------ signals.yaml
 
 
+class OgrnYearConfig(_Model):
+    """Юбилей, когда дату регистрации знаем только по году — из ОГРН.
+
+    Это бесплатная замена платному реестру: год и регион лежат прямо в ОГРН.
+    Цена — неизвестный месяц, отсюда широкое окно и штраф к уверенности.
+    """
+
+    enabled: bool = True
+    anchor_month: int = 3
+    window_days: int = 180
+    # Год из ОГРН надёжен только начиная с 2005: раньше он показывает
+    # перерегистрацию при запуске ЕГРЮЛ, а не основание компании.
+    max_round_years: int = 20
+    confidence_penalty: float = 0.1
+
+
 class SignalKind(_Model):
     enabled: bool = True
     weight: float = 0.5
@@ -102,6 +118,7 @@ class SignalKind(_Model):
     major_years: list[int] = Field(default_factory=list)
     major_confidence_bonus: float = 0.0
     keywords: list[str] = Field(default_factory=list)
+    ogrn_year: OgrnYearConfig = Field(default_factory=OgrnYearConfig)
 
 
 class SeasonalityConfig(_Model):
@@ -175,10 +192,53 @@ class SourcesConfig(_Model):
 # --------------------------------------------------------------- фасад
 
 
+# ------------------------------------------------------------- venues.yaml
+
+
+class CrawlConfig(_Model):
+    user_agent: str = "gtm-research/0.1"
+    rate_limit_rps: float = 0.5
+    respect_robots: bool = True
+    timeout_seconds: float = 30.0
+    retries: int = 2
+    max_pages_per_site: int = 25
+    max_depth: int = 2
+    discover_paths: list[str] = Field(default_factory=list)
+
+
+class VenueSite(_Model):
+    name: str
+    site: str
+    capacity: int | None = None
+    enabled: bool = True
+    pages: list[str] = Field(default_factory=list)
+    note: str | None = None
+
+
+class VenuesConfig(_Model):
+    crawl: CrawlConfig = Field(default_factory=CrawlConfig)
+    venues: list[VenueSite] = Field(default_factory=list)
+    catalogs: list[VenueSite] = Field(default_factory=list)
+    skip_domains: list[str] = Field(default_factory=list)
+
+    def targets(self) -> list[VenueSite]:
+        """Площадки и каталоги вместе, только включённые.
+
+        Крупные — первыми: у зала на 3000 человек список клиентов содержательнее,
+        а лимит страниц на прогон конечен.
+        """
+        active = [site for site in [*self.venues, *self.catalogs] if site.enabled]
+        return sorted(active, key=lambda s: -(s.capacity or 0))
+
+
+# --------------------------------------------------------------- фасад
+
+
 class Config(_Model):
     icp: IcpConfig
     signals: SignalsConfig
     sources: SourcesConfig
+    venues: VenuesConfig = Field(default_factory=VenuesConfig)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -193,10 +253,19 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 def load_config(config_dir: Path | None = None) -> Config:
     directory = config_dir or get_settings().config_dir
+    # venues.yaml нужен только краулеру страниц площадок, поэтому необязателен:
+    # без него система работает, просто этот источник ничего не соберёт.
+    venues_path = directory / "venues.yaml"
+    venues = (
+        VenuesConfig.model_validate(_read_yaml(venues_path))
+        if venues_path.exists()
+        else VenuesConfig()
+    )
     return Config(
         icp=IcpConfig.model_validate(_read_yaml(directory / "icp.yaml")),
         signals=SignalsConfig.model_validate(_read_yaml(directory / "signals.yaml")),
         sources=SourcesConfig.model_validate(_read_yaml(directory / "sources.yaml")),
+        venues=venues,
     )
 
 

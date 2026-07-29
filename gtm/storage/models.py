@@ -93,6 +93,9 @@ class DatePrecision(StrEnum):
     DAY = "day"
     MONTH = "month"
     QUARTER = "quarter"
+    # Известен только год: так приходит юбилей, вычисленный из ОГРН, —
+    # там есть год регистрации, но не месяц.
+    YEAR = "year"
 
 
 class ConsentStatus(StrEnum):

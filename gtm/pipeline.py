@@ -24,9 +24,22 @@ from gtm.observability import format_run_summary, get_logger, new_run_id
 from gtm.settings import get_settings
 from gtm.storage import repo
 
-# Источники в порядке сбора. Реестр идёт последним: он обогащает компании,
-# которые до него добавили другие коллекторы.
-COLLECT_ORDER = ("manual", "events_archive", "hh", "zakupki", "registry")
+# Источники в порядке сбора, и порядок здесь содержательный.
+#
+# fns_open_data первым: он создаёт универсум компаний. Без него краулер
+# страниц площадок не сможет свести найденные названия к ИНН, и вся его
+# добыча уйдёт в карантин с «not_found» вместо ожиданий.
+#
+# registry последним: он обогащает компании, которые добавили остальные.
+COLLECT_ORDER = (
+    "fns_open_data",
+    "manual",
+    "venue_pages",
+    "events_archive",
+    "zakupki",
+    "registry",
+    "hh",
+)
 
 
 def collect_all(

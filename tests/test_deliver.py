@@ -272,7 +272,9 @@ def test_markdown_has_every_block_of_the_card(session, config, company_factory, 
     assert "собрано 340 → фильтр 45 → писем 12" in text
     assert "1. ООО Ромашка" in text
     assert "в ноябре 2025 проводили «Итоги года»" in text
-    assert "20 ноября 2026, ~600 человек" in text
+    # Точность ожидания у годовщины — месяц, поэтому день не показывается:
+    # он был бы точнее того, что мы на самом деле знаем.
+    assert "ноябрь 2026, ~600 человек" in text
     assert "**Прошлый зал:** Крокус Экспо" in text
     assert "Анна Петрова, event-менеджер <a.petrova@romashka.ru>" in text
     assert "Ноябрьская конференция: зал на 1000 у Дубровки" in text
@@ -324,7 +326,9 @@ def test_unknown_scale_is_named_not_guessed(session, config, company_factory, to
     text = render_markdown(build_daily(session, config, today=today), today=today)
 
     # Число участников не досочиняется ни в строке масштаба, ни где-либо ещё.
-    assert "- **Когда:** 20 ноября 2026, масштаб неизвестен" in text
+    # Дата показывается с объявленной точностью: у годовщины мероприятия это
+    # месяц, и день там был бы такой же выдумкой, как выдуманный масштаб.
+    assert "- **Когда:** ноябрь 2026, масштаб неизвестен" in text
     assert "человек" not in text
 
 

@@ -64,6 +64,17 @@ def registry_config(config, **overrides):
     return copy
 
 
+@pytest.fixture(autouse=True)
+def source_enabled(config):
+    """В config/sources.yaml платный реестр выключен: год регистрации бесплатно
+    берётся из ОГРН, а размер — из наборов ФНС.
+
+    Тесты проверяют механику коллектора, а не решение о выключении, поэтому
+    включают источник сами. Само выключение проверяется отдельным тестом.
+    """
+    config.sources.__pydantic_extra__[SOURCE_NAME].update({"mode": "offline", "enabled": True})
+
+
 class StubClient:
     """Платный клиент без сети: нужен там, где проверяются деньги,
     а не разбор ответа."""

@@ -1,0 +1,129 @@
+# Площадки-конкуренты и отраслевые каталоги для сбора истории мероприятий.
+#
+# ЗАЧЕМ ИМЕННО ОНИ. Страницы «прошедшие мероприятия», «наши клиенты» и
+# фотоотчёты у крупных московских залов — это готовый список компаний,
+# проводивших большие события в Москве, с масштабом и часто с датами.
+# Отдел маркетинга конкурента уже отобрал за нас нужный сегмент.
+#
+# ВАЖНО ПРО ЭТОТ ФАЙЛ. Список собран по общим знаниям о московском рынке,
+# без доступа в интернет. Домены и особенно пути к страницам мероприятий
+# нужно сверить перед первым боевым запуском:
+#
+#     gtm collect venue_pages --check
+#
+# Эта команда ничего не извлекает: она обходит адреса и печатает, что нашла,
+# какие ответили ошибкой и на каких страницах не оказалось ни одной даты.
+# Правится здесь, в конфиге, а не в коде.
+#
+# Вместимость указана приблизительно и нужна только для одного: отбирать
+# площадки, сопоставимые с нашим большим залом (до 1500 человек). Списки
+# клиентов у зала на 200 человек нам не интересны — там не наш сегмент.
+
+crawl:
+  # Контактный адрес в User-Agent обязателен: так принято, и это снимает
+  # половину вопросов, если администратор сайта заметит обход.
+  user_agent: "gtm-research/0.1 (+mailto:ops@example.com)"
+  # Полсекунды на запрос. Мы собираем архив раз в квартал, спешить некуда,
+  # а нагрузка на чужой сайт должна быть незаметной.
+  rate_limit_rps: 0.5
+  respect_robots: true
+  timeout_seconds: 30
+  retries: 2
+  max_pages_per_site: 25
+  # Ссылки глубже этого уровня от стартовой страницы не обходим.
+  max_depth: 2
+  # Пути, которые пробуем, если у площадки не указаны конкретные страницы.
+  discover_paths:
+    - "/events"
+    - "/meropriyatiya"
+    - "/past-events"
+    - "/proshedshie-meropriyatiya"
+    - "/portfolio"
+    - "/cases"
+    - "/clients"
+    - "/nashi-klienty"
+    - "/news"
+    - "/press"
+    - "/photo"
+    - "/gallery"
+
+# Отраслевые каталоги. Ценны тем, что агрегируют по многим площадкам сразу,
+# то есть один обход даёт шире охват, чем сайт отдельного зала.
+catalogs:
+  - name: "EventLocation"
+    site: "https://eventlocation.ru"
+    enabled: true
+    note: "каталог площадок; у части карточек есть списки прошедших событий"
+  - name: "ExpoMap"
+    site: "https://expomap.ru"
+    enabled: true
+    note: "календарь выставок и конференций, есть архив прошедших"
+
+# Площадки сопоставимой вместимости. Вместимость — прикидка, проверять
+# не обязательно: она влияет только на порядок обхода.
+venues:
+  - name: "Крокус Экспо"
+    site: "https://www.crocus-expo.ru"
+    capacity: 3000
+    enabled: true
+  - name: "Крокус Сити Холл"
+    site: "https://crocus-hall.ru"
+    capacity: 6000
+    enabled: true
+  - name: "Vegas City Hall"
+    site: "https://vegas-city-hall.ru"
+    capacity: 3000
+    enabled: true
+  - name: "ЦВК Экспоцентр"
+    site: "https://www.expocentr.ru"
+    capacity: 2000
+    enabled: true
+  - name: "Центр международной торговли"
+    site: "https://wtcmoscow.ru"
+    capacity: 1500
+    enabled: true
+  - name: "КВЦ Сокольники"
+    site: "https://www.sokolniki.com"
+    capacity: 1500
+    enabled: true
+  - name: "ВДНХ"
+    site: "https://vdnh.ru"
+    capacity: 2000
+    enabled: true
+  - name: "Московский международный дом музыки"
+    site: "https://www.mmdm.ru"
+    capacity: 1700
+    enabled: true
+  - name: "Конгресс-центр Технопарка Сколково"
+    site: "https://sk.ru"
+    capacity: 1200
+    enabled: true
+  - name: "Отель Космос, конгресс-центр"
+    site: "https://hotelcosmos.ru"
+    capacity: 1000
+    enabled: true
+  - name: "Президент-отель"
+    site: "https://president-hotel.ru"
+    capacity: 1000
+    enabled: true
+  - name: "Форум Холл"
+    site: "https://forumhall.ru"
+    capacity: 1200
+    enabled: true
+  - name: "Amber Plaza"
+    site: "https://amberplaza.ru"
+    capacity: 800
+    enabled: true
+  - name: "Гостиный двор"
+    site: "https://gostiny-dvor.ru"
+    capacity: 2000
+    enabled: true
+  - name: "Кластер Ломоносов"
+    site: "https://lomonosov.tech"
+    capacity: 1000
+    enabled: true
+
+# Наша собственная площадка — в стоп-лист обхода, чтобы не собирать
+# собственных клиентов как чужих.
+skip_domains:
+  - "eventlocation.ru/location/soyuz_hall_moscow"

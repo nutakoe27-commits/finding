@@ -25,7 +25,13 @@ from gtm.config import Config
 from gtm.observability import StageResult, get_logger, stage
 from gtm.spend import BudgetExceeded, SpendGuard
 from gtm.storage import repo
-from gtm.storage.models import Company, Expectation, ExpectationKind, ExpectationStatus
+from gtm.storage.models import (
+    Company,
+    DatePrecision,
+    Expectation,
+    ExpectationKind,
+    ExpectationStatus,
+)
 
 STAGE_NAME = "enrich"
 
@@ -256,14 +262,21 @@ def _anniversary_reason(event: dict[str, Any]) -> str | None:
 
 
 def _jubilee_reason(expectation: Expectation, evidence: dict[str, Any]) -> str | None:
-    """«в марте 2026 компании исполняется 15 лет»."""
+    """«в марте 2026 компании исполняется 15 лет».
+
+    Когда точность ожидания — год, месяц называть нельзя: там стоит условный
+    якорь (см. gtm/expectations/builder.py), а не настоящая дата. Написать
+    «в ноябре» про юбилей, месяц которого мы не знаем, — это ровно тот
+    выдуманный факт, из-за которого сгорает лид.
+    """
     years = _positive_int(evidence.get("years"))
     if years is None:
         return None
-    return (
-        f"в {_month_year(expectation.expected_at)} компании исполняется "
-        f"{years} {_years_word(years)}"
-    )
+    if expectation.expected_precision == DatePrecision.YEAR.value:
+        when = f"в {expectation.expected_at.year} году"
+    else:
+        when = f"в {_month_year(expectation.expected_at)}"
+    return f"{when} компании исполняется {years} {_years_word(years)}"
 
 
 def _reason(expectation: Expectation, event: dict[str, Any]) -> str:
@@ -285,6 +298,9 @@ def _reason(expectation: Expectation, event: dict[str, Any]) -> str:
     fallback = evidence.get("reason")
     if isinstance(fallback, str) and fallback.strip():
         return fallback.strip()
+    # Тот же запрет на выдуманный месяц: точность «год» — значит только год.
+    if expectation.expected_precision == DatePrecision.YEAR.value:
+        return f"ожидаем мероприятие в {expectation.expected_at.year} году"
     return f"ожидаем мероприятие в {_month_year(expectation.expected_at)}"
 
 

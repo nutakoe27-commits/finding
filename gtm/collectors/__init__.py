@@ -6,9 +6,11 @@
 
 from gtm.collectors.base import COLLECTORS, Collector, CollectorError, RawFact, get_collector
 from gtm.collectors.events_archive import EventsArchiveCollector
+from gtm.collectors.fns_open_data import FnsOpenDataCollector
 from gtm.collectors.hh import HHCollector
 from gtm.collectors.manual import ManualCollector
 from gtm.collectors.registry import RegistryCollector
+from gtm.collectors.venue_pages import VenuePagesCollector
 from gtm.collectors.zakupki import ZakupkiCollector
 
 __all__ = [
@@ -16,10 +18,12 @@ __all__ = [
     "Collector",
     "CollectorError",
     "EventsArchiveCollector",
+    "FnsOpenDataCollector",
     "HHCollector",
     "ManualCollector",
     "RawFact",
     "RegistryCollector",
+    "VenuePagesCollector",
     "ZakupkiCollector",
     "get_collector",
 ]

@@ -251,6 +251,145 @@ def test_company_older_than_round_years_gives_nothing(
     assert result.details["jubilee_out_of_range"] == 1
 
 
+# ------------------------------------------------- юбилей по году из ОГРН
+#
+# Это бесплатная замена платному реестру: год регистрации лежит прямо в ОГРН,
+# во второй и третьей цифрах. Ценой того, что месяц оттуда не достать.
+
+
+def _ogrn(*, year: int, region: str = "77", number: int = 12345) -> str:
+    body = f"1{year % 100:02d}{region}46{number:05d}"
+    return body + str(int(body) % 11 % 10)
+
+
+def test_jubilee_from_ogrn_when_exact_date_unknown(
+    session: Session, config: Config, today: date, company_factory
+):
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2016))
+
+    build_from_facts(session, config, today=today)
+
+    expectation = _only(session, ExpectationKind.COMPANY_JUBILEE)
+    assert expectation.evidence["years"] == 10
+    assert expectation.evidence["year_source"] == "ogrn"
+    assert expectation.evidence["month_unknown"] is True
+    # Месяц неизвестен, поэтому дата — условный якорь, а точность «год».
+    assert expectation.expected_precision == DatePrecision.YEAR.value
+    assert expectation.expected_at == date(2026, 11, 1)
+    # 10 лет — сильный юбилей: базовые 0.45, минус штраф 0.1 за неизвестный
+    # месяц, плюс 0.15 бонуса.
+    assert expectation.confidence == pytest.approx(0.5)
+
+
+def test_ogrn_jubilee_window_is_wide_and_not_clamped_by_the_anchor(
+    session: Session, config: Config, today: date, company_factory
+):
+    """Якорь — не дата события, обрезать по нему окно нельзя: юбилей может
+    оказаться в любом месяце года, и писать надо весь сезон планирования."""
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2016))
+
+    build_from_facts(session, config, today=today)
+
+    expectation = _only(session, ExpectationKind.COMPANY_JUBILEE)
+    # lead_days=150 от 1 ноября 2026, окно 180 дней.
+    assert expectation.window_opens_at == date(2026, 6, 4)
+    assert expectation.window_closes_at == date(2026, 12, 1)
+    # Окно за якорь не обрезается — иначе для юбилея, месяц которого неизвестен,
+    # мы теряли бы половину сезона.
+    assert expectation.window_closes_at > expectation.expected_at
+    # И главное: в конце июля, когда бронируется корпоративный сезон,
+    # окно должно быть открыто.
+    assert expectation.window_opens_at <= today <= expectation.window_closes_at
+
+
+def test_ogrn_year_of_mass_reregistration_is_not_used(
+    session: Session, config: Config, today: date, company_factory
+):
+    """ЕГРЮЛ заработал в 2002, и все компании старше получили ОГРН при
+    перерегистрации. Юбилей по такому году был бы выдумкой."""
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2003))
+
+    result = build_from_facts(session, config, today=today)
+
+    assert _of_kind(session, ExpectationKind.COMPANY_JUBILEE) == []
+    assert result.details["ogrn_year_unreliable"] == 1
+
+
+def test_ogrn_jubilee_stops_at_max_round_years(
+    session: Session, config: Config, today: date, company_factory
+):
+    """25 лет и старше по ОГРН не считаем: на такой дистанции год записи
+    и год основания расходятся, и юбилей был бы выдуман.
+
+    Компания 2005 года: 25 лет ей исполнится в 2030, и без ограничения
+    ожидание бы построилось. С ограничением в 20 лет все подходящие круглые
+    даты (2010, 2015, 2020, 2025) уже прошли — значит не строим ничего.
+    """
+    kind_cfg = config.signals.kind(ExpectationKind.COMPANY_JUBILEE.value)
+    assert kind_cfg.ogrn_year.max_round_years == 20, "ограничение задаётся конфигом"
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2005))
+
+    result = build_from_facts(session, config, today=today)
+
+    assert _of_kind(session, ExpectationKind.COMPANY_JUBILEE) == []
+    assert result.details["jubilee_out_of_range"] == 1
+
+
+def test_ogrn_jubilee_would_be_built_without_the_cap(
+    session: Session, config: Config, today: date, company_factory
+):
+    """Обратная половина предыдущего теста: ограничение действительно решает,
+    а не совпадает с отсутствием данных."""
+    kind_cfg = config.signals.kind(ExpectationKind.COMPANY_JUBILEE.value)
+    kind_cfg.ogrn_year.max_round_years = 25
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2005))
+
+    build_from_facts(session, config, today=today)
+
+    expectation = _only(session, ExpectationKind.COMPANY_JUBILEE)
+    assert expectation.evidence["years"] == 25
+    assert expectation.expected_at.year == 2030
+
+
+def test_exact_date_wins_over_ogrn(
+    session: Session, config: Config, today: date, company_factory
+):
+    """Когда точная дата есть, приблизительный якорь не нужен."""
+    company_factory(INN, registered_at=date(2011, 11, 20), ogrn=_ogrn(year=2011))
+
+    build_from_facts(session, config, today=today)
+
+    expectation = _only(session, ExpectationKind.COMPANY_JUBILEE)
+    assert expectation.expected_precision == DatePrecision.MONTH.value
+    assert expectation.expected_at == date(2026, 11, 20)
+    assert "year_source" not in expectation.evidence
+
+
+def test_ogrn_jubilee_is_not_built_twice(
+    session: Session, config: Config, today: date, company_factory
+):
+    """Один юбилей на компанию в год: месяц условный, и второе ожидание
+    означало бы два письма об одном и том же."""
+    company_factory(INN, registered_at=None, ogrn=_ogrn(year=2016))
+
+    build_from_facts(session, config, today=today)
+    second = build_from_facts(session, config, today=today)
+
+    assert len(_of_kind(session, ExpectationKind.COMPANY_JUBILEE)) == 1
+    assert second.details.get("jubilee_already_known") == 1
+
+
+def test_company_without_ogrn_and_without_date_is_counted(
+    session: Session, config: Config, today: date, company_factory
+):
+    company_factory(INN, registered_at=None, ogrn=None)
+
+    result = build_from_facts(session, config, today=today)
+
+    assert _of_kind(session, ExpectationKind.COMPANY_JUBILEE) == []
+    assert result.details["no_registered_at"] == 1
+
+
 # ---------------------------------------------------------------- вакансии
 
 

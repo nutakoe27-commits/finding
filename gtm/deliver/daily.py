@@ -30,7 +30,14 @@ from gtm.config import Config
 from gtm.observability import StageResult, get_logger, stage
 from gtm.settings import get_settings
 from gtm.storage import repo
-from gtm.storage.models import Contact, Expectation, ExpectationStatus, Outreach, OutreachStatus
+from gtm.storage.models import (
+    Contact,
+    DatePrecision,
+    Expectation,
+    ExpectationStatus,
+    Outreach,
+    OutreachStatus,
+)
 
 STAGE_NAME = "deliver"
 
@@ -38,6 +45,22 @@ STAGE_NAME = "deliver"
 # в config/signals.yaml; здесь только формат карточки и файлов.
 #
 # Месяцы в родительном падеже: «20 ноября 2026» читает человек.
+# Именительный падеж нужен там, где месяц стоит без числа: «ноябрь 2026»,
+# а не «ноября 2026».
+_MONTHS_NOM = (
+    "январь",
+    "февраль",
+    "март",
+    "апрель",
+    "май",
+    "июнь",
+    "июль",
+    "август",
+    "сентябрь",
+    "октябрь",
+    "ноябрь",
+    "декабрь",
+)
 _MONTHS_GEN = (
     "января",
     "февраля",
@@ -94,6 +117,9 @@ class DeliveryItem:
     # Не в исходном контракте, но без номера касания строка «gtm feedback
     # record» в подвале нерабочая, а без обратной связи не дообучается фильтр.
     outreach_id: int | None = None
+    # Точность ожидаемой даты. Нужна, чтобы карточка не показывала «1 ноября»
+    # там, где известен только год: менеджер поверит числу и назовёт его клиенту.
+    expected_precision: str = "month"
 
 
 # ------------------------------------------------------------------ мелочи
@@ -110,6 +136,22 @@ def _positive_int(value: Any) -> int | None:
 
 def _ru_date(value: date) -> str:
     return f"{value.day} {_MONTHS_GEN[value.month - 1]} {value.year}"
+
+
+def _when(item: DeliveryItem) -> str:
+    """Дата с той точностью, с какой она известна, и не точнее.
+
+    У юбилея, посчитанного от года из ОГРН, месяц неизвестен — в ожидании
+    стоит условный якорь. Показать менеджеру «1 ноября» значит подставить его:
+    он назовёт это число клиенту.
+    """
+    if item.expected_precision == DatePrecision.YEAR.value:
+        return f"{item.expected_at.year} год, месяц неизвестен"
+    if item.expected_precision == DatePrecision.QUARTER.value:
+        return f"около {_MONTHS_GEN[item.expected_at.month - 1]} {item.expected_at.year}"
+    if item.expected_precision == DatePrecision.MONTH.value:
+        return f"{_MONTHS_NOM[item.expected_at.month - 1]} {item.expected_at.year}"
+    return _ru_date(item.expected_at)
 
 
 def _block(source: dict[str, Any] | None, name: str) -> dict[str, Any]:
@@ -192,6 +234,7 @@ def _item(
         company=name or expectation.inn,
         reason=reason.strip(),
         expected_at=expectation.expected_at,
+        expected_precision=expectation.expected_precision,
         expected_attendees=(
             _positive_int(expectation.expected_attendees) or _positive_int(event.get("attendees"))
         ),
@@ -285,7 +328,7 @@ def _card(index: int, item: DeliveryItem) -> list[str]:
         f"## {index}. {item.company} · приоритет {item.score:.2f}",
         "",
         f"- **Повод:** {item.reason}",
-        f"- **Когда:** {_ru_date(item.expected_at)}, {scale}",
+        f"- **Когда:** {_when(item)}, {scale}",
         f"- **Прошлый зал:** {item.previous_venue or 'неизвестен'}",
         f"- **Контакт:** {item.contact or 'не найден, искать руками'}",
         f"- {ids}",

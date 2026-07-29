@@ -197,6 +197,15 @@ def upsert_expectation(
     return expectation, True
 
 
+def expectations_for_company(
+    session: Session, inn: str, *, kind: str | None = None
+) -> Sequence[Expectation]:
+    stmt = select(Expectation).where(Expectation.inn == inn)
+    if kind is not None:
+        stmt = stmt.where(Expectation.kind == kind)
+    return list(session.scalars(stmt.order_by(Expectation.expected_at)))
+
+
 def expectations_by_status(
     session: Session,
     statuses: Iterable[str],

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from gtm.config import Config, SignalKind
 from gtm.observability import StageResult, get_logger, stage
+from gtm.resolve.ogrn import is_year_reliable, registration_year
 from gtm.storage import repo
 from gtm.storage.models import DatePrecision, Expectation, ExpectationKind, Fact, FactType
 
@@ -118,9 +119,15 @@ def _upsert(
     expected_attendees: int | None = None,
     source_fact_id: int | None = None,
     evidence: dict[str, Any] | None = None,
+    window: tuple[date, date] | None = None,
 ) -> Expectation:
-    """Единственная точка создания ожиданий: дедупликация живёт в repo."""
-    opens, closes = contact_window(expected_at, kind_cfg)
+    """Единственная точка создания ожиданий: дедупликация живёт в repo.
+
+    `window` задаётся явно только там, где ожидаемая дата — не настоящая дата
+    события, а условный якорь (юбилей по году из ОГРН). В остальных случаях
+    окно считается от даты.
+    """
+    opens, closes = window if window is not None else contact_window(expected_at, kind_cfg)
     expectation, created = repo.upsert_expectation(
         session,
         inn=inn,
@@ -253,6 +260,85 @@ def build_event_anniversaries(
 # --------------------------------------------------------- юбилей компании
 
 
+def _jubilee_from_ogrn(
+    session: Session,
+    config: Config,
+    company,
+    *,
+    today: date,
+    result: StageResult | None = None,
+) -> Expectation | None:
+    """Круглая годовщина по году из ОГРН, когда точной даты нет.
+
+    ОГРН несёт год внесения записи во второй и третьей цифрах — это бесплатно
+    заменяет платный запрос в реестр. Ценой того, что месяц неизвестен:
+    ожидаемая дата здесь условный якорь, а не дата события, поэтому окно
+    контакта широкое и задаётся явно.
+
+    Известное ограничение: если позже появится точная дата регистрации,
+    построенное здесь ожидание не пересчитывается — на компанию берётся один
+    юбилей в год, и первым выигрывает тот, что построился раньше. На практике
+    реестр либо есть, либо нет, и менять источник посреди сезона незачем.
+    """
+    kind = ExpectationKind.COMPANY_JUBILEE.value
+    kind_cfg = config.signals.kind(kind)
+    ogrn_cfg = kind_cfg.ogrn_year
+    if not ogrn_cfg.enabled:
+        _note(result, "no_registered_at")
+        return None
+
+    year = registration_year(company.ogrn)
+    if year is None or not is_year_reliable(year):
+        # 2002-2004 — годы массовой перерегистрации: год в ОГРН там
+        # не год основания, и юбилей по нему был бы выдумкой.
+        _note(result, "ogrn_year_unreliable" if year else "no_registered_at")
+        return None
+
+    candidates = [y for y in sorted(kind_cfg.round_years) if y <= ogrn_cfg.max_round_years]
+    found = next(((y, year + y) for y in candidates if year + y >= today.year), None)
+    if found is None:
+        _note(result, "jubilee_out_of_range")
+        return None
+    years, jubilee_year = found
+
+    anchor = date(jubilee_year, ogrn_cfg.anchor_month, 1)
+    # Один юбилей на компанию в год: месяц условный, и второе ожидание
+    # на тот же год означало бы два письма об одном и том же.
+    if any(
+        e.kind == kind and e.expected_at.year == jubilee_year
+        for e in repo.expectations_for_company(session, company.inn, kind=kind)
+    ):
+        _note(result, "jubilee_already_known")
+        return None
+
+    confidence = kind_cfg.base_confidence - ogrn_cfg.confidence_penalty
+    if years in set(kind_cfg.major_years):
+        confidence += kind_cfg.major_confidence_bonus
+
+    # Окно задаём явно: якорь — не дата события, обрезать окно по нему нельзя.
+    opens = anchor - timedelta(days=kind_cfg.lead_days)
+    closes = opens + timedelta(days=ogrn_cfg.window_days)
+
+    return _upsert(
+        session,
+        result,
+        inn=company.inn,
+        kind=kind,
+        kind_cfg=kind_cfg,
+        expected_at=anchor,
+        confidence=max(confidence, 0.0),
+        precision=DatePrecision.YEAR.value,
+        window=(opens, closes),
+        evidence={
+            "reason": f"В {jubilee_year} году компании исполняется {years} лет",
+            "years": years,
+            "registration_year": year,
+            "year_source": "ogrn",
+            "month_unknown": True,
+        },
+    )
+
+
 def build_company_jubilees(
     session: Session,
     config: Config,
@@ -280,7 +366,11 @@ def build_company_jubilees(
     for company in repo.iter_companies(session):
         _seen(result)
         if company.registered_at is None:
-            _note(result, "no_registered_at")
+            # Точной даты нет — пробуем год из ОГРН. Это бесплатная замена
+            # платному реестру, ценой неизвестного месяца.
+            from_ogrn = _jubilee_from_ogrn(session, config, company, today=today, result=result)
+            if from_ogrn is not None:
+                built.append(from_ogrn)
             continue
 
         # Ближайшая круглая дата, которая ещё не прошла. Прошедшие юбилеи
