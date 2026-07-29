@@ -217,9 +217,22 @@ def test_template_letter_passes_validation(config):
 
     assert validate_letter(letter, dossier) == []
     assert letter.confidence >= 0.9
-    assert letter.body.startswith("Анна, вижу, в ноябре 2025 проводили")
+    # «Анна Ковалёва» — порядок слов неизвестен, обращения по имени быть не должно:
+    # ошибиться фамилией хуже, чем начать прямо с повода.
+    assert letter.body.startswith("Вижу, в ноябре 2025 проводили")
     assert letter.body.rstrip().endswith("?")
     assert "Союз Холл" in letter.body
+
+
+def test_template_greets_by_name_only_when_patronymic_disambiguates(config):
+    """Отчество однозначно указывает порядок «Фамилия Имя Отчество»."""
+    letter = generate_letter(
+        config,
+        _dossier(contact={"full_name": "Соколов Дмитрий Петрович", "email": "d@x.example"}),
+        client=TemplateClient(),
+    )
+
+    assert letter.body.startswith("Дмитрий, вижу,")
 
 
 def test_template_letter_without_attendees_has_no_headcount_digits(config):

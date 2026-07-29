@@ -54,7 +54,9 @@ def today() -> date:
 def company_factory(session: Session):
     from gtm.storage.repo import upsert_company
 
-    def _make(inn: str = "7701234567", **fields):
+    # ИНН по умолчанию проходит контрольную сумму — иначе резолвер отправит
+    # компанию в карантин и тесты стадий будут врать.
+    def _make(inn: str = "7701234560", **fields):
         fields.setdefault("name", f"ООО Тест {inn[-4:]}")
         fields.setdefault("name_norm", "тест")
         fields.setdefault("region_code", "77")
