@@ -254,8 +254,19 @@ def test_company_older_than_round_years_gives_nothing(
 # ---------------------------------------------------------------- вакансии
 
 
+@pytest.fixture()
+def vacancy_signal_on(config: Config) -> Config:
+    """В config/signals.yaml тип выключен вместе с закрытым API hh.
+
+    Механику построения это не отменяет — она понадобится, как только
+    появится замена источнику вакансий, поэтому тесты включают тип сами.
+    """
+    config.signals.kind(ExpectationKind.VACANCY_SIGNAL.value).enabled = True
+    return config
+
+
 def test_vacancy_gives_quarter_expectation(
-    session: Session, config: Config, today: date, company_factory
+    session: Session, config: Config, today: date, company_factory, vacancy_signal_on
 ):
     company_factory(INN)
     _fact(
@@ -443,7 +454,7 @@ def test_rescore_all_picks_up_new_weights(
 
 
 def test_rescore_leaves_the_past_alone(
-    session: Session, config: Config, today: date, company_factory
+    session: Session, config: Config, today: date, company_factory, vacancy_signal_on
 ):
     """Приоритет решает, кому писать сегодня. Переписывать оценки архива
     незачем: в ежедневную выборку он всё равно не попадает."""

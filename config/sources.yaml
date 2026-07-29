@@ -16,10 +16,14 @@ manual:
   default_path: "data/manual/companies.csv"
 
 hh:
-  mode: live
-  enabled: true
+  # ВЫКЛЮЧЕН: публичный API hh.ru закрыт. Код коллектора оставлен намеренно —
+  # он написан и покрыт тестами, а структура у всех job-board API одинаковая:
+  # под SuperJob или Habr Career переписывается один метод collect.
+  # Парсер HTML-страниц hh делать не стоит — ломается на каждом релизе вёрстки
+  # и прямо против их правил.
+  mode: "off"
+  enabled: false
   base_url: "https://api.hh.ru"
-  # Бесплатный публичный API, ключ не нужен.
   area: 1               # Москва
   per_page: 100
   max_pages: 10

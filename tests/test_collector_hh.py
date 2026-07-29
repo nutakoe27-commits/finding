@@ -80,6 +80,16 @@ def hh_source(config, **fields) -> dict:
     return raw
 
 
+@pytest.fixture(autouse=True)
+def source_enabled(config):
+    """В config/sources.yaml источник выключен — публичный API hh закрыт.
+
+    Тесты проверяют механику коллектора, а не решение о выключении, поэтому
+    включают источник сами. Само выключение проверяется отдельным тестом.
+    """
+    hh_source(config, mode="live", enabled=True)
+
+
 # ------------------------------------------------------------------ разбор
 
 

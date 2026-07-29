@@ -140,6 +140,25 @@ def test_event_bigger_than_the_hall_is_rejected(
     assert str(config.icp.scale.hard_max_attendees) in verdict.reason
 
 
+def test_huge_headcount_is_not_rejected_as_too_big(
+    session: Session, config: Config, today: date, company_factory
+):
+    """Оценка по штату — догадка, и на крупных компаниях она завышает:
+    на юбилей компании из 5600 человек не приходит 60% штата. Отсев по такой
+    оценке выбрасывал бы как раз лучших заказчиков."""
+    company = company_factory(INN, headcount=5600)
+    expectation = _expectation(session, today, attendees=None)
+
+    estimate, source = estimate_attendees(expectation, company, config)
+    assert (estimate, source) == (3360, "headcount")
+
+    verdict = check_icp(session, expectation, company, config, today=today)
+
+    assert verdict.passed is True
+    assert verdict.attendees_estimate == config.icp.scale.hard_max_attendees
+    assert verdict.details["attendees_capped_from"] == 3360
+
+
 def test_attendees_estimated_from_headcount(
     session: Session, config: Config, today: date, company_factory
 ):

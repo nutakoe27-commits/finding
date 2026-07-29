@@ -267,13 +267,21 @@ def check_icp(
             details=details,
         )
     elif estimate > scale.hard_max_attendees:
-        return _reject(
-            config,
-            "too_big",
-            f"оценка {estimate} человек, зал вмещает {scale.hard_max_attendees}",
-            attendees_estimate=estimate,
-            details=details,
-        )
+        # Отсекаем по «не вмещаем» только когда размер известен по прошлому
+        # мероприятию. Оценка по штату — догадка, и на крупных компаниях она
+        # систематически завышает: на юбилей компании из 5600 человек приходит
+        # не 60% штата. Отбрасывать по ней — терять как раз лучших заказчиков,
+        # поэтому оценку подрезаем до вместимости и пропускаем дальше.
+        if source == "event":
+            return _reject(
+                config,
+                "too_big",
+                f"оценка {estimate} человек, зал вмещает {scale.hard_max_attendees}",
+                attendees_estimate=estimate,
+                details=details,
+            )
+        details["attendees_capped_from"] = estimate
+        estimate = scale.hard_max_attendees
 
     # 3. География. Компания не из наших регионов — не приговор: важно,
     # где пройдёт мероприятие, а не где стоит юрлицо.
