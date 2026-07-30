@@ -12,7 +12,13 @@ from pathlib import Path
 import pytest
 from sqlalchemy import inspect
 
-from gtm.storage.db import create_all, ensure_sqlite_dir, get_engine, sqlite_path
+from gtm.storage.db import (
+    DriverMissing,
+    create_all,
+    ensure_sqlite_dir,
+    get_engine,
+    sqlite_path,
+)
 from gtm.storage.models import Base
 
 
@@ -73,3 +79,29 @@ def test_memory_url_still_works():
     """Тесты и разовые проверки ходят в память — путь к файлу там пустой,
     и создание каталога не должно на этом падать."""
     create_all("sqlite:///:memory:")
+
+
+def test_missing_driver_says_what_to_do():
+    """Голый «No module named psycopg» из глубины SQLAlchemy не подсказывает
+    ничего: пользователь не знает, что драйвер у нас необязательный, и что
+    адрес мог приехать из .env, а не из его команды."""
+    pytest.importorskip("sqlalchemy")
+    if _psycopg_installed():
+        pytest.skip("драйвер установлен — проверять нечего")
+
+    with pytest.raises(DriverMissing) as excinfo:
+        get_engine("postgresql+psycopg://gtm:gtm@localhost:5432/gtm")
+
+    message = str(excinfo.value)
+    assert "psycopg" in message
+    assert "[postgres]" in message, "нужна команда установки"
+    assert "sqlite" in message, "нужен путь отступления"
+    assert ".env" in message, "адрес мог приехать оттуда"
+
+
+def _psycopg_installed() -> bool:
+    try:
+        import psycopg  # noqa: F401
+    except ModuleNotFoundError:
+        return False
+    return True

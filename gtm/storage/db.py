@@ -46,6 +46,19 @@ def ensure_sqlite_dir(url: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
 
 
+class DriverMissing(RuntimeError):
+    """Драйвер под указанный адрес базы не установлен."""
+
+
+# Что делать, если драйвер не стоит. Голый ModuleNotFoundError из глубины
+# SQLAlchemy не подсказывает ничего: пользователь видит «No module named
+# psycopg» и не знает, что psycopg у нас необязательная зависимость.
+_DRIVER_HINTS = {
+    "psycopg": "pip install -e '.[postgres]'",
+    "psycopg2": "pip install -e '.[postgres]'",
+}
+
+
 @lru_cache(maxsize=8)
 def get_engine(url: str | None = None) -> Engine:
     url = url or get_settings().database_url
@@ -53,7 +66,16 @@ def get_engine(url: str | None = None) -> Engine:
     if url.startswith("sqlite"):
         ensure_sqlite_dir(url)
         connect_args["check_same_thread"] = False
-    engine = create_engine(url, future=True, connect_args=connect_args)
+    try:
+        engine = create_engine(url, future=True, connect_args=connect_args)
+    except ModuleNotFoundError as exc:
+        hint = _DRIVER_HINTS.get(exc.name or "", "")
+        raise DriverMissing(
+            f"Адрес базы {url!r} требует драйвер '{exc.name}', а он не установлен."
+            + (f" Поставьте его: {hint}." if hint else "")
+            + " Либо переключитесь на SQLite: GTM_DATABASE_URL=sqlite:///var/gtm.db"
+            " (проверьте также файл .env — настройки читаются и оттуда)."
+        ) from exc
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")

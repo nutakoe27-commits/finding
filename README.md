@@ -12,6 +12,8 @@
 ```bash
 uv venv .venv && uv pip install --python .venv/bin/python -e ".[dev]"
 source .venv/bin/activate
+# то же через pip: python -m venv .venv && source .venv/bin/activate && pip install -e '.[dev]'
+# Точка обязательна: без неё pip пойдёт на PyPI, где имя gtm занято чужим пакетом.
 
 export GTM_DATABASE_URL=sqlite:///var/gtm.db             # без Postgres, для проверки
 gtm db init                                              # схема + отметка alembic
@@ -94,15 +96,39 @@ gtm collect venue_pages            # собрать
 - `sources.yaml` — источники: `live` / `offline` / `off`, лимиты, стоимость вызова;
 - `prompts/letter.md` — каркас письма.
 
-Техническое — через переменные окружения с префиксом `GTM_` или `.env`:
+Техническое — через переменные окружения с префиксом `GTM_` или файл `.env`
+(он читается автоматически, так что значение оттуда переопределит ваши ожидания
+молча — если что-то ведёт себя не так, проверяйте `.env` первым делом).
+
+Рабочий набор для начала:
 
 ```bash
-GTM_DATABASE_URL=postgresql+psycopg://gtm:gtm@localhost:5432/gtm
-GTM_DADATA_TOKEN=...            # ЕГРЮЛ: дата регистрации, штат, выручка
-GTM_ANTHROPIC_API_KEY=...       # без него письма собирает шаблонный генератор
-GTM_DAILY_API_BUDGET_RUB=500    # жёсткий дневной лимит, при достижении стадия встаёт
-GTM_DAILY_DELIVERY_LIMIT=15
+GTM_DATABASE_URL=sqlite:///var/gtm.db   # ничего доустанавливать не нужно
+GTM_DAILY_API_BUDGET_RUB=500            # дневной лимит трат, при достижении стадия встаёт
+GTM_DAILY_DELIVERY_LIMIT=15             # карточек в утреннем списке
 ```
+
+Необязательное, по мере надобности:
+
+```bash
+# PostgreSQL — когда объёмы вырастут. Требует драйвер: pip install -e '.[postgres]'
+GTM_DATABASE_URL=postgresql+psycopg://gtm:gtm@localhost:5432/gtm
+
+GTM_ANTHROPIC_API_KEY=...       # без него письма собирает шаблонный генератор
+GTM_DADATA_TOKEN=...            # платный реестр; по умолчанию выключен и не нужен
+```
+
+Чтобы письма писала модель, а не шаблон, нужен дополнительный набор зависимостей
+и ключ:
+
+```bash
+pip install -e '.[llm]'
+export GTM_ANTHROPIC_API_KEY=...
+```
+
+Больше ничего менять не надо: конвейер тот же, генератор сам выберет клиента
+по наличию ключа. Токены LLM попадают в тот же журнал трат, что и платные API,
+и упираются в тот же дневной лимит.
 
 ## Ежедневный запуск
 
