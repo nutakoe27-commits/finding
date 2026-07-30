@@ -13,10 +13,24 @@
 uv venv .venv && uv pip install --python .venv/bin/python -e ".[dev]"
 source .venv/bin/activate
 
-gtm db init                                              # схема
+export GTM_DATABASE_URL=sqlite:///var/gtm.db             # без Postgres, для проверки
+gtm db init                                              # схема + отметка alembic
+gtm collect fns_open_data                                # универсум из демо-набора
 gtm import manual --file data/manual/companies.example.csv
 gtm daily --today 2026-07-29                             # весь конвейер за один прогон
 cat out/2026-07-29.md                                    # утренний список
+```
+
+`db init` нужен один раз, на пустой базе; дальше схема меняется через
+`gtm db upgrade`. Каталоги `var/` и `out/` создаются сами.
+
+Обход страниц площадок-конкурентов в `daily` не входит — это десятки минут
+сетевого времени, а страницы обновляются раз в сезон. Запускается отдельно
+и раз в квартал:
+
+```bash
+gtm collect venue_pages --check    # сверить адреса, ничего не сохраняя
+gtm collect venue_pages            # собрать
 ```
 
 Без ключей внешних API система работает целиком: реестр и архивы мероприятий читают фикстуры

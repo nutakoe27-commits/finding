@@ -18,7 +18,7 @@ from gtm.config import load_config
 from gtm.observability import format_run_summary, new_run_id, setup_logging
 from gtm.settings import get_settings
 from gtm.storage import repo
-from gtm.storage.db import create_all, session_scope
+from gtm.storage.db import create_all, session_scope, sqlite_path
 
 app = typer.Typer(help="Поиск заказчиков для конференц-площадки", no_args_is_help=True)
 db_app = typer.Typer(help="База данных", no_args_is_help=True)
@@ -54,21 +54,39 @@ def main(log_level: str = typer.Option("INFO", "--log-level")) -> None:
 # ------------------------------------------------------------------- db
 
 
+def _alembic_config():
+    from alembic.config import Config as AlembicConfig
+
+    return AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+
+
 @db_app.command("init")
 def db_init() -> None:
-    """Создать схему из моделей. Для чистой базы; дальше — db upgrade."""
+    """Создать схему из моделей и отметить её как актуальную для alembic.
+
+    Отметка обязательна: без неё следующий `db upgrade` попытается создать
+    уже существующие таблицы и упадёт. С ней он корректно накатывает только
+    то, что появилось после.
+    """
+    from alembic import command
+
     create_all()
-    console.print(f"[green]Схема создана[/green]: {get_settings().database_url}")
+    command.stamp(_alembic_config(), "head")
+
+    url = get_settings().database_url
+    path = sqlite_path(url)
+    # Путь в адресе относительный, значит зависит от текущего каталога.
+    # Печатаем абсолютный, чтобы потом не искать, куда легла база.
+    where = f"{url} ({path.resolve()})" if path else url
+    console.print(f"[green]Схема создана[/green]: {where}")
 
 
 @db_app.command("upgrade")
 def db_upgrade(revision: str = typer.Argument("head")) -> None:
     """Накатить миграции alembic."""
     from alembic import command
-    from alembic.config import Config as AlembicConfig
 
-    cfg = AlembicConfig(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-    command.upgrade(cfg, revision)
+    command.upgrade(_alembic_config(), revision)
     console.print(f"[green]Миграции накатаны[/green]: {revision}")
 
 

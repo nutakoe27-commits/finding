@@ -202,6 +202,10 @@ class CrawlConfig(_Model):
     timeout_seconds: float = 30.0
     retries: int = 2
     max_pages_per_site: int = 25
+    # Потолок на весь прогон, а не только на одну площадку: без него обход
+    # двух десятков сайтов с паузами между запросами растягивается на часы,
+    # и непонятно, работает он или завис.
+    max_pages_total: int = 200
     max_depth: int = 2
     discover_paths: list[str] = Field(default_factory=list)
 

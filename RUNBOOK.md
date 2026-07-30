@@ -7,12 +7,15 @@
 >
 > ```bash
 > export GTM_DATABASE_URL=sqlite:///var/gtm.db
-> gtm db init
+> gtm db init                                                # схема + отметка alembic
 > gtm collect fns_open_data                                  # демо-набор из data/fixtures
 > gtm import manual --file data/manual/companies.example.csv
 > gtm daily --today 2026-07-29
 > cat out/2026-07-29.md
 > ```
+>
+> Каталоги `var/` и `out/` создаются сами. `db init` — один раз на пустой базе,
+> дальше схема меняется через `gtm db upgrade`.
 >
 > Результат: 25 ожиданий, 14 писем, 0 ₽, ноль обращений к платным API.
 > Что нужно, чтобы это стало боевым, — ниже в разделе «Бесплатный путь».
@@ -62,6 +65,11 @@ gtm collect venue_pages --check
 ```bash
 gtm collect venue_pages
 ```
+
+Этот обход **не входит в `gtm daily`** и запускается отдельно, раз в квартал:
+он занимает десятки минут (пол-запроса в секунду по двум десяткам сайтов),
+а страницы «прошедшие мероприятия» обновляются раз в сезон, не раз в сутки.
+Потолок страниц на прогон — `crawl.max_pages_total` в `config/venues.yaml`.
 
 ### Шаг 3. Ежедневный прогон
 

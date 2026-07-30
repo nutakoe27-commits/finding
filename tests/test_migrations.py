@@ -96,6 +96,44 @@ def migrated_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[st
         reset_settings_cache()
 
 
+def test_upgrade_creates_missing_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Каталог var/ в git не попадает, поэтому на свежем клоне первый же
+    upgrade упирался в «unable to open database file»."""
+    url = f"sqlite:///{tmp_path / 'var' / 'migrated.db'}"
+    monkeypatch.setenv("GTM_DATABASE_URL", url)
+    reset_settings_cache()
+    try:
+        command.upgrade(_alembic_config(), "head")
+        assert (tmp_path / "var" / "migrated.db").exists()
+    finally:
+        reset_settings_cache()
+
+
+def test_upgrade_after_db_init_is_a_noop(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`gtm db init` создаёт схему из моделей и ставит отметку alembic.
+
+    Без отметки следующий `db upgrade` пытается создать уже существующие
+    таблицы и падает — а именно эту пару команд документация и предлагает
+    выполнить подряд.
+    """
+    from gtm.storage.db import create_all
+
+    url = f"sqlite:///{tmp_path / 'var' / 'init.db'}"
+    monkeypatch.setenv("GTM_DATABASE_URL", url)
+    reset_settings_cache()
+    try:
+        create_all(url)
+        command.stamp(_alembic_config(), "head")
+
+        # Раньше здесь было «table company already exists».
+        command.upgrade(_alembic_config(), "head")
+
+        tables = set(sa.inspect(sa.create_engine(url)).get_table_names())
+        assert set(Base.metadata.tables) <= tables
+    finally:
+        reset_settings_cache()
+
+
 def test_upgrade_creates_database_at_env_url(migrated_url: str, tmp_path: Path) -> None:
     """env.py берёт URL из настроек, а не из alembic.ini."""
     assert (tmp_path / "migrated.db").exists()

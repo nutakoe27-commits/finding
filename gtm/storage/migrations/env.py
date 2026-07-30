@@ -11,6 +11,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from gtm.settings import get_settings
+from gtm.storage.db import ensure_sqlite_dir
 from gtm.storage.models import Base
 
 config = context.config
@@ -46,7 +47,11 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    engine = create_engine(_database_url(), poolclass=pool.NullPool, future=True)
+    url = _database_url()
+    # Каталог под файл базы SQLite не создаётся сам, а var/ в git не попадает:
+    # на свежем клоне первый же upgrade падал с «unable to open database file».
+    ensure_sqlite_dir(url)
+    engine = create_engine(url, poolclass=pool.NullPool, future=True)
     with engine.connect() as connection:
         _configure(connection=connection)
         with context.begin_transaction():

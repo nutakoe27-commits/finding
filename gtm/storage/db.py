@@ -11,8 +11,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
+from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import Engine, create_engine, event, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from gtm.settings import get_settings
@@ -21,11 +22,36 @@ from gtm.storage.models import Base
 _SESSION_FACTORIES: dict[str, sessionmaker[Session]] = {}
 
 
+def sqlite_path(url: str) -> Path | None:
+    """Путь к файлу базы для файловых SQLite-адресов, иначе None."""
+    parsed = make_url(url)
+    if not parsed.drivername.startswith("sqlite"):
+        return None
+    database = parsed.database
+    if not database or database == ":memory:":
+        return None
+    return Path(database)
+
+
+def ensure_sqlite_dir(url: str) -> None:
+    """Создать каталог под файл базы.
+
+    SQLite не создаёт родительский каталог сам и падает с «unable to open
+    database file». Каталог var/ в git не попадает (он в .gitignore), поэтому
+    на свежем клоне первая же команда упиралась в это. Сообщение при том
+    ничего не объясняет, так что дешевле создать каталог, чем объяснять.
+    """
+    path = sqlite_path(url)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+
 @lru_cache(maxsize=8)
 def get_engine(url: str | None = None) -> Engine:
     url = url or get_settings().database_url
     connect_args = {}
     if url.startswith("sqlite"):
+        ensure_sqlite_dir(url)
         connect_args["check_same_thread"] = False
     engine = create_engine(url, future=True, connect_args=connect_args)
     if url.startswith("sqlite"):

@@ -280,6 +280,7 @@ class VenuePagesCollector(Collector):
         super().__init__(*args, **kwargs)
         self.reports: list[SiteReport] = []
         self._robots: dict[str, RobotFileParser | None] = {}
+        self._pages_fetched = 0
 
     @property
     def crawl(self):
@@ -336,6 +337,19 @@ class VenuePagesCollector(Collector):
         visited: set[str] = set()
 
         while queue and len(visited) < self.crawl.max_pages_per_site:
+            if self._pages_fetched >= self.crawl.max_pages_total:
+                self.log.warning(
+                    "venue_pages.budget_reached",
+                    fetched=self._pages_fetched,
+                    limit=self.crawl.max_pages_total,
+                    venue=site.name,
+                )
+                # Явно, а не молча: иначе недобранные площадки выглядят как
+                # «на их сайтах ничего нет».
+                report.pages.append(
+                    PageResult(url=site.site, error="лимит страниц на прогон исчерпан")
+                )
+                break
             url, depth = queue.pop(0)
             if url in visited:
                 continue
@@ -354,6 +368,7 @@ class VenuePagesCollector(Collector):
                 self._pause()
                 continue
             page.status = response.status_code
+            self._pages_fetched += 1
             self._pause()
             if response.status_code != 200:
                 report.pages.append(page)

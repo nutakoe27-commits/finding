@@ -366,6 +366,43 @@ def test_user_agent_carries_contact(session, one_venue):
     assert "mailto:" in captured[0]
 
 
+def test_total_page_budget_stops_the_run_and_says_so(session, config):
+    """Потолок на весь прогон, а не только на площадку. Без него обход двух
+    десятков сайтов с паузами растягивается на часы, и непонятно, работает
+    он или завис. Недобранные площадки должны быть видны в отчёте, иначе
+    выглядят как «на их сайтах ничего нет»."""
+    config.venues.catalogs = []
+    config.venues.crawl.max_depth = 0
+    config.venues.crawl.max_pages_total = 2
+    config.venues.venues = [
+        VenueSite(name=f"Холл {i}", site=f"https://v{i}.example", pages=[f"https://v{i}.example/e"])
+        for i in range(5)
+    ]
+
+    with respx.mock:
+        respx.get(url__regex=r"https://v\d\.example/robots\.txt").mock(
+            return_value=httpx.Response(404)
+        )
+        respx.get(url__regex=r"https://v\d\.example/e").mock(
+            return_value=httpx.Response(200, text=PAGE)
+        )
+        collector = VenuePagesCollector(session, config, run_id="test")
+        list(collector.collect(check=True))
+
+    assert collector._pages_fetched == 2
+    assert "лимит страниц на прогон исчерпан" in collector.check_report()
+
+
+def test_crawler_is_not_part_of_the_daily_run():
+    """Страницы «прошедшие мероприятия» обновляются раз в сезон, не раз в сутки,
+    а обход занимает десятки минут. Один медленный сайт не должен задерживать
+    выдачу утреннего списка."""
+    from gtm.pipeline import COLLECT_ORDER, PERIODIC_SOURCES
+
+    assert "venue_pages" not in COLLECT_ORDER
+    assert "venue_pages" in PERIODIC_SOURCES
+
+
 def test_max_pages_limit_is_honoured(session, one_venue):
     """Лимит страниц на площадку конечен: без него обход уходит гулять
     по всему сайту."""
