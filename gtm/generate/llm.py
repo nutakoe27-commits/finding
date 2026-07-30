@@ -53,7 +53,59 @@ _MAX_SUBJECT_CHARS = 60
 
 
 class LLMError(RuntimeError):
-    """Обращение к модели не состоялось: нет клиента, отказ, обрезанный ответ."""
+    """Обращение к модели не состоялось: нет клиента, отказ, обрезанный ответ.
+
+    Ошибка по одной записи: следующую пробовать имеет смысл.
+    """
+
+
+class LLMPermanentError(LLMError):
+    """Дальше пробовать бессмысленно: стадия обязана остановиться.
+
+    Опечатка в ключе или несуществующая модель не исправятся на следующей
+    записи. Без этого различия одна опечатка в GTM_ANTHROPIC_API_KEY даёт
+    столько одинаковых ошибок в логе, сколько досье собрано, и настоящую
+    причину в них уже не видно.
+    """
+
+
+# Коды ответа, которые не лечатся повтором: аутентификация, права, запрос.
+# 429 и 5xx сюда не входят намеренно — они как раз временные.
+_PERMANENT_STATUS = frozenset({400, 401, 403, 404, 422})
+
+
+def _status_code(exc: Exception) -> int | None:
+    code = getattr(exc, "status_code", None)
+    if isinstance(code, int):
+        return code
+    response = getattr(exc, "response", None)
+    code = getattr(response, "status_code", None)
+    return code if isinstance(code, int) else None
+
+
+def _is_permanent(exc: Exception) -> bool:
+    return _status_code(exc) in _PERMANENT_STATUS
+
+
+def _permanent_reason(exc: Exception) -> str:
+    code = _status_code(exc)
+    if code in (401, 403):
+        return (
+            "ключ отклонён провайдером (проверьте GTM_ANTHROPIC_API_KEY, в том числе "
+            "в файле .env). Стадия остановлена: на следующих записях будет то же самое"
+        )
+    if code == 404:
+        return (
+            f"модель или эндпоинт не найдены (GTM_LLM_MODEL={_model_hint()}). "
+            "Стадия остановлена"
+        )
+    return f"запрос отклонён провайдером ({exc}). Стадия остановлена"
+
+
+def _model_hint() -> str:
+    from gtm.settings import get_settings
+
+    return get_settings().llm_model
 
 
 class LLMClient(Protocol):
@@ -135,6 +187,11 @@ class AnthropicClient:
                 # Неудачный вызов у Anthropic не тарифицируется, но в журнале
                 # он нужен: иначе непонятно, почему писем меньше, чем досье.
                 guard.record(PROVIDER, _ENDPOINT, cost_rub=0.0, ok=False)
+            if _is_permanent(exc):
+                # Опечатка в ключе или несуществующая модель не исправятся
+                # на следующей записи. Долбить провайдера ещё десять раз
+                # и печатать десять одинаковых ошибок незачем.
+                raise LLMPermanentError(f"anthropic: {_permanent_reason(exc)}") from exc
             raise LLMError(f"anthropic: запрос не выполнен ({exc})") from exc
 
         input_tokens, output_tokens = _usage(message)
@@ -166,8 +223,11 @@ def _build_sdk(api_key: str) -> Any:
         import anthropic
     except ImportError as exc:  # pragma: no cover — зависит от окружения
         raise LLMError(
-            "generate: ключ задан, но пакет anthropic не установлен "
-            "(pip install 'gtm[llm]')"
+            "generate: ключ GTM_ANTHROPIC_API_KEY задан, но пакет anthropic "
+            "не установлен. Поставьте зависимости группы llm из каталога проекта: "
+            "pip install -e '.[llm]'  (точка обязательна: имя gtm на PyPI занято "
+            "чужим пакетом). Либо уберите ключ — тогда письма соберёт шаблонный "
+            "генератор, без сети и без трат."
         ) from exc
     return anthropic.Anthropic(api_key=api_key)
 

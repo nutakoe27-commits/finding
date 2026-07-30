@@ -27,7 +27,14 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy.orm import Session
 
 from gtm.config import Config, load_prompt
-from gtm.generate.llm import AnthropicClient, LLMClient, LLMError, TemplateClient, get_client
+from gtm.generate.llm import (
+    AnthropicClient,
+    LLMClient,
+    LLMError,
+    LLMPermanentError,
+    TemplateClient,
+    get_client,
+)
 from gtm.observability import StageResult, get_logger, stage
 from gtm.spend import BudgetExceeded, SpendGuard
 from gtm.storage import repo
@@ -391,6 +398,15 @@ def run_generate(
             repo.expectations_by_status(session, [ExpectationStatus.ENRICHED.value], limit=limit)
         )
     )
+    if not targets:
+        # Клиент модели не создаётся, когда писать нечего. Иначе прогон,
+        # у которого просто нет работы на сегодня, падает на отсутствующей
+        # необязательной зависимости — а это штатное утро, не авария.
+        with stage(session, run_id, STAGE_NAME, count_in=0) as result:
+            result.note("nothing_to_write")
+        log.info("generate.nothing_to_do")
+        return result
+
     client = client or get_client()
     min_confidence = _min_confidence(config)
 
@@ -428,6 +444,20 @@ def run_generate(
                 result.details["not_generated"] = len(targets) - handled
                 log.warning(
                     "generate.budget_exceeded",
+                    run_id=run_id,
+                    written=result.count_out,
+                    left=len(targets) - handled,
+                    error=str(exc),
+                )
+                break
+            except LLMPermanentError as exc:
+                # Опечатка в ключе или несуществующая модель: на следующих
+                # записях будет то же самое. Останавливаемся, чтобы в логе
+                # осталась одна внятная причина, а не сорок одинаковых.
+                result.details["stop_reason"] = str(exc)
+                result.details["not_generated"] = len(targets) - handled
+                log.error(
+                    "generate.stopped",
                     run_id=run_id,
                     written=result.count_out,
                     left=len(targets) - handled,

@@ -36,6 +36,12 @@ def setup_logging(level: str | None = None, as_json: bool | None = None) -> None
         if as_json
         else structlog.dev.ConsoleRenderer(colors=False)
     )
+    # Alembic на INFO печатает «setup plugin ...», «Context impl SQLiteImpl»
+    # и прочее, что к делу не относится: свои содержательные строки CLI пишет
+    # сам. На DEBUG не глушим — там это как раз и нужно.
+    if logging.getLogger().level > logging.DEBUG:
+        logging.getLogger("alembic").setLevel(logging.WARNING)
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

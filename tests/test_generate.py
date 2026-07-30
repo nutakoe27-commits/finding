@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import json
 import re
 from datetime import date, timedelta
@@ -393,6 +394,125 @@ def test_zero_limit_writes_nothing(session, config, company_factory):
     assert (result.count_in, result.count_out) == (0, 0)
     assert expectation.status == ExpectationStatus.ENRICHED.value
     assert session.scalars(select(Outreach)).all() == []
+
+
+def test_empty_run_does_not_build_a_client(session, config, monkeypatch):
+    """Прогон, у которого нет работы на сегодня, — штатное утро, а не авария.
+
+    Раньше клиент модели создавался до проверки, есть ли что писать, и такой
+    прогон падал на отсутствующем пакете anthropic: ключ задан, зависимость
+    из необязательной группы не поставлена, писать при этом всё равно нечего.
+    """
+    from gtm.generate import letter as letter_module
+
+    def explode() -> None:
+        raise AssertionError("клиент не должен создаваться, когда писать нечего")
+
+    monkeypatch.setattr(letter_module, "get_client", explode)
+
+    result = run_generate(session, config, run_id="run-empty")
+
+    assert (result.count_in, result.count_out) == (0, 0)
+    assert result.details["nothing_to_write"] == 1
+
+
+def test_missing_sdk_error_points_at_the_right_command(monkeypatch):
+    """Сообщение обязано вести к рабочей команде. `pip install 'gtm[llm]'`
+    тянет с PyPI чужой пакет — точка в '.[llm]' здесь принципиальна."""
+    from gtm.generate.llm import LLMError, _build_sdk
+
+    real_import = builtins.__import__
+
+    def no_anthropic(name, *args, **kwargs):
+        if name == "anthropic":
+            raise ModuleNotFoundError("No module named 'anthropic'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_anthropic)
+
+    with pytest.raises(LLMError) as excinfo:
+        _build_sdk("sk-test")
+
+    message = str(excinfo.value)
+    assert "-e '.[llm]'" in message
+    assert "'gtm[llm]'" not in message
+    # И путь отступления: без ключа система работает шаблонным генератором.
+    assert "шаблонный" in message
+
+
+class _RejectingClient:
+    """Клиент, который отвечает как провайдер с отклонённым ключом."""
+
+    name = "anthropic/тест"
+
+    def __init__(self, status: int) -> None:
+        self.status = status
+        self.calls = 0
+
+    def complete(self, prompt: str) -> str:
+        from gtm.generate.llm import LLMError, LLMPermanentError, _is_permanent
+
+        self.calls += 1
+        exc = RuntimeError(f"Error code: {self.status}")
+        exc.status_code = self.status
+        if _is_permanent(exc):
+            raise LLMPermanentError("anthropic: ключ отклонён провайдером")
+        raise LLMError("anthropic: временный сбой")
+
+
+def test_rejected_key_stops_the_stage_after_one_call(session, config, company_factory):
+    """Опечатка в ключе не исправится на следующей записи. Без остановки одна
+    опечатка даёт столько одинаковых ошибок, сколько собрано досье, и настоящую
+    причину в логе уже не видно."""
+    for inn in ("7701234567", "7703456789", "7712345678"):
+        company_factory(inn)
+        _enriched(session, inn=inn)
+    client = _RejectingClient(401)
+
+    result = run_generate(session, config, run_id="run-401", client=client)
+
+    assert client.calls == 1, "второй записи быть не должно"
+    assert result.count_out == 0
+    assert result.details["not_generated"] == 3
+    assert "ключ отклонён" in result.details["stop_reason"]
+
+
+def test_transient_failure_keeps_going(session, config, company_factory):
+    """Временный сбой — другое дело: следующую запись пробуем."""
+    for inn in ("7701234567", "7703456789"):
+        company_factory(inn)
+        _enriched(session, inn=inn)
+    client = _RejectingClient(503)
+
+    result = run_generate(session, config, run_id="run-503", client=client)
+
+    assert client.calls == 2, "по каждой записи своя попытка"
+    assert result.details["generation_failed"] == 2
+    assert "stop_reason" not in result.details
+
+
+@pytest.mark.parametrize(
+    ("status", "permanent"),
+    [(400, True), (401, True), (403, True), (404, True), (422, True), (429, False), (500, False),
+     (503, False), (None, False)],
+)
+def test_permanent_statuses(status, permanent):
+    """429 и 5xx временные намеренно: они лечатся повтором, а 4xx нет."""
+    from gtm.generate.llm import _is_permanent
+
+    exc = RuntimeError("сбой")
+    if status is not None:
+        exc.status_code = status
+    assert _is_permanent(exc) is permanent
+
+
+def test_status_is_read_from_response_too():
+    """SDK кладёт код то в исключение, то в его response."""
+    from gtm.generate.llm import _is_permanent
+
+    exc = RuntimeError("сбой")
+    exc.response = type("R", (), {"status_code": 401})()
+    assert _is_permanent(exc) is True
 
 
 def test_run_generate_touches_only_enriched(session, config, company_factory):

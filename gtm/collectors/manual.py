@@ -388,9 +388,19 @@ class ManualCollector(Collector):
             if path is not None:
                 # Файл назвали явно — молчать нельзя, это опечатка оператора.
                 raise CollectorError(f"Не найден CSV {csv_path}")
-            # Файла по умолчанию может не быть: система стартует с примера,
-            # рабочий файл появляется позже. Это не повод падать.
-            self.log.warning("manual.file_missing", path=str(csv_path))
+            # Файла по умолчанию может не быть: ручной ввод — запасной путь,
+            # а не основной, база наполняется наборами ФНС и краулером.
+            # Это не повод падать, но и молчать не надо: подсказываем, что это
+            # штатно и что делать, если файл всё-таки нужен.
+            self.log.warning(
+                "manual.file_missing",
+                path=str(csv_path),
+                hint=(
+                    "это штатно: ручной CSV — запасной путь. Нужен — положите файл "
+                    "по этому пути (образец: data/manual/companies.example.csv) "
+                    "или укажите свой: gtm import manual --file <путь>"
+                ),
+            )
             self.skipped_rows = 0
             return []
 
