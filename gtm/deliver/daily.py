@@ -367,22 +367,66 @@ def _footer() -> list[str]:
     ]
 
 
+def collect_blockers(session, run_id: str) -> list[str]:
+    """Стадии этого прогона, которые оборвались, — человеческим языком.
+
+    Нужно ровно для одного: отличить «клиентов сегодня нет» от «кандидаты
+    были, но письма не написались». Снаружи это выглядит одинаково — пустой
+    список, — а причины противоположные.
+    """
+    reasons: list[str] = []
+    for row in repo.run_summary(session, run_id):
+        details = row.get("details") or {}
+        stop = details.get("stop_reason")
+        if stop:
+            left = details.get("not_generated") or details.get("not_enriched")
+            text = str(stop).rstrip()
+            if not text.endswith((".", "!", "?")):
+                text += "."
+            tail = f" Не обработано записей: {left}." if left else ""
+            reasons.append(f"стадия «{row['stage']}» остановлена: {text}{tail}")
+        elif row.get("error"):
+            reasons.append(f"стадия «{row['stage']}» упала с ошибкой: {row['error']}")
+    return reasons
+
+
 def render_markdown(
-    items: list[DeliveryItem], *, today: date, summary: str | None = None
+    items: list[DeliveryItem],
+    *,
+    today: date,
+    summary: str | None = None,
+    blockers: list[str] | None = None,
 ) -> str:
     """Список для чтения человеком. Сводка конвейера в шапке — чтобы пустой
-    или короткий день был объяснён сразу, а не после похода в `gtm stats`."""
+    или короткий день был объяснён сразу, а не после похода в `gtm stats`.
+
+    `blockers` — стадии, которые остановились с ошибкой. Их надо показать
+    в самом верху и до всего остального: пустой список из-за отклонённого
+    ключа выглядит как «сегодня лидов нет», и разбираться никто не пойдёт.
+    """
     lines = [f"# Утренний список — {_ru_date(today)}", ""]
+
+    if blockers:
+        lines += ["> **Прогон оборвался, список неполный.**", ">"]
+        lines += [f"> - {reason}" for reason in blockers]
+        lines += [
+            ">",
+            "> Это не «клиентов нет»: кандидаты были, но до письма не дошли.",
+            "> Починить причину и повторить `gtm daily` за ту же дату.",
+            "",
+        ]
+
     if summary:
         lines += [f"**Конвейер:** {summary}", ""]
     lines += [f"**Карточек:** {len(items)}", ""]
 
     if not items:
-        lines += [
-            "Сегодня писать некому: подходящих ожиданий с готовыми письмами нет.",
-            "Где обнулилась воронка, видно в `gtm stats`.",
-            "",
-        ]
+        if not blockers:
+            lines += [
+                "Сегодня писать некому: подходящих ожиданий с готовыми письмами нет.",
+                "Где обнулилась воронка, видно в `gtm stats`.",
+                "",
+            ]
         return "\n".join(lines)
 
     lines.append("---")
@@ -443,6 +487,7 @@ def run_deliver(
     log = get_logger("gtm.deliver")
     candidates = repo.expectations_by_status(session, [ExpectationStatus.DRAFTED.value])
     items, notes = _select(session, config, today=today, limit=limit)
+    blockers = collect_blockers(session, run_id)
 
     directory = Path(out_dir) if out_dir else get_settings().output_dir
     md_path = directory / f"{today:%Y-%m-%d}.md"
@@ -459,8 +504,13 @@ def run_deliver(
             log.info("deliver.already_delivered", run_id=run_id, path=str(md_path))
             return result, [p for p in (md_path, csv_path) if p.exists()]
 
+        if blockers:
+            result.details["blockers"] = blockers
         directory.mkdir(parents=True, exist_ok=True)
-        md_path.write_text(render_markdown(items, today=today, summary=summary), encoding="utf-8")
+        md_path.write_text(
+            render_markdown(items, today=today, summary=summary, blockers=blockers),
+            encoding="utf-8",
+        )
         csv_path.write_text(render_csv(items), encoding=_CSV_ENCODING)
 
         for item in items:

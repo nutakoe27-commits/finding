@@ -36,11 +36,13 @@ def setup_logging(level: str | None = None, as_json: bool | None = None) -> None
         if as_json
         else structlog.dev.ConsoleRenderer(colors=False)
     )
-    # Alembic на INFO печатает «setup plugin ...», «Context impl SQLiteImpl»
-    # и прочее, что к делу не относится: свои содержательные строки CLI пишет
-    # сам. На DEBUG не глушим — там это как раз и нужно.
+    # Чужие библиотеки на INFO печатают своё: alembic — «setup plugin ...»
+    # и «Context impl SQLiteImpl», httpx — строку на каждый запрос. К делу это
+    # не относится, содержательные строки мы пишем сами, а в случае httpx
+    # в лог ещё и утекают адреса запросов. На DEBUG не глушим — там нужно.
     if logging.getLogger().level > logging.DEBUG:
-        logging.getLogger("alembic").setLevel(logging.WARNING)
+        for noisy in ("alembic", "httpx", "httpcore", "anthropic"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
 
     structlog.configure(
         processors=[
@@ -119,12 +121,37 @@ def stage(session: Session, run_id: str, name: str, count_in: int = 0) -> Iterat
 
 
 def format_run_summary(rows: list[dict[str, Any]]) -> str:
-    """«собрано 340 → фильтр 45 → обогащено 20 → писем 12»."""
+    """«собрано 340 → фильтр 45 → обогащено 20 → писем 12».
+
+    Стадия, которая получила записи на вход и не выпустила ни одной, пишется
+    как «11→0»: иначе в сводке она выглядит нулём, неотличимым от «на входе
+    ничего не было», и обрыв конвейера читается как отсутствие клиентов.
+    """
     if not rows:
         return "нет данных по запуску"
-    parts = [f"{r['stage']} {r['out']}" for r in rows]
+    parts = []
+    for row in rows:
+        count_in, count_out = row.get("in") or 0, row["out"]
+        parts.append(f"{row['stage']} {count_in}→0" if count_in and not count_out
+                     else f"{row['stage']} {count_out}")
     line = " → ".join(parts)
     failed = [r["stage"] for r in rows if r.get("error")]
     if failed:
         line += f"  [ошибки: {', '.join(failed)}]"
+    stopped = [r["stage"] for r in rows if (r.get("details") or {}).get("stop_reason")]
+    if stopped:
+        line += f"  [оборвалось: {', '.join(stopped)}]"
     return line
+
+
+def plural_ru(count: int, one: str, few: str, many: str) -> str:
+    """«1 вызов», «2 вызова», «11 вызовов» — согласование по русским правилам."""
+    tail_100 = abs(count) % 100
+    tail_10 = abs(count) % 10
+    if 11 <= tail_100 <= 14:
+        return many
+    if tail_10 == 1:
+        return one
+    if 2 <= tail_10 <= 4:
+        return few
+    return many

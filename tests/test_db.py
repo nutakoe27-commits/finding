@@ -105,3 +105,52 @@ def _psycopg_installed() -> bool:
     except ModuleNotFoundError:
         return False
     return True
+
+
+# ---------------------------------------------- согласование числительных
+#
+# «1 вызовов» в отчёте о тратах — мелочь, но её видит клиент.
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (0, "вызовов"), (1, "вызов"), (2, "вызова"), (4, "вызова"), (5, "вызовов"),
+        (11, "вызовов"), (12, "вызовов"), (14, "вызовов"), (21, "вызов"), (22, "вызова"),
+        (25, "вызовов"), (101, "вызов"), (111, "вызовов"), (1002, "вызова"),
+    ],
+)
+def test_plural_ru(count, expected):
+    from gtm.observability import plural_ru
+
+    assert plural_ru(count, "вызов", "вызова", "вызовов") == expected
+
+
+# ------------------------------------------------------- сводка конвейера
+
+
+def test_summary_shows_input_when_a_stage_dropped_everything():
+    """Стадия с 11 записями на входе и нулём на выходе не должна выглядеть
+    нулём, неотличимым от «на входе ничего не было»."""
+    from gtm.observability import format_run_summary
+
+    line = format_run_summary(
+        [
+            {"stage": "filter", "in": 11, "out": 11, "error": None, "details": {}},
+            {"stage": "generate", "in": 11, "out": 0, "error": None,
+             "details": {"stop_reason": "401"}},
+        ]
+    )
+
+    assert "generate 11→0" in line
+    assert "оборвалось: generate" in line
+
+
+def test_summary_of_a_genuinely_empty_stage_stays_short():
+    from gtm.observability import format_run_summary
+
+    rows = [{"stage": "filter", "in": 0, "out": 0, "error": None, "details": {}}]
+
+    line = format_run_summary(rows)
+
+    assert line == "filter 0"

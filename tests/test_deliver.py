@@ -6,7 +6,13 @@ import csv
 import io
 from datetime import date, timedelta
 
-from gtm.deliver import build_daily, render_csv, render_markdown, run_deliver
+from gtm.deliver import (
+    build_daily,
+    collect_blockers,
+    render_csv,
+    render_markdown,
+    run_deliver,
+)
 from gtm.settings import get_settings
 from gtm.storage import repo
 from gtm.storage.models import ExpectationKind, ExpectationStatus, OutreachStatus
@@ -464,3 +470,74 @@ def test_empty_day_still_produces_a_file(session, config, today, tmp_path):
     assert (result.count_in, result.count_out) == (0, 0)
     assert all(p.exists() for p in paths)
     assert "**Карточек:** 0" in paths[0].read_text(encoding="utf-8")
+
+
+# ------------------------------------------------- обрыв конвейера в выдаче
+#
+# Пустой список из-за отклонённого ключа снаружи выглядит как «сегодня лидов
+# нет». Причины противоположные, и различать их обязана сама выдача:
+# в `gtm stats` за этим никто не пойдёт.
+
+
+def _stage_with_stop(session, run_id: str, stage_name: str, *, left: int = 11) -> None:
+    row = repo.start_stage(session, run_id, stage_name, count_in=left)
+    repo.finish_stage(
+        session,
+        row,
+        count_out=0,
+        details={"stop_reason": "anthropic: ключ отклонён провайдером", "not_generated": left},
+    )
+
+
+def test_blockers_are_collected_from_the_run(session):
+    _stage_with_stop(session, "run-blocked", "generate")
+
+    blockers = collect_blockers(session, "run-blocked")
+
+    assert len(blockers) == 1
+    assert "generate" in blockers[0]
+    assert "ключ отклонён" in blockers[0]
+    assert "Не обработано записей: 11." in blockers[0]
+
+
+def test_stage_error_is_also_a_blocker(session):
+    row = repo.start_stage(session, "run-error", "enrich", count_in=5)
+    repo.finish_stage(session, row, count_out=0, error="соединение разорвано")
+
+    blockers = collect_blockers(session, "run-error")
+
+    assert "упала с ошибкой" in blockers[0]
+
+
+def test_clean_run_has_no_blockers(session):
+    row = repo.start_stage(session, "run-ok", "generate", count_in=3)
+    repo.finish_stage(session, row, count_out=3)
+
+    assert collect_blockers(session, "run-ok") == []
+
+
+def test_empty_list_with_blocker_does_not_say_nobody_to_write(today):
+    """Главное здесь — чего в файле быть НЕ должно: «писать некому» при
+    оборванном прогоне это прямая дезинформация."""
+    text = render_markdown(
+        [], today=today, summary="generate 11→0", blockers=["стадия «generate» остановлена: 401."]
+    )
+
+    assert "Прогон оборвался" in text
+    assert "не «клиентов нет»" in text
+    assert "писать некому" not in text
+    assert "401" in text
+
+
+def test_empty_list_without_blocker_still_explains_itself(today):
+    text = render_markdown([], today=today)
+
+    assert "писать некому" in text
+    assert "Прогон оборвался" not in text
+
+
+def test_blocker_block_comes_before_the_pipeline_summary(today):
+    """Порядок не косметика: причина обрыва должна быть первым, что видно."""
+    text = render_markdown([], today=today, summary="сводка", blockers=["стадия «generate»: 401"])
+
+    assert text.index("Прогон оборвался") < text.index("Конвейер")

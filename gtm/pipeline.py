@@ -91,7 +91,7 @@ def run_daily(
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Весь конвейер за один прогон. Это то, что вешается в cron."""
-    from gtm.deliver import run_deliver
+    from gtm.deliver import collect_blockers, run_deliver
     from gtm.enrich import run_enrich
     from gtm.expectations import build_from_facts, rescore_all
     from gtm.filters import run_filter
@@ -136,7 +136,10 @@ def run_daily(
 
     stages = repo.run_summary(session, run_id)
     spent, calls = repo.spend_today(session)
+    blockers = collect_blockers(session, run_id)
     log.info("daily.done", run_id=run_id, summary=format_run_summary(stages))
+    for reason in blockers:
+        log.error("daily.blocked", run_id=run_id, reason=reason)
 
     return {
         "run_id": run_id,
@@ -147,4 +150,7 @@ def run_daily(
         "files": [str(p) for p in paths],
         "spent_rub": spent,
         "api_calls": calls,
+        # Обрыв конвейера обязан быть виден в возвращаемом отчёте, а не только
+        # в логе: иначе вызывающий код считает прогон успешным.
+        "blockers": blockers,
     }

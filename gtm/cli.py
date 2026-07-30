@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gtm.config import load_config
-from gtm.observability import format_run_summary, new_run_id, setup_logging
+from gtm.observability import format_run_summary, new_run_id, plural_ru, setup_logging
 from gtm.settings import get_settings
 from gtm.storage import repo
 from gtm.storage.db import create_all, session_scope, sqlite_path
@@ -323,7 +323,11 @@ def daily(
             out_dir=out_dir,
         )
     console.print(f"[bold]{report['summary']}[/bold]")
-    console.print(f"Потрачено: {report['spent_rub']:.2f} ₽ ({report['api_calls']} вызовов)")
+    calls = report["api_calls"]
+    word = plural_ru(calls, "вызов", "вызова", "вызовов")
+    console.print(f"Потрачено: {report['spent_rub']:.2f} ₽ ({calls} {word})")
+    for reason in report.get("blockers") or []:
+        console.print(f"[red]Прогон оборвался[/red]: {reason}")
     for path in report["files"]:
         console.print(f"  {path}")
 
