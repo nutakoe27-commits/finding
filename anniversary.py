@@ -231,10 +231,21 @@ def fetch_events(
                 response = client.get(API_URL, params=params)
 
             if response.status_code in (401, 403):
+                # Текст ответа здесь важнее любых наших предположений: это
+                # единственное место, где API сам объясняет, что ему не так.
+                body = response.text.strip()[:500] or "(пустой ответ)"
+                sent_token = "да" if token else "нет"
                 raise TimepadError(
-                    f"Timepad ответил {response.status_code}: нужен токен либо он не подошёл.\n"
-                    "Получите личный токен в кабинете Timepad (раздел для разработчиков)\n"
-                    "и передайте его: --token <токен> либо переменной TIMEPAD_TOKEN."
+                    f"Timepad ответил {response.status_code}.\n"
+                    f"Токен отправлялся: {sent_token}\n"
+                    f"Ответ API: {body}\n\n"
+                    "Что делать:\n"
+                    "  1. Проверить, дело ли в токене вообще:\n"
+                    '     curl -sS -i "https://api.timepad.ru/v1/events?limit=1" | head -25\n'
+                    "  2. Если и там отказ — нужен личный токен (dev.timepad.ru),\n"
+                    "     передать через --token <токен> или TIMEPAD_TOKEN.\n"
+                    "  3. Если без токена приходит 200, а с нашим запросом нет —\n"
+                    "     дело в параметрах запроса, пришлите этот вывод."
                 )
             if response.status_code != 200:
                 raise TimepadError(
@@ -253,6 +264,71 @@ def fetch_events(
                 break
             skip += len(values)
     return collected
+
+
+def diagnose(*, token: str | None, city: str, since: date, until: date) -> int:
+    """Три запроса по нарастающей: где именно ломается.
+
+    Отделяет «API вообще требует токен» от «наш конкретный запрос не нравится».
+    Без этого разделения непонятно, идти за токеном или чинить параметры.
+    """
+    probes: list[tuple[str, dict[str, Any], dict[str, str]]] = [
+        ("простейший запрос, без токена", {"limit": 1}, {}),
+    ]
+    if token:
+        probes.append(
+            (
+                "простейший запрос, с токеном",
+                {"limit": 1},
+                {"Authorization": f"Bearer {token}"},
+            )
+        )
+    full = {
+        "limit": 1,
+        "cities[]": city,
+        "starts_at_min": since.isoformat(),
+        "starts_at_max": until.isoformat(),
+        "sort": "-starts_at",
+        "fields[]": EVENT_FIELDS,
+    }
+    probes.append(
+        (
+            "наш полный запрос" + (" с токеном" if token else " без токена"),
+            full,
+            {"Authorization": f"Bearer {token}"} if token else {},
+        )
+    )
+
+    print(f"Токен: {'задан' if token else 'НЕ задан'}\n")
+    ok_any = False
+    for label, params, extra in probes:
+        headers = {"User-Agent": "gtm-research/0.1", **extra}
+        try:
+            with httpx.Client(timeout=30, headers=headers) as client:
+                response = client.get(API_URL, params=params)
+        except httpx.HTTPError as exc:
+            print(f"[сеть не дошла] {label}: {exc}")
+            continue
+        mark = "OK " if response.status_code == 200 else "ОТКАЗ"
+        print(f"[{mark}] {label}: HTTP {response.status_code}")
+        if response.status_code == 200:
+            ok_any = True
+            payload = response.json()
+            total = payload.get("total") if isinstance(payload, dict) else None
+            print(f"        событий всего по запросу: {total}")
+        else:
+            print(f"        ответ: {response.text.strip()[:300] or '(пусто)'}")
+        print()
+
+    if not ok_any:
+        print(
+            "Ни один запрос не прошёл — дело не в наших параметрах, а в доступе.\n"
+            "Нужен токен: dev.timepad.ru, затем --token <токен> либо TIMEPAD_TOKEN."
+        )
+        return 2
+    print("Хотя бы один запрос прошёл. Если полный запрос при этом отказал —\n"
+          "дело в параметрах, пришлите этот вывод, поправлю.")
+    return 0
 
 
 # ------------------------------------------------------------- ожидания
@@ -419,6 +495,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="напечатать сырой JSON первого события и выйти — для сверки полей",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="диагностика доступа: три запроса по нарастающей, видно где ломается",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -433,6 +514,9 @@ def main(argv: list[str] | None = None) -> int:
         else datetime.now().astimezone().date()
     )
     since = date(today.year - args.years, today.month, 1)
+
+    if args.check:
+        return diagnose(token=token, city=args.city, since=since, until=today)
 
     try:
         raw_events = fetch_events(
