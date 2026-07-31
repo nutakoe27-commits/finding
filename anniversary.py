@@ -193,26 +193,47 @@ class TimepadError(RuntimeError):
     pass
 
 
-def target_ranges(today: date, years: int, horizon_days: int) -> list[tuple[date, date]]:
-    """Периоды прошлых лет, повторение которых попадёт в ближайшее время.
+def _shift_years(value: date, years: int) -> date:
+    """Сдвиг на календарный год, а не на 365 дней: иначе за пару лет
+    накапливается ошибка в сутки и границы сезона уезжают."""
+    return date(value.year - years, value.month, min(value.day, 28))
 
-    Тянуть весь двухлетний архив бессмысленно и невозможно: московских событий
-    там десятки тысяч, любой потолок обрежет выборку, и обрежет он именно
-    дальний конец — то есть ровно те прошлогодние конференции, ради которых
-    всё затевается.
 
-    Поэтому спрашиваем не «все события за два года», а «события того же сезона
-    год и два назад»: их годовщина придётся на ближайшие horizon_days, и писать
-    про них надо сейчас. Запрос выходит маленький и точный.
+def target_ranges(today: date, years: int, horizon_days: int = 0) -> list[tuple[date, date]]:
+    """Периоды прошлых лет, чьё повторение попадает в открытое окно контакта.
+
+    Диапазон выводится из самой механики окна, а не назначается на глаз.
+    Окно открыто, когда до ожидаемой даты остаётся от WINDOW_DAYS до LEAD_DAYS
+    дней. Значит писать сегодня надо про мероприятия, которые повторятся
+    в промежутке [today + 60, today + 120] — а их прошлогодние оригиналы
+    лежат ровно в том же промежутке год назад.
+
+    Это два месяца, а не шесть. Разница принципиальная: шестимесячный период
+    московских событий не выбрать никаким потолком, и обрезка съедает именно
+    тот конец, ради которого всё затевается. Дважды на этом обжигались:
+    сперва с сортировкой по убыванию, потом по возрастанию.
+
+    `horizon_days` расширяет дальний край — чтобы заранее видеть, кому писать
+    через месяц-другой.
     """
-    ranges = []
-    for years_back in range(1, years + 1):
-        # Сдвиг ровно на календарный год, а не на 365 дней: иначе за пару лет
-        # накапливается ошибка в сутки и границы сезона уезжают.
-        start = date(today.year - years_back, today.month, min(today.day, 28))
-        end = start + timedelta(days=horizon_days)
-        ranges.append((start, end))
-    return ranges
+    first = today + timedelta(days=WINDOW_DAYS)
+    last = today + timedelta(days=LEAD_DAYS + horizon_days)
+    return [(_shift_years(first, k), _shift_years(last, k)) for k in range(1, years + 1)]
+
+
+def split_into_chunks(since: date, until: date, chunk_days: int) -> list[tuple[date, date]]:
+    """Порезать период на куски.
+
+    Потолок применяется к запросу, поэтому единственный способ не потерять
+    данные — спрашивать короткими отрезками и по каждому видеть, всё ли забрали.
+    """
+    chunks = []
+    start = since
+    while start <= until:
+        end = min(start + timedelta(days=chunk_days - 1), until)
+        chunks.append((start, end))
+        start = end + timedelta(days=1)
+    return chunks
 
 
 def fetch_events(
@@ -221,6 +242,7 @@ def fetch_events(
     ranges: list[tuple[date, date]],
     city: str,
     limit_per_range: int,
+    chunk_days: int = 7,
     verbose: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """События за указанные периоды. Возвращает (события, предупреждения).
@@ -237,23 +259,44 @@ def fetch_events(
     warnings: list[str] = []
     with httpx.Client(timeout=30, headers=headers) as client:
         for since, until in ranges:
-            got = _fetch_range(
-                client,
-                since=since,
-                until=until,
-                city=city,
-                limit_total=limit_per_range,
-                token=token,
-                verbose=verbose,
-            )
-            collected.extend(got)
-            if len(got) >= limit_per_range:
-                warnings.append(
-                    f"период {since}..{until} упёрся в потолок {limit_per_range} событий — "
-                    "часть данных не увидена, поднимите --max-events"
+            chunks = split_into_chunks(since, until, chunk_days)
+            fetched_here = 0
+            available_here = 0
+            missed_chunks = 0
+            for chunk_since, chunk_until in chunks:
+                got, total = _fetch_range(
+                    client,
+                    since=chunk_since,
+                    until=chunk_until,
+                    city=city,
+                    limit_total=limit_per_range,
+                    token=token,
+                    verbose=verbose,
                 )
-            if verbose:
-                print(f"{since}..{until}: {len(got)} событий", file=sys.stderr)
+                collected.extend(got)
+                fetched_here += len(got)
+                # `total` API сообщает сам — это единственный честный ответ
+                # на вопрос «всё ли мы забрали». Без него обрезанная выборка
+                # выглядит как «столько мероприятий и есть».
+                available_here += total if total is not None else len(got)
+                if total is not None and len(got) < total:
+                    missed_chunks += 1
+                if verbose:
+                    print(
+                        f"  {chunk_since}..{chunk_until}: {len(got)} из {total}",
+                        file=sys.stderr,
+                    )
+            coverage = 100 * fetched_here / available_here if available_here else 100
+            line = (
+                f"период {since}..{until}: получено {fetched_here} из {available_here} "
+                f"({coverage:.0f}% охвата, кусков {len(chunks)})"
+            )
+            if missed_chunks:
+                line += (
+                    f" — НЕ ВСЁ: в {missed_chunks} кусках упёрлись в потолок, "
+                    "уменьшите --chunk-days или поднимите --max-events"
+                )
+            warnings.append(line)
     return collected, warnings
 
 
@@ -266,8 +309,10 @@ def _fetch_range(
     limit_total: int,
     token: str | None,
     verbose: bool,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], int | None]:
+    """Вернуть (события, сколько их всего по мнению API)."""
     collected: list[dict[str, Any]] = []
+    reported_total: int | None = None
     skip = 0
     while len(collected) < limit_total:
         params: dict[str, Any] = {
@@ -314,17 +359,18 @@ def _fetch_range(
             )
 
         payload = response.json()
+        # `total` — сколько событий по этому запросу есть у API вообще.
+        # Единственный честный ответ на вопрос «всё ли мы забрали».
+        if isinstance(payload, dict) and isinstance(payload.get("total"), int):
+            reported_total = payload["total"]
         values = payload.get("values") if isinstance(payload, dict) else None
         if not values:
             break
         collected.extend(values)
-        if verbose:
-            total = payload.get("total")
-            print(f"получено {len(collected)} из {total or '?'}", file=sys.stderr)
         if len(values) < params["limit"]:
             break
         skip += len(values)
-    return collected
+    return collected, reported_total
 
 
 def diagnose(*, token: str | None, city: str, since: date, until: date) -> int:
@@ -396,10 +442,18 @@ def diagnose(*, token: str | None, city: str, since: date, until: date) -> int:
 # зал, арендовать наш они не будут. На Timepad их много — платформа билетная,
 # и её основная аудитория как раз культурные центры, кино и театры.
 VENUE_MARKERS = (
-    "кинотеатр", "театр", "музей", "галере", "библиотек", "культурн", "дом культуры",
-    "клуб", "парк", "лектори", "филармони", "консерватор", "усадьб", "храм", "цирк",
-    "планетари", "зоопарк", "госфильмофонд", "концертн", "арена", "стадион",
-    "выставочн", "экспоцентр", "конгресс", "коворкинг", "лофт", "площадк",
+    # площадки и учреждения культуры
+    "кинотеатр", "театр", "музей", "галере", "библиотек", "историчк", "культурн",
+    "дом культуры", "дом книги", "книжн", "клуб", "парк", "лектори", "филармони",
+    "консерватор", "усадьб", "храм", "цирк", "планетари", "зоопарк", "концертн",
+    "арена", "стадион", "выставочн", "экспоцентр", "конгресс", "коворкинг",
+    "лофт", "площадк", "особняк", "центр им", "дворец",
+    # кино: прокатчики и школы устраивают показы, а не корпоративы
+    "кино", "фильмофонд", "киношкол", "киноклуб", "прокатн",
+    # образование и просвещение — их мероприятия это лекции, не корпоративы
+    "школа", "курсы", "академи", "институт", "университет", "лекторий",
+    # фестивали как организаторы — это событие, а не компания-заказчик
+    "фестиваль", "fest", "выставка",
 )
 
 
@@ -569,13 +623,19 @@ def main(argv: list[str] | None = None) -> int:
         help="оставлять события с неизвестным числом участников (по умолчанию отбрасываются)",
     )
     parser.add_argument(
-        "--max-events", type=int, default=2000, help="потолок событий на один период"
+        "--max-events", type=int, default=2000, help="потолок событий на один кусок периода"
+    )
+    parser.add_argument(
+        "--chunk-days",
+        type=int,
+        default=7,
+        help="длина куска, которым нарезается период: короче — меньше риск обрезки",
     )
     parser.add_argument(
         "--horizon",
         type=int,
-        default=180,
-        help="на сколько дней вперёд смотрим: столько же берём из прошлых сезонов",
+        default=0,
+        help="заглянуть дальше открытого окна на N дней (кому писать через месяц-другой)",
     )
     parser.add_argument(
         "--keep-venues",
@@ -631,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
             ranges=ranges,
             city=args.city,
             limit_per_range=args.max_events,
+            chunk_days=args.chunk_days,
             verbose=args.verbose,
         )
     except TimepadError as exc:
@@ -665,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         action = "оставлены" if args.keep_venues else "отброшены"
         print(f"  из них площадок и прокатчиков: {len(venues)} — {action} (--keep-venues)")
     for warning in warnings:
-        print(f"  ВНИМАНИЕ: {warning}")
+        print(f"  {warning}")
     if not with_scale and parsed:
         print(
             "\nВНИМАНИЕ: ни у одного события не нашлось числа участников.\n"

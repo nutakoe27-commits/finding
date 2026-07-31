@@ -14,6 +14,7 @@ import pytest
 
 from anniversary import (
     LEAD_DAYS,
+    WINDOW_DAYS,
     Event,
     build_expectations,
     looks_like_venue,
@@ -21,6 +22,7 @@ from anniversary import (
     parse_attendees,
     parse_event,
     rank,
+    split_into_chunks,
     target_ranges,
 )
 
@@ -220,37 +222,79 @@ def test_garbage_never_raises(payload):
 
 # ------------------------------------------------------- целевые периоды
 #
-# Первый живой прогон вернул ровно 1000 событий — потолок — и все за
-# последние две недели: сортировка по убыванию даты обрезала выборку с того
-# конца, ради которого всё затевалось. Отсюда эти тесты.
+# Два живых прогона подряд вернули обрезанную выборку: сперва сортировка
+# по убыванию даты показала последние две недели, потом по возрастанию —
+# первые пять дней периода. Оба раза корпоративный сезон, ради которого всё
+# затевается, в выборку не попал. Отсюда эти тесты.
 
 
-def test_ranges_look_at_the_same_season_a_year_ago():
-    """Спрашиваем не «всё за два года», а «тот же сезон год и два назад»:
-    именно их годовщина придётся на ближайшие месяцы."""
-    ranges = target_ranges(date(2026, 7, 30), years=2, horizon_days=180)
+def test_range_matches_the_open_contact_window():
+    """Период выводится из механики окна, а не назначается на глаз.
 
-    assert len(ranges) == 2
-    assert ranges[0][0] == date(2025, 7, 28)
-    assert ranges[1][0] == date(2024, 7, 28)
-    assert (ranges[0][1] - ranges[0][0]).days == 180
+    Окно открыто, когда до события остаётся от 60 до 120 дней. Значит писать
+    сегодня надо про то, что повторится через 60-120 дней, а его прошлогодний
+    оригинал лежит ровно в том же промежутке год назад.
+    """
+    [(start, end)] = target_ranges(date(2026, 7, 30), years=1)
+
+    assert start == date(2026, 7, 30) + timedelta(days=WINDOW_DAYS) - timedelta(days=365)
+    assert (end - start).days == LEAD_DAYS - WINDOW_DAYS
 
 
-def test_ranges_cover_the_autumn_season_from_july():
-    """Ключевая проверка: стоя в конце июля, мы обязаны видеть прошлогодние
-    ноябрь и декабрь — это корпоративный сезон, ради него всё и делается."""
-    (start, end), *_ = target_ranges(date(2026, 7, 30), years=1, horizon_days=180)
+def test_range_is_two_months_not_six():
+    """Шестимесячный период московских событий не выбрать никаким потолком,
+    и обрезка съедает именно нужный конец."""
+    [(start, end)] = target_ranges(date(2026, 7, 30), years=1)
 
-    assert start <= date(2025, 11, 15) <= end
-    assert start <= date(2025, 12, 20) <= end
+    assert 55 <= (end - start).days <= 65
+
+
+def test_october_run_targets_last_years_corporate_season():
+    """Стоя в начале октября, мы должны смотреть на прошлогодние декабрь
+    и январь — то есть на корпоративы, которые вот-вот начнут планировать."""
+    [(start, end)] = target_ranges(date(2026, 10, 1), years=1)
+
+    assert start <= date(2025, 12, 10) <= end
+
+
+def test_horizon_extends_only_the_far_edge():
+    """Заглянуть вперёд можно, но ближний край двигать нельзя: он привязан
+    к тому, когда окно открывается."""
+    [(start, end)] = target_ranges(date(2026, 7, 30), years=1)
+    [(start_far, end_far)] = target_ranges(date(2026, 7, 30), years=1, horizon_days=60)
+
+    assert start_far == start
+    assert (end_far - end).days == 60
 
 
 def test_ranges_shift_by_calendar_year_not_365_days():
-    """365 дней за пару лет накапливают ошибку в сутки и сдвигают сезон."""
-    ranges = target_ranges(date(2026, 3, 1), years=3, horizon_days=90)
+    ranges = target_ranges(date(2026, 3, 1), years=3)
 
     assert [r[0].year for r in ranges] == [2025, 2024, 2023]
-    assert all(r[0].month == 3 for r in ranges)
+
+
+# ------------------------------------------------------- нарезка на куски
+
+
+def test_chunks_cover_the_period_without_gaps_or_overlaps():
+    """Потолок применяется к запросу, поэтому единственный способ ничего
+    не потерять — спрашивать короткими отрезками."""
+    chunks = split_into_chunks(date(2025, 9, 28), date(2025, 11, 27), 7)
+
+    assert chunks[0][0] == date(2025, 9, 28)
+    assert chunks[-1][1] == date(2025, 11, 27)
+    for (_, prev_end), (next_start, _) in zip(chunks, chunks[1:], strict=False):
+        assert next_start == prev_end + timedelta(days=1)
+
+
+def test_short_period_is_a_single_chunk():
+    chunks = split_into_chunks(date(2025, 9, 28), date(2025, 9, 30), 7)
+    assert chunks == [(date(2025, 9, 28), date(2025, 9, 30))]
+
+
+def test_single_day_period():
+    day = date(2025, 9, 28)
+    assert split_into_chunks(day, day, 7) == [(day, day)]
 
 
 # ------------------------------------------------------- площадки не клиенты
@@ -265,6 +309,14 @@ def test_ranges_shift_by_calendar_year_not_365_days():
         "Библиотека имени Некрасова",
         "Московский Планетарий",
         "Концертный зал «Пример»",
+        # Из живого прогона: эти прошли мимо первой версии фильтра.
+        "ИСТОРИЧКА",
+        "МОСКОВСКИЙ ДОМ КНИГИ",
+        "Киношкола «Свободное кино»",
+        "Кинопрокатная компани ВОЛЬГА",
+        "Кино в The Rink",
+        "Кудрявый фестиваль CURLFEST",
+        "РОСКИНО",
     ],
 )
 def test_venues_are_recognised(organizer):
