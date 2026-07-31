@@ -279,7 +279,7 @@ def fetch_events(
     ranges: list[tuple[date, date]],
     city: str,
     limit_per_range: int,
-    chunk_days: int = 7,
+    chunk_days: int = 3,
     verbose: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """События за указанные периоды. Возвращает (события, предупреждения).
@@ -496,6 +496,16 @@ VENUE_MARKERS = (
     # фестивали как организаторы — это событие, а не компания-заказчик
     "фестиваль", "fest", "выставка",
 )
+
+
+# Тестовые аккаунты самой платформы. В прогоне так пролез «test-org»
+# с «Премией ИТ» — выглядит правдоподобно, а компании за ним нет.
+TEST_ACCOUNT_MARKERS = ("test-org", "test org", "тестовая организация", "demo-org", "тест-орг")
+
+
+def looks_like_test_account(organizer: str) -> bool:
+    lowered = organizer.strip().lower()
+    return lowered in {"test", "тест"} or any(m in lowered for m in TEST_ACCOUNT_MARKERS)
 
 
 def looks_like_venue(organizer: str) -> bool:
@@ -731,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--chunk-days",
         type=int,
-        default=7,
+        default=3,
         help="длина куска, которым нарезается период: короче — меньше риск обрезки",
     )
     parser.add_argument(
@@ -832,6 +842,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.keep_unknown:
         big += [e for e in parsed if e.attendees is None]
 
+    test_accounts = [e for e in big if looks_like_test_account(e.organizer)]
+    big = [e for e in big if not looks_like_test_account(e.organizer)]
     venues = [e for e in big if looks_like_venue(e.organizer)]
     if not args.keep_venues:
         big = [e for e in big if not looks_like_venue(e.organizer)]
@@ -843,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     if venues:
         action = "оставлены" if args.keep_venues else "отброшены"
         print(f"  из них площадок и прокатчиков: {len(venues)} — {action} (--keep-venues)")
+    if test_accounts:
+        print(f"  тестовых аккаунтов платформы: {len(test_accounts)} — отброшены")
     for warning in warnings:
         print(f"  {warning}")
     if not with_scale and parsed:

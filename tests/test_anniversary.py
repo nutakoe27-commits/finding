@@ -21,6 +21,7 @@ from anniversary import (
     dedupe_by_organizer,
     filter_by_categories,
     format_table,
+    looks_like_test_account,
     looks_like_venue,
     next_anniversary,
     parse_attendees,
@@ -449,3 +450,19 @@ def test_repeat_years_are_listed_once_each():
 
     assert "2024, 2025" in text
     assert "2024, 2024" not in text
+
+
+# ------------------------------------------------- тестовые аккаунты платформы
+
+
+def test_platform_test_accounts_are_dropped():
+    """В прогоне пролез «test-org» с «Премией ИТ»: выглядит правдоподобно,
+    а компании за ним нет."""
+    assert looks_like_test_account("test-org") is True
+    assert looks_like_test_account("Тестовая организация") is True
+
+
+def test_real_names_containing_test_survive():
+    """«Protest Group» и «Тестов и партнёры» — настоящие названия."""
+    assert looks_like_test_account("Protest Group") is False
+    assert looks_like_test_account("X5 Tech") is False
