@@ -16,10 +16,12 @@ from anniversary import (
     LEAD_DAYS,
     Event,
     build_expectations,
+    looks_like_venue,
     next_anniversary,
     parse_attendees,
     parse_event,
     rank,
+    target_ranges,
 )
 
 TODAY = date(2026, 7, 30)
@@ -214,3 +216,71 @@ def test_bigger_first_within_the_open_window():
 @pytest.mark.parametrize("payload", [{}, {"organization": None}, {"starts_at": ""}])
 def test_garbage_never_raises(payload):
     assert parse_event(payload) is None
+
+
+# ------------------------------------------------------- целевые периоды
+#
+# Первый живой прогон вернул ровно 1000 событий — потолок — и все за
+# последние две недели: сортировка по убыванию даты обрезала выборку с того
+# конца, ради которого всё затевалось. Отсюда эти тесты.
+
+
+def test_ranges_look_at_the_same_season_a_year_ago():
+    """Спрашиваем не «всё за два года», а «тот же сезон год и два назад»:
+    именно их годовщина придётся на ближайшие месяцы."""
+    ranges = target_ranges(date(2026, 7, 30), years=2, horizon_days=180)
+
+    assert len(ranges) == 2
+    assert ranges[0][0] == date(2025, 7, 28)
+    assert ranges[1][0] == date(2024, 7, 28)
+    assert (ranges[0][1] - ranges[0][0]).days == 180
+
+
+def test_ranges_cover_the_autumn_season_from_july():
+    """Ключевая проверка: стоя в конце июля, мы обязаны видеть прошлогодние
+    ноябрь и декабрь — это корпоративный сезон, ради него всё и делается."""
+    (start, end), *_ = target_ranges(date(2026, 7, 30), years=1, horizon_days=180)
+
+    assert start <= date(2025, 11, 15) <= end
+    assert start <= date(2025, 12, 20) <= end
+
+
+def test_ranges_shift_by_calendar_year_not_365_days():
+    """365 дней за пару лет накапливают ошибку в сутки и сдвигают сезон."""
+    ranges = target_ranges(date(2026, 3, 1), years=3, horizon_days=90)
+
+    assert [r[0].year for r in ranges] == [2025, 2024, 2023]
+    assert all(r[0].month == 3 for r in ranges)
+
+
+# ------------------------------------------------------- площадки не клиенты
+
+
+@pytest.mark.parametrize(
+    "organizer",
+    [
+        "Культурный центр ЗИЛ",
+        "Госфильмофонд РФ / Кинотеатр «Иллюзион»",
+        "Театр на Малой Бронной",
+        "Библиотека имени Некрасова",
+        "Московский Планетарий",
+        "Концертный зал «Пример»",
+    ],
+)
+def test_venues_are_recognised(organizer):
+    """У них свой зал — наш они арендовать не будут. В первом прогоне список
+    состоял ровно из таких."""
+    assert looks_like_venue(organizer) is True
+
+
+@pytest.mark.parametrize(
+    "organizer",
+    [
+        "ООО Ромашка-Трейд",
+        "АО Синий Кит",
+        "Ассоциация производителей упаковки",
+        "Группа компаний Пример",
+    ],
+)
+def test_real_prospects_are_not_flagged(organizer):
+    assert looks_like_venue(organizer) is False

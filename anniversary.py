@@ -193,76 +193,137 @@ class TimepadError(RuntimeError):
     pass
 
 
+def target_ranges(today: date, years: int, horizon_days: int) -> list[tuple[date, date]]:
+    """Периоды прошлых лет, повторение которых попадёт в ближайшее время.
+
+    Тянуть весь двухлетний архив бессмысленно и невозможно: московских событий
+    там десятки тысяч, любой потолок обрежет выборку, и обрежет он именно
+    дальний конец — то есть ровно те прошлогодние конференции, ради которых
+    всё затевается.
+
+    Поэтому спрашиваем не «все события за два года», а «события того же сезона
+    год и два назад»: их годовщина придётся на ближайшие horizon_days, и писать
+    про них надо сейчас. Запрос выходит маленький и точный.
+    """
+    ranges = []
+    for years_back in range(1, years + 1):
+        # Сдвиг ровно на календарный год, а не на 365 дней: иначе за пару лет
+        # накапливается ошибка в сутки и границы сезона уезжают.
+        start = date(today.year - years_back, today.month, min(today.day, 28))
+        end = start + timedelta(days=horizon_days)
+        ranges.append((start, end))
+    return ranges
+
+
 def fetch_events(
     *,
     token: str | None,
-    since: date,
-    until: date,
+    ranges: list[tuple[date, date]],
     city: str,
-    limit_total: int,
+    limit_per_range: int,
     verbose: bool = False,
-) -> list[dict[str, Any]]:
-    """Прошедшие события за период. Постранично, с внятными ошибками."""
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """События за указанные периоды. Возвращает (события, предупреждения).
+
+    Предупреждения — про упёршиеся в потолок периоды. Молчаливое обрезание
+    выборки выглядит как «мероприятий столько и есть» и уводит в неверные
+    выводы: именно на этом первый прогон и показал две недели вместо двух лет.
+    """
     headers = {"User-Agent": "gtm-research/0.1"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
     collected: list[dict[str, Any]] = []
-    skip = 0
+    warnings: list[str] = []
     with httpx.Client(timeout=30, headers=headers) as client:
-        while len(collected) < limit_total:
-            params: dict[str, Any] = {
-                "limit": min(PAGE_SIZE, limit_total - len(collected)),
-                "skip": skip,
-                "cities[]": city,
-                "starts_at_min": since.isoformat(),
-                "starts_at_max": until.isoformat(),
-                "sort": "-starts_at",
-                "fields[]": EVENT_FIELDS,
-            }
+        for since, until in ranges:
+            got = _fetch_range(
+                client,
+                since=since,
+                until=until,
+                city=city,
+                limit_total=limit_per_range,
+                token=token,
+                verbose=verbose,
+            )
+            collected.extend(got)
+            if len(got) >= limit_per_range:
+                warnings.append(
+                    f"период {since}..{until} упёрся в потолок {limit_per_range} событий — "
+                    "часть данных не увидена, поднимите --max-events"
+                )
+            if verbose:
+                print(f"{since}..{until}: {len(got)} событий", file=sys.stderr)
+    return collected, warnings
+
+
+def _fetch_range(
+    client: httpx.Client,
+    *,
+    since: date,
+    until: date,
+    city: str,
+    limit_total: int,
+    token: str | None,
+    verbose: bool,
+) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    skip = 0
+    while len(collected) < limit_total:
+        params: dict[str, Any] = {
+            "limit": min(PAGE_SIZE, limit_total - len(collected)),
+            "skip": skip,
+            "cities[]": city,
+            "starts_at_min": since.isoformat(),
+            "starts_at_max": until.isoformat(),
+            # По возрастанию: период узкий, и так пагинация идёт от начала
+            # сезона к концу, ничего не теряя на границе.
+            "sort": "starts_at",
+            "fields[]": EVENT_FIELDS,
+        }
+        response = client.get(API_URL, params=params)
+
+        # Неизвестное поле — единственная ошибка, которую лечим сами:
+        # состав fields[] мог измениться, а всё остальное в запросе верно.
+        if response.status_code == 400 and "fields[]" in params:
+            if verbose:
+                print("API не принял fields[], повторяю без них", file=sys.stderr)
+            params.pop("fields[]")
             response = client.get(API_URL, params=params)
 
-            # Неизвестное поле — единственная ошибка, которую лечим сами:
-            # состав fields[] мог измениться, а всё остальное в запросе верно.
-            if response.status_code == 400 and "fields[]" in params:
-                if verbose:
-                    print("API не принял fields[], повторяю без них", file=sys.stderr)
-                params.pop("fields[]")
-                response = client.get(API_URL, params=params)
+        if response.status_code in (401, 403):
+            # Текст ответа здесь важнее любых наших предположений: это
+            # единственное место, где API сам объясняет, что ему не так.
+            body = response.text.strip()[:500] or "(пустой ответ)"
+            sent_token = "да" if token else "нет"
+            raise TimepadError(
+                f"Timepad ответил {response.status_code}.\n"
+                f"Токен отправлялся: {sent_token}\n"
+                f"Ответ API: {body}\n\n"
+                "Что делать:\n"
+                "  1. Проверить, дело ли в токене вообще:\n"
+                '     curl -sS -i "https://api.timepad.ru/v1/events?limit=1" | head -25\n'
+                "  2. Если и там отказ — нужен личный токен (dev.timepad.ru),\n"
+                "     передать через --token <токен> или TIMEPAD_TOKEN.\n"
+                "  3. Если без токена приходит 200, а с нашим запросом нет —\n"
+                "     дело в параметрах запроса, пришлите этот вывод."
+            )
+        if response.status_code != 200:
+            raise TimepadError(
+                f"Timepad ответил {response.status_code}: {response.text[:300]}"
+            )
 
-            if response.status_code in (401, 403):
-                # Текст ответа здесь важнее любых наших предположений: это
-                # единственное место, где API сам объясняет, что ему не так.
-                body = response.text.strip()[:500] or "(пустой ответ)"
-                sent_token = "да" if token else "нет"
-                raise TimepadError(
-                    f"Timepad ответил {response.status_code}.\n"
-                    f"Токен отправлялся: {sent_token}\n"
-                    f"Ответ API: {body}\n\n"
-                    "Что делать:\n"
-                    "  1. Проверить, дело ли в токене вообще:\n"
-                    '     curl -sS -i "https://api.timepad.ru/v1/events?limit=1" | head -25\n'
-                    "  2. Если и там отказ — нужен личный токен (dev.timepad.ru),\n"
-                    "     передать через --token <токен> или TIMEPAD_TOKEN.\n"
-                    "  3. Если без токена приходит 200, а с нашим запросом нет —\n"
-                    "     дело в параметрах запроса, пришлите этот вывод."
-                )
-            if response.status_code != 200:
-                raise TimepadError(
-                    f"Timepad ответил {response.status_code}: {response.text[:300]}"
-                )
-
-            payload = response.json()
-            values = payload.get("values") if isinstance(payload, dict) else None
-            if not values:
-                break
-            collected.extend(values)
-            if verbose:
-                total = payload.get("total")
-                print(f"получено {len(collected)} из {total or '?'}", file=sys.stderr)
-            if len(values) < params["limit"]:
-                break
-            skip += len(values)
+        payload = response.json()
+        values = payload.get("values") if isinstance(payload, dict) else None
+        if not values:
+            break
+        collected.extend(values)
+        if verbose:
+            total = payload.get("total")
+            print(f"получено {len(collected)} из {total or '?'}", file=sys.stderr)
+        if len(values) < params["limit"]:
+            break
+        skip += len(values)
     return collected
 
 
@@ -329,6 +390,29 @@ def diagnose(*, token: str | None, city: str, since: date, until: date) -> int:
     print("Хотя бы один запрос прошёл. Если полный запрос при этом отказал —\n"
           "дело в параметрах, пришлите этот вывод, поправлю.")
     return 0
+
+
+# Организаторы, которые сами являются площадками или прокатчиками: у них свой
+# зал, арендовать наш они не будут. На Timepad их много — платформа билетная,
+# и её основная аудитория как раз культурные центры, кино и театры.
+VENUE_MARKERS = (
+    "кинотеатр", "театр", "музей", "галере", "библиотек", "культурн", "дом культуры",
+    "клуб", "парк", "лектори", "филармони", "консерватор", "усадьб", "храм", "цирк",
+    "планетари", "зоопарк", "госфильмофонд", "концертн", "арена", "стадион",
+    "выставочн", "экспоцентр", "конгресс", "коворкинг", "лофт", "площадк",
+)
+
+
+def looks_like_venue(organizer: str) -> bool:
+    """Похоже ли, что организатор — сам площадка, а не заказчик.
+
+    Эвристика грубая и намеренно не приговор: организаторы помечаются, а не
+    выбрасываются молча. Но без неё список забивают культурные центры и
+    кинотеатры, у которых «330 мест» — это вместимость их собственного зала,
+    а не масштаб корпоративного мероприятия.
+    """
+    lowered = organizer.lower()
+    return any(marker in lowered for marker in VENUE_MARKERS)
 
 
 # ------------------------------------------------------------- ожидания
@@ -484,7 +568,25 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="оставлять события с неизвестным числом участников (по умолчанию отбрасываются)",
     )
-    parser.add_argument("--max-events", type=int, default=1000, help="потолок на запрос")
+    parser.add_argument(
+        "--max-events", type=int, default=2000, help="потолок событий на один период"
+    )
+    parser.add_argument(
+        "--horizon",
+        type=int,
+        default=180,
+        help="на сколько дней вперёд смотрим: столько же берём из прошлых сезонов",
+    )
+    parser.add_argument(
+        "--keep-venues",
+        action="store_true",
+        help="оставить организаторов-площадок (кинотеатры, ДК) — по умолчанию отброшены",
+    )
+    parser.add_argument(
+        "--full-archive",
+        action="store_true",
+        help="тянуть весь период подряд вместо целевых сезонов (медленно и обрезается)",
+    )
     parser.add_argument(
         "--today",
         help="считать окна на заданную дату ГГГГ-ММ-ДД (для проверки, по умолчанию сегодня)",
@@ -518,13 +620,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return diagnose(token=token, city=args.city, since=since, until=today)
 
+    ranges = (
+        [(since, today)]
+        if args.full_archive
+        else target_ranges(today, args.years, args.horizon)
+    )
     try:
-        raw_events = fetch_events(
+        raw_events, warnings = fetch_events(
             token=token,
-            since=since,
-            until=today,
+            ranges=ranges,
             city=args.city,
-            limit_total=args.max_events,
+            limit_per_range=args.max_events,
             verbose=args.verbose,
         )
     except TimepadError as exc:
@@ -547,9 +653,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.keep_unknown:
         big += [e for e in parsed if e.attendees is None]
 
+    venues = [e for e in big if looks_like_venue(e.organizer)]
+    if not args.keep_venues:
+        big = [e for e in big if not looks_like_venue(e.organizer)]
+
+    print("Периоды запроса: " + ", ".join(f"{a}..{b}" for a, b in ranges))
     print(f"Событий получено: {len(raw_events)}")
     print(f"Разобрано: {len(parsed)} (у {len(with_scale)} известно число участников)")
-    print(f"Крупных (от {args.min_attendees} чел.): {len(big)}")
+    print(f"Крупных (от {args.min_attendees} чел.): {len(big) + len(venues)}")
+    if venues:
+        action = "оставлены" if args.keep_venues else "отброшены"
+        print(f"  из них площадок и прокатчиков: {len(venues)} — {action} (--keep-venues)")
+    for warning in warnings:
+        print(f"  ВНИМАНИЕ: {warning}")
     if not with_scale and parsed:
         print(
             "\nВНИМАНИЕ: ни у одного события не нашлось числа участников.\n"
