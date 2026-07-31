@@ -17,9 +17,14 @@ from anniversary import (
     WINDOW_DAYS,
     Event,
     build_expectations,
+    category_histogram,
+    dedupe_by_organizer,
+    filter_by_categories,
+    format_table,
     looks_like_venue,
     next_anniversary,
     parse_attendees,
+    parse_categories,
     parse_event,
     rank,
     split_into_chunks,
@@ -125,7 +130,9 @@ def _event(organizer="ООО Ромашка-Трейд", when=date(2025, 11, 12)
         title=title,
         starts_at=when,
         organizer=organizer,
-        organizer_id="55",
+        # Идентификатор выводится из названия: иначе все тестовые события
+        # оказываются одной организацией, и дедупликация склеивает разное.
+        organizer_id=str(abs(hash(organizer)) % 10_000),
         attendees=attendees,
         attendees_source="продано билетов",
         city="Москва",
@@ -336,3 +343,109 @@ def test_venues_are_recognised(organizer):
 )
 def test_real_prospects_are_not_flagged(organizer):
     assert looks_like_venue(organizer) is False
+
+
+# ------------------------------------------- заглушка вместо числа участников
+#
+# Из живого прогона: «Сила ветра — 270020 человек» на дне открытых дверей.
+# Организаторы ставят гигантский лимит, когда ограничения нет.
+
+
+def test_implausible_limit_is_not_a_number_of_people():
+    """Такое число хуже отсутствующего: выглядит как факт и попадёт в письмо."""
+    value, source = parse_attendees({"registration_data": {"tickets_limit": 270020}})
+
+    assert value is None
+    assert source == "лимит не задан"
+
+
+def test_plausible_limit_survives():
+    assert parse_attendees({"registration_data": {"tickets_limit": 650}})[0] == 650
+
+
+def test_sold_count_is_trusted_even_if_large():
+    """Проданные билеты — факт, а не заглушка."""
+    assert parse_attendees({"registration_data": {"sold_count": 25000}})[0] == 25000
+
+
+# ------------------------------------------------------------- категории
+
+
+def test_categories_parsed_from_dicts():
+    event = parse_event(raw_event(categories=[{"id": 1, "name": "Бизнес"}, {"name": "IT"}]))
+    assert event.categories == ["Бизнес", "IT"]
+
+
+def test_categories_tolerate_junk():
+    assert parse_categories({"categories": None}) == []
+    assert parse_categories({"categories": [{}, {"name": "  "}, "Кино"]}) == ["Кино"]
+
+
+def test_category_histogram_counts_and_sorts():
+    events = [
+        _event(organizer="A", when=date(2025, 11, 1)),
+        _event(organizer="B", when=date(2025, 11, 2)),
+        _event(organizer="C", when=date(2025, 11, 3)),
+    ]
+    events[0].categories = ["Бизнес"]
+    events[1].categories = ["Бизнес"]
+    events[2].categories = ["Концерт"]
+
+    histogram = category_histogram(build_expectations(events, today=TODAY))
+
+    assert histogram[0] == ("Бизнес", 2)
+
+
+def test_filter_by_categories_matches_substring_case_insensitively():
+    business = _event(organizer="A")
+    business.categories = ["Бизнес и предпринимательство"]
+    concert = _event(organizer="B")
+    concert.categories = ["Концерты"]
+    expectations = build_expectations([business, concert], today=TODAY)
+
+    kept = filter_by_categories(expectations, ["бизнес"])
+
+    assert [e.organizer for e in kept] == ["A"]
+
+
+def test_empty_filter_keeps_everything():
+    expectations = build_expectations([_event()], today=TODAY)
+    assert filter_by_categories(expectations, []) == expectations
+
+
+# ------------------------------------------------- одна компания — одна строка
+
+
+def test_dedupe_keeps_the_open_window_over_the_bigger_event():
+    """Писать надо тому, кому пора, а не тому, у кого мероприятие крупнее."""
+    soon = _event(organizer="Ромашка", when=date(2025, 11, 12), attendees=300)
+    bigger_later = _event(organizer="Ромашка", when=date(2026, 3, 5), attendees=5000)
+
+    [exp] = dedupe_by_organizer(build_expectations([soon, bigger_later], today=TODAY))
+
+    assert exp.is_open is True
+    assert exp.max_attendees == 300
+    # Мартовское мероприятие 2026 года к концу июля уже прошло, поэтому
+    # его повторение ждём в марте 2027 — оно и уходит в примечание.
+    assert "март 2027" in exp.other_occasions
+
+
+def test_dedupe_keeps_different_companies_apart():
+    events = [_event(organizer="Ромашка"), _event(organizer="Синий Кит")]
+    assert len(dedupe_by_organizer(build_expectations(events, today=TODAY))) == 2
+
+
+def test_repeat_years_are_listed_once_each():
+    """В выводе было «2024, 2024, 2024, 2024, 2025, 2025» — считалось верно,
+    печаталось лишнее."""
+    events = [
+        _event(when=date(2024, 11, 5)),
+        _event(when=date(2024, 11, 12)),
+        _event(when=date(2025, 11, 9)),
+    ]
+    [exp] = build_expectations(events, today=TODAY)
+
+    text = format_table([exp], today=TODAY)
+
+    assert "2024, 2025" in text
+    assert "2024, 2024" not in text

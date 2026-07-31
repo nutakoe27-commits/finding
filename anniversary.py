@@ -77,6 +77,9 @@ class Event:
     attendees_source: str
     city: str | None
     url: str | None
+    # Категории Timepad — самый точный доступный признак того, деловое это
+    # мероприятие или концерт. Точнее любых догадок по названию организатора.
+    categories: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -96,6 +99,8 @@ class Expectation:
     # относительно сегодня, а тесты ломались бы на следующий день.
     today: date
     history: list[Event] = field(default_factory=list)
+    # Другие месяцы этого же организатора — после схлопывания в одну строку.
+    other_occasions: list[str] = field(default_factory=list)
 
     @property
     def is_open(self) -> bool:
@@ -104,6 +109,10 @@ class Expectation:
     @property
     def days_to_open(self) -> int:
         return (self.window_opens - self.today).days
+
+    @property
+    def categories(self) -> list[str]:
+        return self.last_event.categories
 
     @property
     def confidence(self) -> float:
@@ -133,6 +142,13 @@ def _first(source: Any, *paths: str) -> Any:
     return None
 
 
+# Выше этого числа «заявленные места» — не масштаб, а заглушка: организаторы
+# ставят гигантский лимит, когда ограничения нет. В живом прогоне так вылезли
+# «270020 человек» на дне открытых дверей. Такое число хуже отсутствующего:
+# оно выглядит как факт и попадает в письмо.
+IMPLAUSIBLE_ATTENDEES = 20_000
+
+
 def parse_attendees(raw: dict[str, Any]) -> tuple[int | None, str]:
     """Сколько человек было. Возвращает (число, откуда взято).
 
@@ -147,6 +163,9 @@ def parse_attendees(raw: dict[str, Any]) -> tuple[int | None, str]:
 
     limit = _first(raw, "registration_data.tickets_limit", "registration_data.places_limit")
     if isinstance(limit, int) and limit > 0:
+        if limit >= IMPLAUSIBLE_ATTENDEES:
+            # Заглушка «лимита нет», а не масштаб. Честнее не знать.
+            return None, "лимит не задан"
         return limit, "заявлено мест"
 
     # Иногда лимит лежит в типах билетов — суммируем.
@@ -159,6 +178,23 @@ def parse_attendees(raw: dict[str, Any]) -> tuple[int | None, str]:
             return total, "сумма по типам билетов"
 
     return None, "неизвестно"
+
+
+def parse_categories(raw: dict[str, Any]) -> list[str]:
+    """Названия категорий события.
+
+    Timepad кладёт их списком словарей; берём человекочитаемое имя — по нему
+    и фильтруем, потому что числовые id пришлось бы выяснять отдельно.
+    """
+    values = raw.get("categories")
+    if not isinstance(values, list):
+        return []
+    names = []
+    for item in values:
+        name = item.get("name") if isinstance(item, dict) else item
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+    return names
 
 
 def parse_event(raw: dict[str, Any]) -> Event | None:
@@ -183,6 +219,7 @@ def parse_event(raw: dict[str, Any]) -> Event | None:
         attendees_source=source,
         city=_first(raw, "location.city", "location.address"),
         url=raw.get("url"),
+        categories=parse_categories(raw),
     )
 
 
@@ -452,6 +489,10 @@ VENUE_MARKERS = (
     "кино", "фильмофонд", "киношкол", "киноклуб", "прокатн",
     # образование и просвещение — их мероприятия это лекции, не корпоративы
     "школа", "курсы", "академи", "институт", "университет", "лекторий",
+    "гимнази", "колледж", "цдт", "гбоу", "приемная комиссия", "вгик",
+    # ДК, КДЦ и концертные организации — протекли в живом прогоне
+    "дк ", "кдц", "москонцерт", "палата", "мастерская", "хор", "оркестр",
+    "спектакл", "филармон", "дом кино", "кинематограф",
     # фестивали как организаторы — это событие, а не компания-заказчик
     "фестиваль", "fest", "выставка",
 )
@@ -521,6 +562,64 @@ def build_expectations(events: list[Event], *, today: date) -> list[Expectation]
     return expectations
 
 
+def dedupe_by_organizer(expectations: list[Expectation]) -> list[Expectation]:
+    """Одна компания — одна строка.
+
+    Группировка по месяцу верна по смыслу: весенний форум и декабрьский
+    корпоратив — разные поводы. Но для списка, по которому ищут контакты,
+    три строки одной компании это шум. Оставляем ближайшее по окну и самое
+    крупное, остальные месяцы уходят в примечание.
+    """
+    best: dict[str, Expectation] = {}
+    extra: dict[str, list[str]] = {}
+    for exp in expectations:
+        key = exp.organizer_id or exp.organizer
+        current = best.get(key)
+        if current is None:
+            best[key] = exp
+            continue
+        # Открытое окно важнее размера: писать надо тому, кому пора.
+        better = (exp.is_open, exp.max_attendees or 0) > (
+            current.is_open,
+            current.max_attendees or 0,
+        )
+        loser, winner = (current, exp) if better else (exp, current)
+        best[key] = winner
+        extra.setdefault(key, []).append(
+            f"{MONTHS_NOM[loser.expected_at.month - 1]} {loser.expected_at.year}"
+        )
+    for key, months in extra.items():
+        best[key].other_occasions = sorted(set(months))
+    return list(best.values())
+
+
+def category_histogram(expectations: list[Expectation]) -> list[tuple[str, int]]:
+    """Какие категории встречаются и сколько раз.
+
+    Нужно, чтобы подобрать фильтр по фактам, а не на глаз: один прогон
+    показывает словарь категорий, дальше он превращается в --categories.
+    """
+    counts: dict[str, int] = {}
+    for exp in expectations:
+        for name in exp.categories or ["(без категории)"]:
+            counts[name] = counts.get(name, 0) + 1
+    return sorted(counts.items(), key=lambda kv: -kv[1])
+
+
+def filter_by_categories(
+    expectations: list[Expectation], keep: list[str]
+) -> list[Expectation]:
+    """Оставить только те, у кого категория совпадает с одной из указанных."""
+    wanted = [k.strip().lower() for k in keep if k.strip()]
+    if not wanted:
+        return expectations
+    return [
+        exp
+        for exp in expectations
+        if any(w in c.lower() for c in exp.categories for w in wanted)
+    ]
+
+
 def rank(expectations: list[Expectation]) -> list[Expectation]:
     """Сначала те, кому писать пора, потом по масштабу и повторяемости."""
     return sorted(
@@ -564,8 +663,12 @@ def format_table(expectations: list[Expectation], *, today: date) -> str:
         lines.append(f"{index}. {exp.organizer}  [{timing}]")
         lines.append(f"   Было: «{last.title}» — {last.starts_at}, {scale}")
         if exp.repeats > 1:
-            years = ", ".join(str(e.starts_at.year) for e in reversed(exp.history))
+            years = ", ".join(sorted({str(e.starts_at.year) for e in exp.history}))
             lines.append(f"   Повторяется {exp.repeats} г.: {years} — уверенность выше")
+        if exp.other_occasions:
+            lines.append(f"   Ещё мероприятия этой компании: {', '.join(exp.other_occasions)}")
+        if exp.categories:
+            lines.append(f"   Категории: {', '.join(exp.categories)}")
         lines.append(f"   Ожидаем: {when}. Уверенность {exp.confidence:.2f}")
         if last.url:
             lines.append(f"   {last.url}")
@@ -636,6 +739,21 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=0,
         help="заглянуть дальше открытого окна на N дней (кому писать через месяц-другой)",
+    )
+    parser.add_argument(
+        "--categories",
+        help="оставить только эти категории Timepad, через запятую "
+             "(сначала посмотрите --show-categories)",
+    )
+    parser.add_argument(
+        "--show-categories",
+        action="store_true",
+        help="напечатать, какие категории встречаются и как часто — по ним подбирается фильтр",
+    )
+    parser.add_argument(
+        "--no-dedupe",
+        action="store_true",
+        help="не схлопывать несколько мероприятий одной компании в одну строку",
     )
     parser.add_argument(
         "--keep-venues",
@@ -735,7 +853,25 @@ def main(argv: list[str] | None = None) -> int:
         )
     print()
 
-    expectations = rank(build_expectations(big, today=today))
+    expectations = build_expectations(big, today=today)
+
+    if args.show_categories:
+        print("Категории среди крупных мероприятий (по убыванию частоты):\n")
+        for name, count in category_histogram(expectations):
+            print(f"  {count:5}  {name}")
+        print("\nОтобрать деловые можно так:")
+        print("  python anniversary.py --categories 'бизнес,ит,конференц'")
+        return 0
+
+    if args.categories:
+        before = len(expectations)
+        expectations = filter_by_categories(expectations, args.categories.split(","))
+        print(f"Фильтр по категориям: {before} -> {len(expectations)}\n")
+
+    if not args.no_dedupe:
+        expectations = dedupe_by_organizer(expectations)
+
+    expectations = rank(expectations)
     print(format_table(expectations, today=today))
 
     if args.csv:
