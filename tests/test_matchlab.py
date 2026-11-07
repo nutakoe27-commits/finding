@@ -1,7 +1,11 @@
 from datetime import date, timedelta
 import json
 from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
+import subprocess
 import tempfile
+from threading import Thread
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -13,7 +17,7 @@ from matchlab.backtest import metrics, run_backtest, save_report
 from matchlab.config import Settings
 from matchlab.data import import_file, parse_csv
 from matchlab.model import GoalModel
-from matchlab.qwen import explain
+from matchlab.qwen import check_connection, explain
 from matchlab.storage import Repository
 
 
@@ -219,6 +223,17 @@ class BacktestTests(unittest.TestCase):
 
 
 class QwenTests(unittest.TestCase):
+    def response(self, body, status=200):
+        return httpx.Response(status, json=body, request=httpx.Request("POST", "http://127.0.0.1:23333/v1/chat/completions"))
+
+    def invoke(self, response, settings=None):
+        settings = settings or Settings(Path("/unused"), "http://127.0.0.1:23333/v1", "local-model")
+        with patch("matchlab.qwen.httpx.Client") as client:
+            mock = client.return_value.__enter__.return_value
+            mock.post.return_value = response
+            result = explain(settings, {"probabilities": {"home": .5, "draw": .2, "away": .3}})
+            return result, mock.post.call_args
+
     def test_forwarded_openai_endpoint_and_probabilities(self):
         settings = Settings(Path("/unused"), "http://127.0.0.1:8000/v1", "local-model", "private-test-key")
         forecast = {"probabilities": {"home": .5, "draw": .2, "away": .3}}
@@ -232,6 +247,74 @@ class QwenTests(unittest.TestCase):
         self.assertEqual(args[0], "http://127.0.0.1:8000/v1/chat/completions")
         self.assertEqual(json.loads(kwargs["json"]["messages"][1]["content"])["forecast"], forecast)
         self.assertEqual(kwargs["json"]["model"], "local-model")
+        self.assertNotIn("chat_template_kwargs", kwargs["json"])
+
+    def test_vllm_thinking_can_be_disabled_explicitly(self):
+        settings = Settings(Path("/unused"), "http://127.0.0.1:23333/v1", "local-model", qwen_enable_thinking=False, qwen_max_tokens=2048)
+        result, args = self.invoke(self.response({"choices": [{"message": {"content": "Ответ"}, "finish_reason": "stop"}]}), settings)
+        self.assertEqual(result, "Ответ")
+        self.assertEqual(args.kwargs["json"]["chat_template_kwargs"], {"enable_thinking": False})
+        self.assertEqual(args.kwargs["json"]["max_tokens"], 2048)
+        self.assertFalse(args.kwargs["json"]["stream"])
+
+    def test_reasoning_only_response_has_actionable_error(self):
+        with self.assertRaisesRegex(ValueError, "QWEN_ENABLE_THINKING=false"):
+            self.invoke(self.response({"choices": [{"message": {"content": None, "reasoning_content": "private reasoning"}, "finish_reason": "stop"}]}))
+
+    def test_token_exhaustion_is_distinct_from_connection_failure(self):
+        with self.assertRaisesRegex(ValueError, "лимита токенов"):
+            self.invoke(self.response({"choices": [{"message": {"content": ""}, "finish_reason": "length"}]}))
+
+    def test_invalid_json_is_distinct_from_wrong_schema(self):
+        html = httpx.Response(200, text="<html>private-test-key</html>", request=httpx.Request("POST", "http://127.0.0.1:23333/v1/chat/completions"))
+        with self.assertRaisesRegex(ValueError, "не JSON") as error:
+            self.invoke(html)
+        self.assertNotIn("private-test-key", str(error.exception))
+        with self.assertRaisesRegex(ValueError, "не содержит сообщение"):
+            self.invoke(self.response({"result": "not a chat completion"}))
+
+    def test_incomplete_thinking_is_not_exposed(self):
+        with self.assertRaisesRegex(ValueError, "только рассуждения") as error:
+            self.invoke(self.response({"choices": [{"message": {"content": "<think>private reasoning"}}]}))
+        self.assertNotIn("private reasoning", str(error.exception))
+
+    def test_connection_failure_is_sanitized_and_identified(self):
+        settings = Settings(Path("/unused"), "http://host.docker.internal:23333/v1", "local-model")
+        with patch("matchlab.qwen.httpx.Client") as client:
+            client.return_value.__enter__.return_value.post.side_effect = httpx.ConnectError("DNS error; private-test-key")
+            with self.assertRaisesRegex(ValueError, "127.0.0.1") as error:
+                explain(settings, {})
+        self.assertNotIn("private-test-key", str(error.exception))
+
+    def test_url_credentials_are_rejected_without_echoing_them(self):
+        for url in ("http://user:private-test-key@localhost:23333/v1", "http://localhost:23333/v1?key=private-test-key", "localhost:23333/v1"):
+            with self.subTest(url=url), patch("matchlab.qwen.httpx.Client") as client:
+                with self.assertRaises(ValueError) as error:
+                    explain(Settings(Path("/unused"), url, "local-model"), {})
+                self.assertNotIn("private-test-key", str(error.exception))
+                client.assert_not_called()
+
+    def test_diagnostics_require_both_discovery_and_real_completion(self):
+        settings = Settings(Path("/unused"), "http://127.0.0.1:23333/v1", "local-model", "private-test-key", qwen_enable_thinking=False)
+        with patch("matchlab.qwen.httpx.Client") as client:
+            mock = client.return_value.__enter__.return_value
+            mock.get.return_value = self.response({"data": [{"id": "local-model"}]})
+            mock.post.return_value = self.response({"choices": [{"message": {"content": "ОК"}, "finish_reason": "stop"}]})
+            report = check_connection(settings)
+            self.assertEqual(report["chat_completions"], "ok")
+            self.assertEqual(report["response_characters"], 2)
+            self.assertTrue(mock.get.called)
+            self.assertTrue(mock.post.called)
+            self.assertNotIn("private-test-key", json.dumps(report))
+
+    def test_wrong_model_is_diagnosed_before_generation(self):
+        settings = Settings(Path("/unused"), "http://127.0.0.1:23333/v1", "wrong-model")
+        with patch("matchlab.qwen.httpx.Client") as client:
+            mock = client.return_value.__enter__.return_value
+            mock.get.return_value = self.response({"data": [{"id": "actual-model"}]})
+            with self.assertRaisesRegex(ValueError, "QWEN_MODEL не найден"):
+                check_connection(settings)
+            mock.post.assert_not_called()
 
     def test_upstream_error_does_not_expose_response_or_key(self):
         settings = Settings(Path("/unused"), "http://127.0.0.1:8000/v1", "local-model", "private-test-key")
@@ -242,6 +325,73 @@ class QwenTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "HTTP 401") as error:
                 explain(settings, {})
         self.assertNotIn("private-test-key", str(error.exception))
+
+
+class QwenSettingsTests(unittest.TestCase):
+    def test_vllm_env_settings_are_parsed(self):
+        with patch("matchlab.config.load_dotenv"), patch.dict("os.environ", {
+            "QWEN_ENABLE_THINKING": "false", "QWEN_MAX_TOKENS": "2048",
+        }, clear=True):
+            settings = Settings.from_env()
+            self.assertIs(settings.qwen_enable_thinking, False)
+            self.assertEqual(settings.qwen_max_tokens, 2048)
+
+    def test_invalid_thinking_value_is_rejected(self):
+        with patch("matchlab.config.load_dotenv"), patch.dict("os.environ", {
+            "QWEN_ENABLE_THINKING": "maybe",
+        }, clear=True):
+            with self.assertRaisesRegex(ValueError, "true или false"):
+                Settings.from_env()
+
+
+class QwenCLITests(unittest.TestCase):
+    def test_cli_uses_real_http_and_does_not_create_database(self):
+        calls = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def reply(self, payload):
+                encoded = json.dumps(payload).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def do_GET(self):
+                calls.append((self.path, None))
+                self.reply({"data": [{"id": "test-vllm-model"}]})
+
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                calls.append((self.path, payload))
+                self.reply({"choices": [{"message": {"content": "ОК"}, "finish_reason": "stop"}]})
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                data_dir = Path(directory) / "should-not-exist"
+                environment = dict(os.environ, QWEN_BASE_URL=f"http://127.0.0.1:{server.server_port}/v1",
+                                   QWEN_MODEL="test-vllm-model", QWEN_API_KEY="private-test-key",
+                                   QWEN_ENABLE_THINKING="false", QWEN_MAX_TOKENS="2048",
+                                   MATCHLAB_DATA_DIR=str(data_dir), NO_PROXY="127.0.0.1")
+                import sys
+                result = subprocess.run([sys.executable, "-m", "matchlab", "check-qwen"],
+                                        env=environment, capture_output=True, text=True, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["chat_completions"], "ok")
+                self.assertNotIn("private-test-key", result.stdout + result.stderr)
+                self.assertFalse(data_dir.exists())
+                self.assertEqual([item[0] for item in calls], ["/v1/models", "/v1/chat/completions"])
+                self.assertEqual(calls[1][1]["chat_template_kwargs"], {"enable_thinking": False})
+        finally:
+            server.shutdown()
+            server.server_close()
+            worker.join(timeout=5)
 
 
 if __name__ == "__main__":

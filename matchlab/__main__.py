@@ -7,6 +7,7 @@ from .backtest import run_backtest, save_report
 from .config import Settings
 from .data import download_seasons, import_file, validate_season
 from .storage import Repository
+from .qwen import check_connection
 
 
 def main():
@@ -22,11 +23,15 @@ def main():
     backtest = sub.add_parser("backtest")
     backtest.add_argument("--seasons", nargs="+", default=["2425", "2526"], type=validate_season)
     sub.add_parser("status")
+    sub.add_parser("check-qwen", help="Check /models and a real completion without exposing the API key")
     args = parser.parse_args()
     settings = Settings.from_env()
-    repo = Repository(settings.database)
-    repo.initialize()
     try:
+        if args.command == "check-qwen":
+            print(json.dumps(check_connection(settings), ensure_ascii=False, indent=2))
+            return
+        repo = Repository(settings.database)
+        repo.initialize()
         if args.command == "download":
             results = download_seasons(repo, settings.data_dir / "raw", args.seasons)
             print(json.dumps(results, ensure_ascii=False, indent=2))
