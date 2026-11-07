@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111411" />
+    <title>Matchlab — футбольная аналитика</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <a class="brand" href="#forecast" aria-label="Matchlab, главная"
+        ><span class="brand-mark"
+          >m<span
+            ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 13 13 3M3 3h10v10" /></svg></span></span
+        >matchlab<span class="brand-dot">.</span></a
+      >
+      <div class="workspace-label">ИССЛЕДОВАТЕЛЬСКАЯ СРЕДА</div>
+      <nav aria-label="Разделы">
+        <a href="#forecast" class="nav-link active"
+          ><span>◉</span> Прогноз матча
+          <span class="nav-arrow"
+            ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 13 13 3M3 3h10v10" /></svg></span
+        ></a>
+        <a href="#validation" class="nav-link"
+          ><span>▥</span> Проверка модели</a
+        >
+        <a href="#data" class="nav-link"><span>▦</span> Источники данных</a>
+      </nav>
+      <div class="sidebar-note">
+        <span class="tiny-label">НАША ЗАДАЧА</span>
+        <p>Сначала проверить.<br />Потом доверять.</p>
+        <div class="mini-pitch"><i></i><b></b><span></span></div>
+      </div>
+      <div class="qwen-status">
+        <span id="qwen-dot" class="status-dot"></span>
+        <div>
+          <strong>Qwen</strong
+          ><small id="qwen-state">Проверяем подключение</small>
+        </div>
+        <span class="qwen-icon">✳</span>
+      </div>
+      <div class="sidebar-footer">Версия 0.1 <span>PRE-MATCH ONLY</span></div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <span class="live-dot"></span> Лаборатория прогнозов
+          <span class="slash">/</span> Футбол
+        </div>
+        <span class="prototype-badge">ИСТОРИЧЕСКИЙ ПРОТОТИП</span>
+      </header>
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">ДАННЫЕ. ВЕРОЯТНОСТИ. ПРОВЕРКА.</p>
+          <h1>У матча есть <em>цифры.</em></h1>
+          <p class="subtitle">Исследуем футбол с помощью статистики и ИИ.</p>
+        </div>
+        <div class="league-badge">
+          <span class="league-symbol">♜</span>
+          <div>Premier League<small>АНГЛИЯ · ИСХОД 1X2</small></div>
+        </div>
+      </section>
+
+      <div id="global-error" class="notice error" role="alert" hidden></div>
+      <div id="data-warning" class="notice" hidden></div>
+
+      <section class="summary-grid" aria-label="Состояние исследования">
+        <article class="summary-card">
+          <span class="tiny-label">МАТЧЕЙ В ИСТОРИИ</span
+          ><strong id="stat-matches">—</strong
+          ><span id="stat-period" class="muted">Загружаем данные</span>
+        </article>
+        <article class="summary-card">
+          <span class="tiny-label">ПОСЛЕДНИЙ РЕЗУЛЬТАТ</span
+          ><strong id="stat-latest">—</strong
+          ><span class="muted">Дата в загруженной выборке</span>
+        </article>
+        <article class="summary-card">
+          <span class="tiny-label">ПРОВЕРЕНО НА МАТЧАХ</span
+          ><strong id="stat-tested">—</strong
+          ><span id="stat-tested-note" class="muted">Проверяем отчёт</span>
+        </article>
+        <article class="summary-card">
+          <span class="tiny-label">ИСТОЧНИК КОЭФФИЦИЕНТОВ</span
+          ><strong class="text-stat"
+            >Ручной ввод
+            <span
+              ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 13 13 3M3 3h10v10" /></svg></span></strong
+          ><span class="muted">Поток букмекеров не подключён</span>
+        </article>
+      </section>
+
+      <section id="forecast" class="forecast-grid">
+        <article class="panel selection-panel">
+          <div class="panel-heading">
+            <h2>Сценарий матча</h2>
+            <span class="step-label">01 / ВЫБОР</span>
+          </div>
+          <p class="panel-description">
+            Выберите соперников и дату расчёта. Расписание реальных встреч пока
+            не подключено.
+          </p>
+          <form id="forecast-form">
+            <label for="as-of">Дата расчёта</label
+            ><input id="as-of" type="date" required />
+            <label for="home-team">Хозяева</label
+            ><select id="home-team" required aria-label="Команда хозяев">
+              <option value="">Загружаем команды…</option>
+            </select>
+            <div class="versus">
+              <span></span
+              ><button
+                type="button"
+                id="swap-teams"
+                title="Поменять команды местами"
+                aria-label="Поменять команды местами"
+              >
+                ⇅</button
+              ><span></span>
+            </div>
+            <label for="away-team">Гости</label
+            ><select id="away-team" required aria-label="Команда гостей">
+              <option value="">Загружаем команды…</option>
+            </select>
+            <details id="odds-details">
+              <summary>Добавить коэффициенты <span>+</span></summary>
+              <p class="small muted">
+                Введите три текущих коэффициента. Для расчёта на прошлую дату
+                ручной ввод недоступен.
+              </p>
+              <div class="odds-inputs">
+                <label
+                  >П1<input
+                    id="odds-home"
+                    type="number"
+                    min="1.001"
+                    max="1000"
+                    step="any"
+                    placeholder="—"
+                    inputmode="decimal" /></label
+                ><label
+                  >Ничья<input
+                    id="odds-draw"
+                    type="number"
+                    min="1.001"
+                    max="1000"
+                    step="any"
+                    placeholder="—"
+                    inputmode="decimal" /></label
+                ><label
+                  >П2<input
+                    id="odds-away"
+                    type="number"
+                    min="1.001"
+                    max="1000"
+                    step="any"
+                    placeholder="—"
+                    inputmode="decimal"
+                /></label>
+              </div>
+            </details>
+            <button
+              id="predict-button"
+              class="primary-button"
+              type="submit"
+              disabled
+            >
+              Рассчитать вероятности
+              <span
+                ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3 13 13 3M3 3h10v10" /></svg
+              ></span>
+            </button>
+            <div
+              id="forecast-error"
+              class="form-error"
+              role="alert"
+              hidden
+            ></div>
+          </form>
+          <div class="model-caption">
+            <span class="status-dot green"></span> Модель Пуассона · история
+            голов
+          </div>
+        </article>
+
+        <article
+          class="panel result-panel"
+          aria-live="polite"
+          aria-busy="false"
+        >
+          <div class="panel-heading">
+            <h2>Картина матча</h2>
+            <span id="result-tag" class="subtle-badge">РУЧНОЙ СЦЕНАРИЙ</span>
+          </div>
+          <div id="result-empty" class="empty-state">
+            <div class="empty-ball">◉</div>
+            <h3>Начнём с соперников</h3>
+            <p>
+              Рассчитайте вероятности на основе<br />реальной истории матчей
+              АПЛ.
+            </p>
+          </div>
+          <div id="result-content" hidden>
+            <div class="match-heading">
+              <div>
+                <div id="home-monogram" class="team-mark home-mark"></div>
+                <h3 id="result-home"></h3>
+                <span>ХОЗЯЕВА</span>
+              </div>
+              <div class="match-vs">VS<small id="result-date"></small></div>
+              <div>
+                <div id="away-monogram" class="team-mark away-mark"></div>
+                <h3 id="result-away"></h3>
+                <span>ГОСТИ</span>
+              </div>
+            </div>
+            <div class="probability-grid">
+              <div>
+                <span>Победа хозяев</span
+                ><strong id="prob-home" class="lime"></strong>
+              </div>
+              <div><span>Ничья</span><strong id="prob-draw"></strong></div>
+              <div>
+                <span>Победа гостей</span
+                ><strong id="prob-away" class="blue"></strong>
+              </div>
+            </div>
+            <div
+              class="probability-bar"
+              role="img"
+              aria-label="Распределение вероятностей"
+            >
+              <span id="bar-home"></span><span id="bar-draw"></span
+              ><span id="bar-away"></span>
+            </div>
+            <div class="goals-row">
+              <span
+                >Ожидаемые голы модели
+                <span
+                  class="info-label"
+                  title="Расчёт модели по голам, а не событийный показатель xG"
+                  >ⓘ</span
+                ></span
+              ><strong id="expected-goals"></strong>
+            </div>
+            <div class="scores-row">
+              <span class="tiny-label">ВЕРОЯТНЫЕ СЧЕТА</span>
+              <div id="scorelines" class="score-chips"></div>
+            </div>
+            <div id="market-result" class="market-result" hidden></div>
+            <div id="training-note" class="training-note"></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel ai-panel">
+        <div class="ai-intro">
+          <div class="ai-symbol">✳</div>
+          <div>
+            <h2>Второй взгляд — от Qwen</h2>
+            <p>
+              Объяснение статистики. Ваши заметки будут отмечены как
+              непроверенные.
+            </p>
+          </div>
+          <span id="ai-badge" class="subtle-badge">ОЖИДАЕТ ПОДКЛЮЧЕНИЯ</span>
+        </div>
+        <div class="ai-controls">
+          <label class="sr-only" for="notes"
+            >Дополнительные сведения о матче</label
+          ><textarea
+            id="notes"
+            maxlength="6000"
+            rows="2"
+            placeholder="Необязательно: добавьте сведения о составе или новость со ссылкой…"
+          ></textarea
+          ><button
+            type="button"
+            id="explain-button"
+            class="secondary-button"
+            disabled
+          >
+            Объяснить прогноз
+            <span
+              ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 13 13 3M3 3h10v10" /></svg
+            ></span>
+          </button>
+        </div>
+        <p id="ai-hint" class="small muted">
+          Статистическая модель работает независимо от подключения ИИ.
+        </p>
+        <div id="explanation" class="explanation" hidden></div>
+      </section>
+
+      <section id="validation" class="panel validation-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ДОВЕРИЕ ЧЕРЕЗ ПРОВЕРКУ</p>
+            <h2>Как модель проходит историю</h2>
+          </div>
+          <span class="subtle-badge">ТОЛЬКО ПРОШЛЫЕ ДАННЫЕ</span>
+        </div>
+        <p class="panel-description">
+          Каждый месяц проверяется на модели, обученной до его начала.
+          Сравниваем с частотами исходов в обучающей выборке.
+        </p>
+        <div id="backtest-empty" class="notice" hidden></div>
+        <div id="backtest-content" hidden>
+          <div class="validation-grid">
+            <div class="metric-list">
+              <div class="metric-header">
+                <span>МЕТРИКА</span><span>МОДЕЛЬ</span><span>БАЗОВАЯ</span>
+              </div>
+              <div class="metric-row">
+                <span>Log loss <small>меньше — лучше</small></span
+                ><strong id="metric-log"></strong><span id="base-log"></span>
+              </div>
+              <div class="metric-row">
+                <span>Brier score <small>шкала 0–2, меньше — лучше</small></span
+                ><strong id="metric-brier"></strong
+                ><span id="base-brier"></span>
+              </div>
+              <div class="metric-row">
+                <span>Верный исход <small>максимальная вероятность</small></span
+                ><strong id="metric-accuracy"></strong
+                ><span id="base-accuracy"></span>
+              </div>
+              <p id="backtest-period" class="small muted"></p>
+            </div>
+            <div class="calibration">
+              <div class="chart-heading">
+                Вероятность и реальность <span>КАЛИБРОВКА</span>
+              </div>
+              <svg
+                id="calibration-chart"
+                viewBox="0 0 360 180"
+                role="img"
+                aria-label="Калибровка вероятностей: предсказанная частота и наблюдаемая"
+              ></svg>
+              <div class="chart-legend">
+                <span><i class="legend-square"></i>Наблюдаемая частота</span
+                ><span><i class="legend-line"></i>Идеальное совпадение</span>
+              </div>
+            </div>
+          </div>
+          <div class="validation-footer">
+            <span id="skip-note"></span
+            ><strong>Доходность не подтверждена</strong>
+          </div>
+        </div>
+      </section>
+
+      <section id="data" class="panel data-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ПРОИСХОЖДЕНИЕ И ОГРАНИЧЕНИЯ</p>
+            <h2>Данные без чёрного ящика</h2>
+          </div>
+          <span class="subtle-badge">ENGLAND / E0</span>
+        </div>
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Сезон</th>
+                <th>Матчей</th>
+                <th>Источник</th>
+                <th>Получено</th>
+              </tr>
+            </thead>
+            <tbody id="sources-table"></tbody>
+          </table>
+        </div>
+        <div class="data-disclaimer">
+          Источник исходных результатов — Football-Data.co.uk. Доступное зеркало
+          — datasets/football-datasets. Лицензия зеркала для данных лиг: PDDL
+          1.0. Новости, составы, расписание и поток коэффициентов пока не
+          подключены.
+        </div>
+      </section>
+      <footer class="page-footer">
+        <span class="footer-brand">matchlab.</span
+        ><span
+          >Вероятности — инструмент исследования. Качество модели проверяем на
+          новых матчах.</span
+        ><a href="/docs"
+          >API
+          <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 13 13 3M3 3h10v10" /></svg
+        ></a>
+      </footer>
+    </main>
+  </body>
+</html>
