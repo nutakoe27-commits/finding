@@ -6,11 +6,23 @@ const state = {
   teamsLoading: false,
   teamsRequest: 0,
   forecastRequest: 0,
+  selectedQuote: null,
+  bookmakerRequest: 0,
 };
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const localDate = (value) =>
   new Date(`${value}T12:00:00Z`).toLocaleDateString("ru-RU");
 const seasonLabel = (value) => `20${value.slice(0, 2)}/${value.slice(2)}`;
+const bookmakerName = (source) =>
+  ({ betboom: "BetBoom", winline: "Winline" })[source] || source;
+const moscowTime = (value) =>
+  new Date(value).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 const today = new Intl.DateTimeFormat("en-CA", {
   year: "numeric",
   month: "2-digit",
@@ -135,14 +147,22 @@ function renderForecast(result) {
   state.forecast = result;
   $("result-empty").hidden = true;
   $("result-content").hidden = false;
-  $("result-tag").textContent = result.historical_scenario
-    ? "ИСТОРИЧЕСКИЙ СЦЕНАРИЙ"
-    : "РУЧНОЙ СЦЕНАРИЙ";
-  $("result-home").textContent = result.home;
-  $("result-away").textContent = result.away;
-  $("home-monogram").textContent = result.home.slice(0, 3).toUpperCase();
-  $("away-monogram").textContent = result.away.slice(0, 3).toUpperCase();
-  $("result-date").textContent = localDate(result.as_of);
+  $("result-tag").textContent = result.quote_id
+    ? `${bookmakerName(result.market.source)} / СНИМОК`
+    : result.historical_scenario
+      ? "ИСТОРИЧЕСКИЙ СЦЕНАРИЙ"
+      : "РУЧНОЙ СЦЕНАРИЙ";
+  $("result-home").textContent = result.home_label || result.home;
+  $("result-away").textContent = result.away_label || result.away;
+  $("home-monogram").textContent = (result.home_label || result.home)
+    .slice(0, 3)
+    .toUpperCase();
+  $("away-monogram").textContent = (result.away_label || result.away)
+    .slice(0, 3)
+    .toUpperCase();
+  $("result-date").textContent = result.kickoff_at
+    ? moscowTime(result.kickoff_at)
+    : localDate(result.as_of);
   for (const key of ["home", "draw", "away"]) {
     $("prob-" + key).textContent = percent(result.probabilities[key]);
     $("bar-" + key).style.width = `${result.probabilities[key] * 100}%`;
@@ -162,7 +182,10 @@ function renderForecast(result) {
   );
   const training = result.training;
   $("training-note").textContent =
-    `Обучение: ${training.matches.toLocaleString("ru-RU")} матчей с ${localDate(training.first_match)} по ${localDate(training.last_match)}. Учтены только результаты до ${localDate(training.before)}. Расписание встречи не проверялось.`;
+    `Обучение: ${training.matches.toLocaleString("ru-RU")} матчей с ${localDate(training.first_match)} по ${localDate(training.last_match)}. Учтены только результаты до ${localDate(training.before)}. ` +
+    (result.quote_id
+      ? "Пара и коэффициенты взяты из выбранного снимка букмекера."
+      : "Расписание встречи не проверялось.");
   renderMarket(result.market);
   $("explanation").hidden = true;
   $("explain-button").disabled = !state.qwen;
@@ -174,7 +197,8 @@ function renderMarket(market) {
   container.replaceChildren();
   if (!market) return;
   const title = document.createElement("div");
-  title.textContent = `Ручные коэффициенты · маржа ${(market.overround * 100).toFixed(1)}%`;
+  const captured = ["betboom", "winline"].includes(market.source);
+  title.textContent = `${captured ? bookmakerName(market.source) + " · " + moscowTime(market.observed_at) + " МСК" : "Ручные коэффициенты"} · маржа ${(market.overround * 100).toFixed(1)}%`;
   container.append(title);
   const table = document.createElement("table");
   const header = document.createElement("tr");
@@ -206,7 +230,12 @@ function renderMarket(market) {
   const note = document.createElement("div");
   note.className = "muted small";
   note.textContent =
-    "Коэффициенты не проверены у букмекера. EV — расчёт из вероятностей модели, доходность не подтверждена.";
+    (captured
+      ? market.is_stale
+        ? "Устаревший снимок: цена сейчас может отличаться. "
+        : "Коэффициенты наблюдались на публичной странице. "
+      : "Коэффициенты не проверены у букмекера. ") +
+    "EV — расчёт из вероятностей модели, доходность не подтверждена.";
   container.append(note);
 }
 
@@ -334,9 +363,10 @@ $("forecast-form").addEventListener("submit", async (event) => {
     away: $("away-team").value,
     as_of: $("as-of").value,
   };
+  if (state.selectedQuote) payload.quote_id = state.selectedQuote.id;
   const values = ["home", "draw", "away"].map((key) => $("odds-" + key).value);
   try {
-    if (values.some(Boolean)) {
+    if (!state.selectedQuote && values.some(Boolean)) {
       if (!values.every(Boolean))
         throw new Error(
           "Заполните все три коэффициента или оставьте все поля пустыми.",
@@ -365,6 +395,7 @@ $("forecast-form").addEventListener("submit", async (event) => {
 });
 
 $("swap-teams").addEventListener("click", () => {
+  clearQuote();
   const home = $("home-team").value;
   $("home-team").value = $("away-team").value;
   $("away-team").value = home;
@@ -377,8 +408,12 @@ for (const id of [
   "odds-draw",
   "odds-away",
 ])
-  $(id).addEventListener("change", invalidateForecast);
+  $(id).addEventListener("change", () => {
+    clearQuote();
+    invalidateForecast();
+  });
 $("as-of").addEventListener("change", () => {
+  clearQuote();
   invalidateForecast();
   const historical = $("as-of").value !== today;
   for (const key of ["home", "draw", "away"]) {
@@ -432,9 +467,138 @@ async function init() {
     $("ai-badge").textContent = state.qwen
       ? "АДРЕС НАСТРОЕН"
       : "ОЖИДАЕТ ПОДКЛЮЧЕНИЯ";
-    await Promise.all([loadTeams(), loadBacktest()]);
+    await Promise.all([loadTeams(), loadBacktest(), loadBookmakers()]);
   } catch (error) {
     showError("global-error", `Не удалось загрузить данные: ${error.message}`);
   }
 }
+
+function clearQuote() {
+  state.selectedQuote = null;
+  $("quote-selection").hidden = true;
+  for (const key of ["home", "draw", "away"])
+    $("odds-" + key).disabled = $("as-of").value !== today;
+}
+
+async function chooseQuote(quote) {
+  invalidateForecast();
+  state.selectedQuote = quote;
+  $("as-of").value = quote.observed_at.slice(0, 10);
+  await loadTeams();
+  if (state.selectedQuote !== quote) return;
+  $("home-team").value = quote.model_teams[0];
+  $("away-team").value = quote.model_teams[1];
+  if (!$("home-team").value || !$("away-team").value) {
+    clearQuote();
+    showError(
+      "forecast-error",
+      "Нет подходящей истории команд на дату снимка.",
+    );
+    return;
+  }
+  for (const key of ["home", "draw", "away"]) {
+    $("odds-" + key).value = "";
+    $("odds-" + key).disabled = true;
+  }
+  $("quote-selection-text").textContent =
+    `${bookmakerName(quote.source)} · ${moscowTime(quote.observed_at)} МСК`;
+  $("quote-selection").hidden = false;
+  $("forecast-form").requestSubmit();
+  $("forecast").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadBookmakers() {
+  const requestId = ++state.bookmakerRequest;
+  const query = new URLSearchParams({
+    include_started: String($("bookmaker-archive").checked),
+  });
+  if ($("bookmaker-source").value)
+    query.set("source", $("bookmaker-source").value);
+  try {
+    const data = await api("/api/bookmakers?" + query);
+    if (requestId !== state.bookmakerRequest) return;
+    showError("bookmaker-error", "");
+    $("bookmaker-empty").hidden = data.quotes.length > 0;
+    const all = data.status.sources;
+    const observations = all.reduce(
+      (total, source) => total + source.snapshots,
+      0,
+    );
+    $("bookmaker-summary").textContent =
+      `${data.quotes.length} котировок в списке · ${observations} наблюдений в истории. ` +
+      all
+        .map(
+          (source) =>
+            `${bookmakerName(source.source)}: ${source.events} событий`,
+        )
+        .join(" · ");
+    if (all.length) {
+      $("stat-odds-source").textContent = all
+        .map((source) => bookmakerName(source.source))
+        .join(" · ");
+      $("stat-odds-note").textContent = "Снимки публичной линии";
+    }
+    $("bookmaker-rows").replaceChildren(
+      ...data.quotes.map((quote) => {
+        const row = document.createElement("tr");
+        row.dataset.source = quote.source;
+        const cell = (text, className) => {
+          const td = document.createElement("td");
+          td.textContent = text;
+          if (className) td.className = className;
+          row.append(td);
+          return td;
+        };
+        const match = cell(`${quote.home} — ${quote.away}`, "bookmaker-match");
+        const league = document.createElement("small");
+        league.textContent = quote.competition;
+        match.append(league);
+        cell(moscowTime(quote.kickoff_at));
+        cell(bookmakerName(quote.source));
+        for (const key of ["home", "draw", "away"])
+          cell(quote.odds[key].toFixed(2), "odds-value");
+        const timestamp = cell(
+          moscowTime(quote.observed_at),
+          quote.is_stale ? "stale-quote" : "lime",
+        );
+        const freshness = document.createElement("small");
+        freshness.textContent = quote.started
+          ? "Матч начался"
+          : quote.is_stale
+            ? "Устаревший снимок"
+            : "Получен недавно";
+        timestamp.append(freshness);
+        const action = cell("");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "quote-button";
+        button.textContent = "Рассчитать";
+        button.disabled = !quote.prediction_available;
+        button.title = quote.unavailable_reason;
+        button.addEventListener("click", () => chooseQuote(quote));
+        action.append(button);
+        if (!quote.prediction_available) {
+          const why = document.createElement("small");
+          why.textContent = quote.unavailable_reason;
+          action.append(why);
+        }
+        return row;
+      }),
+    );
+  } catch (error) {
+    if (requestId === state.bookmakerRequest)
+      showError("bookmaker-error", error.message);
+  }
+}
+
+$("quote-clear").addEventListener("click", () => {
+  clearQuote();
+  invalidateForecast();
+});
+$("bookmaker-refresh").addEventListener("click", loadBookmakers);
+$("bookmaker-source").addEventListener("change", loadBookmakers);
+$("bookmaker-archive").addEventListener("change", loadBookmakers);
+setInterval(() => {
+  if (document.visibilityState === "visible") loadBookmakers();
+}, 30000);
 init();

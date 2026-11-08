@@ -1,13 +1,13 @@
 import argparse
+from contextlib import nullcontext
 from datetime import date
 import json
 from pathlib import Path
+import sys
 
-from .backtest import run_backtest, save_report
 from .config import Settings
 from .data import download_seasons, import_file, validate_season
 from .storage import Repository
-from .qwen import check_connection
 
 
 def main():
@@ -24,15 +24,27 @@ def main():
     backtest.add_argument("--seasons", nargs="+", default=["2425", "2526"], type=validate_season)
     sub.add_parser("status")
     sub.add_parser("check-qwen", help="Check /models and a real completion without exposing the API key")
+    bookmaker_import = sub.add_parser("import-bookmakers", help="Append validated 90-minute football snapshots from a capture or normalized JSON")
+    bookmaker_import.add_argument("file", nargs="?", type=Path)
+    bookmaker_import.add_argument("--stdin", action="store_true")
     args = parser.parse_args()
     settings = Settings.from_env()
     try:
         if args.command == "check-qwen":
+            from .qwen import check_connection
             print(json.dumps(check_connection(settings), ensure_ascii=False, indent=2))
             return
         repo = Repository(settings.database)
         repo.initialize()
-        if args.command == "download":
+        if args.command == "import-bookmakers":
+            if bool(args.file) == args.stdin:
+                parser.error("Укажите файл или --stdin.")
+            with args.file.open("rb") if args.file else nullcontext(sys.stdin.buffer) as stream:
+                content = stream.read(16 * 1024 * 1024 + 1)
+            if len(content) > 16 * 1024 * 1024:
+                raise ValueError("Файл больше 16 MiB. Используйте нормализованный экспорт.")
+            print(json.dumps(repo.import_bookmakers(json.loads(content)), ensure_ascii=False, indent=2))
+        elif args.command == "download":
             results = download_seasons(repo, settings.data_dir / "raw", args.seasons)
             print(json.dumps(results, ensure_ascii=False, indent=2))
             if any(result["status"] != "imported" for result in results):
@@ -42,6 +54,7 @@ def main():
         elif args.command == "import-csv":
             print(json.dumps({"imported": import_file(repo, args.file, args.season)}, ensure_ascii=False))
         elif args.command == "backtest":
+            from .backtest import run_backtest, save_report
             report = run_backtest(repo, args.seasons)
             save_report(report, settings.report)
             print(json.dumps({k: report[k] for k in ("model", "baseline", "selected_matches", "skipped_matches", "profitability_verified")}, ensure_ascii=False, indent=2))

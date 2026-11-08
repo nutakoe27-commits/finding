@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from collections import OrderedDict
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 import math
 from pathlib import Path
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 from .config import Settings
 from .model import GoalModel
 from . import qwen
+from .bookmakers import instant, model_teams
 from .storage import Repository, utc_now
 
 STATIC = Path(__file__).parent / "static"
@@ -25,11 +26,14 @@ class ForecastRequest(BaseModel):
     away: str = Field(min_length=1, max_length=100)
     as_of: date = Field(default_factory=date.today)
     odds: dict[str, float] | None = None
+    quote_id: str | None = Field(default=None, min_length=1, max_length=64)
 
     @model_validator(mode="after")
     def validate_request(self):
         if self.home == self.away:
             raise ValueError("Выберите разные команды.")
+        if self.quote_id and self.odds is not None:
+            raise ValueError("Выберите снимок букмекера или ручные коэффициенты.")
         if self.odds is not None:
             if set(self.odds) != {"home", "draw", "away"}:
                 raise ValueError("Нужны три коэффициента: home, draw, away.")
@@ -85,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured},
+                "bookmakers": repo.bookmaker_status(),
                 "live_fixtures": False, "live_odds": False}
 
     @app.get("/api/teams")
@@ -105,25 +110,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/forecast")
     def forecast(request: ForecastRequest):
         before = min(request.as_of, date.today())
+        quote = repo.bookmaker_quote(request.quote_id) if request.quote_id else None
+        if request.quote_id:
+            if quote is None:
+                raise HTTPException(404, "Снимок коэффициентов не найден.")
+            canonical = model_teams(quote)
+            if canonical != (request.home, request.away):
+                raise HTTPException(422, "Команды или лига не соответствуют выбранному снимку АПЛ.")
+            if instant(quote["kickoff_at"]) <= datetime.now(timezone.utc):
+                raise HTTPException(409, "Матч уже начался. Предматчевый расчёт по этому снимку закрыт.")
+            before = instant(quote["observed_at"]).date()
         try:
             model, revision = model_for(before)
             prediction = model.predict(request.home, request.away)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         payload = {"id": uuid4().hex, "generated_at": utc_now(), "home": request.home, "away": request.away,
-                   "as_of": request.as_of.isoformat(), "historical_scenario": request.as_of < date.today(),
-                   "fixture_verified": False, "dataset_revision": revision, **prediction, "market": None}
-        if request.odds:
-            total = sum(1 / v for v in request.odds.values())
+                   "as_of": before.isoformat() if quote else request.as_of.isoformat(), "historical_scenario": before < date.today(),
+                   "fixture_verified": bool(quote), "dataset_revision": revision, **prediction, "market": None}
+        prices = quote["odds"] if quote else request.odds
+        if prices:
+            total = sum(1 / v for v in prices.values())
             payload["market"] = {
-                "source": "manual input; not verified with bookmaker", "observed_at": payload["generated_at"],
-                "odds": request.odds, "overround": total - 1,
-                "probabilities": {k: (1 / v) / total for k, v in request.odds.items()},
-                "model_ev": {k: prediction["probabilities"][k] * v - 1 for k, v in request.odds.items()},
+                "source": quote["source"] if quote else "manual input; not verified with bookmaker",
+                "observed_at": quote["observed_at"] if quote else payload["generated_at"],
+                "odds": prices, "overround": total - 1,
+                "probabilities": {k: (1 / v) / total for k, v in prices.items()},
+                "model_ev": {k: prediction["probabilities"][k] * v - 1 for k, v in prices.items()},
                 "profitability_verified": False,
             }
+        if quote:
+            payload.update(quote_id=quote["id"], kickoff_at=quote["kickoff_at"], home_label=quote["home"], away_label=quote["away"])
+            payload["market"].update(parser_version=quote["parser_version"], provenance="captured public DOM", is_stale=(datetime.now(timezone.utc) - instant(quote["observed_at"])).total_seconds() > 300)
         repo.save_forecast(payload)
         return payload
+
+    @app.get("/api/bookmakers")
+    def bookmakers(include_started: bool = False, source: str | None = None):
+        if source not in (None, "betboom", "winline"):
+            raise HTTPException(422, "Неизвестный букмекер.")
+        current = datetime.now(timezone.utc)
+        result = []
+        for quote in repo.bookmaker_quotes(include_started=include_started, source=source):
+            canonical = model_teams(quote)
+            reason = "Модель пока поддерживает только АПЛ с известными командами."
+            eligible = False
+            if canonical:
+                try:
+                    model, _ = model_for(instant(quote["observed_at"]).date())
+                    eligible = model.eligible(*canonical)
+                    reason = "" if eligible else "Недостаточно истории этой команды в АПЛ."
+                except ValueError as exc:
+                    reason = str(exc)
+            started = instant(quote["kickoff_at"]) <= current
+            if started:
+                eligible, reason = False, "Матч уже начался."
+            age = max(0, int((current - instant(quote["observed_at"])).total_seconds()))
+            result.append({**quote, "model_teams": list(canonical) if canonical else None,
+                           "prediction_available": eligible, "unavailable_reason": reason,
+                           "age_seconds": age, "is_stale": age > 300, "started": started})
+        return {"quotes": result, "status": repo.bookmaker_status(), "freshness_seconds": 300,
+                "coverage": "captured visible football pre-match 1X2 cards"}
 
     @app.get("/api/forecasts")
     def forecasts():

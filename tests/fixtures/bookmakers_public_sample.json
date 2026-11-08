@@ -1,0 +1,946 @@
+{
+  "format": "matchlab.bookmaker-capture.v1",
+  "started_at": "2026-11-08T09:10:30.421625+00:00",
+  "finished_at": "2026-11-08T09:13:35.044404+00:00",
+  "sources": [
+    "betboom",
+    "winline"
+  ],
+  "records": [
+    {
+      "source": "betboom",
+      "kind": "public_dom",
+      "url": "https://betboom.ru/",
+      "observed_at": "2026-11-08T09:11:17.340656+00:00",
+      "payload": {
+        "text": "CS2. IEM Beijing 2026\nThe MongolZ\nHLTV: 15\nMOUZ\nHLTV: 4\n0\n0\n0\n2\n3-я карта\nBO5\nП1\n12.0\nП2\n1.02\nФутбол. Италия. Серия A\n\nНаполи\n\n4-2-4\n\nСегодня\n14:30\n\nЛацио\n\n9-1-0\n\nП1\n2.31\nX\n3.65\nП2\n2.9\nТеннис. ATP 1000. Париж. Хард. Франция\n\nШелтон Б.\n\nATP: 4\n\nСегодня\n17:00\nЛичные встречи: 1-3\n\nАлькарас К.\n\nATP: 3\n\nП1\n4.1\nП2\n1.25\nФутбол. Россия. Премьер-лига\n\nЗенит\n\n10-0-3\n\nСегодня\n18:30\n\nРостов\n\n5-3-5\n\nП1\n1.43\nX\n4.8\nП2\n7.6\nФутбол\nХоккей\nКибер\nТеннис\nБаскетбол\nНастольный теннис\nВолейбол\nФормула-1\nФутбол. Россия. Премьер-лига\nКрылья Советов\n3-6-4\nОренбург\n3-8-2\nСегодня в 14:00\nП1\n2.55\nX\n3.4\nП2\n2.85\nЕщё\n+ 1389\nФутбол. Италия. Серия A\nНаполи\n4-2-4\nЛацио\n9-1-0\nСегодня в 14:30\nП1\n2.31\nX\n3.65\nП2\n2.9\nЕщё\n+ 1458\nФутбол. Россия. Премьер-лига\nСпартак М\n8-2-3\nАкрон\n2-6-5\nСегодня в 16:15\nП1\n1.27\nX\n6.6\nП2\n10.0\nЕщё\n+ 1374\nФутбол. Англия. Премьер-лига\nБрайтон\n6-1-2\nБрентфорд\n3-5-1\nСегодня в 17:00\nП1\n1.9\nX\n3.85\nП2\n3.75\nЕщё\n+ 1523\nФутбол. Италия. Серия A\nДженоа\n4-1-5\nМилан\n6-3-1\nСегодня в 17:00\nП1\n3.95\nX\n3.35\nП2\n1.99\nЕщё\n+ 1440",
+        "nodes": []
+      },
+      "sports_candidate": true,
+      "sha256": "9becddc9ef64da43f69946cb911100f011a0b4a101b22a263483f3e761fad5af"
+    },
+    {
+      "source": "betboom",
+      "kind": "public_dom",
+      "url": "https://betboom.ru/",
+      "observed_at": "2026-11-08T09:11:35.533214+00:00",
+      "payload": {
+        "text": "CS2. IEM Beijing 2026\nThe MongolZ\nHLTV: 15\nMOUZ\nHLTV: 4\n0\n0\n0\n2\n3-я карта\nBO5\nП1\n12.0\nП2\n1.02\nФутбол. Италия. Серия A\n\nНаполи\n\n4-2-4\n\nСегодня\n14:30\n\nЛацио\n\n9-1-0\n\nП1\n2.31\nX\n3.65\nП2\n2.9\nТеннис. ATP 1000. Париж. Хард. Франция\n\nШелтон Б.\n\nATP: 4\n\nСегодня\n17:00\nЛичные встречи: 1-3\n\nАлькарас К.\n\nATP: 3\n\nП1\n4.1\nП2\n1.25\nФутбол. Россия. Премьер-лига\n\nЗенит\n\n10-0-3\n\nСегодня\n18:30\n\nРостов\n\n5-3-5\n\nП1\n1.43\nX\n4.8\nП2\n7.6\nФутбол\nХоккей\nКибер\nТеннис\nБаскетбол\nНастольный теннис\nВолейбол\nФормула-1\nФутбол. Россия. Премьер-лига\nКрылья Советов\n3-6-4\nОренбург\n3-8-2\nСегодня в 14:00\nП1\n2.55\nX\n3.4\nП2\n2.85\nЕщё\n+ 1389\nФутбол. Италия. Серия A\nНаполи\n4-2-4\nЛацио\n9-1-0\nСегодня в 14:30\nП1\n2.31\nX\n3.65\nП2\n2.9\nЕщё\n+ 1458\nФутбол. Россия. Премьер-лига\nСпартак М\n8-2-3\nАкрон\n2-6-5\nСегодня в 16:15\nП1\n1.27\nX\n6.6\nП2\n10.0\nЕщё\n+ 1374\nФутбол. Англия. Премьер-лига\nБрайтон\n6-1-2\nБрентфорд\n3-5-1\nСегодня в 17:00\nП1\n1.9\nX\n3.85\nП2\n3.75\nЕщё\n+ 1523\nФутбол. Италия. Серия A\nДженоа\n4-1-5\nМилан\n6-3-1\nСегодня в 17:00\nП1\n3.95\nX\n3.35\nП2\n1.99\nЕщё\n+ 1440\nФутбол. Англия. Премьер-лига\nКристал Пэлас\n2-1-6\nЛиверпуль\n4-3-2\nСегодня в 17:00\nП1\n5.2\nX\n4.5\nП2\n1.57\nЕщё\n+ 1420",
+        "nodes": []
+      },
+      "sports_candidate": true,
+      "sha256": "841949215722576d5d0acbb6b9fedf4409c360a24b7e420b2a039d7a53976d2a"
+    },
+    {
+      "source": "betboom",
+      "kind": "public_dom",
+      "url": "https://betboom.ru/sport/football/128/216",
+      "observed_at": "2026-11-08T09:11:38.559707+00:00",
+      "payload": {
+        "text": "Футбол\nАнглия. Премьер-лига\nБрайтон\n6-1-2\nБрентфорд\n3-5-1\nСегодня в 17:00\nП1\n1.9\nX\n3.85\nП2\n3.75\n+ 1523\nИпсвич Таун\n3-2-4\nБорнмут\n3-3-3\nСегодня в 17:00\nП1\n3.8\nX\n3.7\nП2\n1.94\n+ 1424\nКристал Пэлас\n2-1-6\nЛиверпуль\n4-3-2\nСегодня в 17:00\nП1\n5.2\nX\n4.5\nП2\n1.57\n+ 1420\nСандерленд\n1-2-6\nЧелси\n5-1-3\nСегодня в 17:00\nП1\n3.45\nX\n3.6\nП2\n2.07\n+ 1482\nМанчестер Юн\n1-4-4\nАстон Вилла\n3-3-3\nСегодня в 19:30\nП1\n2.16\nX\n3.75\nП2\n3.1\n+ 1521\nМанчестер Сити\n7-0-3\nФулхэм\n2-4-4\n21 ноября в 15:30\nП1\n1.45\nX\n4.8\nП2\n5.8\n+ 664\nАстон Вилла\n3-3-3\nСандерленд\n1-2-6\n21 ноября в 18:00\nП1\n1.73\nX\n3.75\nП2\n4.4\n+ 664\nБорнмут\n3-3-3\nНоттингем Форест\n2-3-5\n21 ноября в 18:00\nП1\n2.05\nX\n3.45\nП2\n3.4\n+ 665\nКовентри Сити\n3-0-7\nКристал Пэлас\n2-1-6\n21 ноября в 18:00\nП1\n2.44\nX\n3.45\nП2\n2.7\n+ 668\nТоттенхэм\n3-3-4\nИпсвич Таун\n3-2-4\n21 ноября в 18:00\nП1\n1.52\nX\n4.4\nП2\n5.4\n+ 665",
+        "nodes": []
+      },
+      "sports_candidate": true,
+      "sha256": "8bbf68ca1aaef835c5506477409fc2a25946ba0d99f058f4d07a9419d920fab2"
+    },
+    {
+      "source": "betboom",
+      "kind": "public_dom",
+      "url": "https://betboom.ru/sport/football/128/216/6300646",
+      "observed_at": "2026-11-08T09:11:41.599321+00:00",
+      "payload": {
+        "text": "Футбол\n/\nАнглия. Премьер-лига\nБрайтон\n6-1-2\nСегодня\n17:00\nБрентфорд\n3-5-1\nВсе\nИсход\nТотал\nФора\nГолы\nУгловые\nЖёлтые карточки\nИнтервалы\nУдары в створ\nСчёт\nЭкспресс\nУдары\nМультиголы\nУдаления\nИгроки\nИсход\nОсновное время\nП1\n1.9\nX\n3.85\nП2\n3.75\nП1\n98%\nX\n1%\nП2\n1%\nДосрочная победа в 2 гол (а)\nП1\n1.79\nX\n3.7\nП2\n3.3\nДосрочная победа в 3 гол (а)\nП1\n1.86\nX\n3.7\nП2\n3.65\n1-й тайм: Двойной шанс\n1Х\n1.22\n12\n1.48\nХ2\n1.5\n2-й тайм: Двойной шанс\n1Х\n1.26\n12\n1.37\nХ2\n1.57\n2-й тайм: Брайтон не пропустит\nДа\n1.84\nНет\n1.79\nКом.1 выиграет оба тайма\nОсновное время\nДа\n4.9\nНет\n1.14\n1-й тайм: Брайтон не пропустит\nДа\n1.61\nНет\n2.1\nКом.2 сухая победа\nОсновное время\nДа\n6.6\nНет\n1.08\nКом.2 выиграет хотя бы один тайм\nОсновное время\nДа\n2.16\nНет\n1.62\nКом.1 выиграет хотя бы один тайм\nОсновное время\nДа\n1.44\nНет\n2.6\nКом.1 не пропустит\nДа\n3.1\nНет\n1.32\nДвойной шанс\nОсновное время\n1Х\n1.28\n12\n1.28\nХ2\n1.86\nДосрочная победа в 1 гол (а)\nП1\n1.41\nX\n3.55\nП2\n1.99\n1-й тайм: Исход\nП1\n2.36\nХ\n2.44\nП2\n4.1\n2-й тайм: Исход\nП1\n2.21\nХ\n2.85\nП2\n3.65\n1-й тайм/Матч\nОсновное время\nП1/П1\n2.65\nП1/Х\n13.0\nП1/П2\n35.0\nХ/П1\n5.0\nХ/Х\n6.0\nХ/П2\n8.6\nП2/П1\n22.0\nП2/Х\n14.0\nП2/П2\n5.8\nОдна из команд победит\nОсновное время\nДа\n1.26\nНет\n3.4\nКом.2 выиграет оба тайма\nОсновное время\nДа\n9.4\nНет\n1.03\nКом.1 сухая победа\nОсновное время\nДа\n3.65\nНет\n1.24\n1-й тайм: Брентфорд не пропустит\nДа\n2.07\nНет\n1.62\n2-й тайм: Брентфорд не пропустит\nДа\n2.43\nНет\n1.45\nКом.2 не пропустит\nДа\n5.0\nНет\n1.13",
+        "nodes": []
+      },
+      "sports_candidate": true,
+      "sha256": "002f45a644be37cd83f5082ed90428a50d11ca77f24f8fe26cf6f60e0ade6417"
+    },
+    {
+      "source": "winline",
+      "kind": "public_dom",
+      "url": "https://winline.ru/",
+      "observed_at": "2026-11-08T09:10:38.012266+00:00",
+      "payload": {
+        "text": "Матч дня\nРПЛ\nСпартак М - Акрон Тольятти \nСегодня\n16:15\n1\n1.26\nX\n6.40\n2\n9.60\nАмур \nБарыс \n1\n0\n1.19\nМ\n1.5\nБ\n4.20\n3П 0'\n5x4\nТотал (осн. время)\nTHE MONGOLZ \nMOUZ \n0\n2\n6\n13\n2К\n3.14\n1.37\nПер.2\n+137\nПобедитель (3 карта)\nБарселона \nБреоган \n1.18\n4.90\nСегодня 14:00\n+138\nКрылья Советов \nОренбург \n2.50\n3.40\n2.80\nСегодня 14:00\n+156\nНефтехимик \nЛокомотив \n3.40\n4.15\n1.92\nСегодня 14:00\n+98\nТрактор \nАвтомобилист \n2.50\n4.20\n2.42\nСегодня 14:00\n+97\nНаполи \nЛацио \n2.31\n3.65\n2.90\nСегодня 14:30\n+206\nТВ\nЦСКА \nЗенит СПб \n1.26\n3.90\nСегодня 15:30\n+137\nБрюгге \nАндерлехт \n1.53\n4.70\n5.00\nСегодня 15:30\n+178\nАнадолу Эфес \nТофаш Бурса \n1.15\n4.50\nСегодня 15:30\n+109\nЧехия \nШвейцария \n2.02\n4.10\n2.95\nСегодня 15:30\n+78\nТвенте \nАякс \n1.95\n4.00\n3.35\nСегодня 16:30\n+198\nТВ\nГермания \nСловакия \n2.25\n4.00\n2.60\nСегодня 16:45\n+69\nДженоа \nМилан \n3.95\n3.35\n1.99\nСегодня 17:00\n+205\nТВ\nМонца \nАталанта \n3.40\n3.90\n2.00\nСегодня 17:00\n+206\nРенн \nЛилль \n2.35\n3.50\n2.95\nСегодня 17:00\n+194\nШелтон Б. \nАлькарас К. \n4.00\n1.25\nСегодня 17:00\n+53\nСандерленд \nЧелси \n3.45\n3.60\n2.07\nСегодня 17:00\n+207\nКристал Пэлас \nЛиверпуль \n5.20\n4.50\n1.57\nСегодня 17:00\n+210\nСочи \nДинамо Минск \n4.40\n4.40\n1.67\nСегодня 17:00\n+100\nРоссия (до20) \nБеларусь (до20) \n1.02\n17.0\n25.0\nСегодня 17:00\n+54\nКёльн \nБайер Л \n4.00\n4.10\n1.79\nСегодня 17:30\n+208\nЗенит СПб \nРостов \n1.42\n4.70\n7.60\nСегодня 18:30\n+212\nКамбюр \nПСВ Эйндховен \n6.20\n5.60\n1.39\nСегодня 18:45\n+202\nБрест \nЛион \n2.80\n3.40\n2.50\nСегодня 19:15\n+193\nЛе Ман \nМонако \n5.00\n3.95\n1.68\nСегодня 19:15\n+196\nМанчестер Юнайтед \nАстон Вилла \n2.16\n3.75\n3.10\nСегодня 19:30\n+207\nФинляндия \nШвеция \n2.36\n4.00\n2.46\nСегодня 19:30\n+76\nВиктория Плзень \nСпарта Прага \n2.60\n3.45\n2.46\nСегодня 20:00\n+120\n",
+        "nodes": [
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093915"
+            },
+            "text": "Амур \nБарыс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17111003"
+            },
+            "text": "THE MONGOLZ \nMOUZ "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17085854"
+            },
+            "text": "Барселона \nБреоган "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17021113"
+            },
+            "text": "Крылья Советов \nОренбург "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093949"
+            },
+            "text": "Нефтехимик \nЛокомотив "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093952"
+            },
+            "text": "Трактор \nАвтомобилист "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065924"
+            },
+            "text": "Наполи \nЛацио "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065012"
+            },
+            "text": "ЦСКА \nЗенит СПб "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17066634"
+            },
+            "text": "Брюгге \nАндерлехт "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17103356"
+            },
+            "text": "Анадолу Эфес \nТофаш Бурса "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17101541"
+            },
+            "text": "Чехия \nШвейцария "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17013664"
+            },
+            "text": "Твенте \nАякс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17114078"
+            },
+            "text": "Германия \nСловакия "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065920"
+            },
+            "text": "Дженоа \nМилан "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065922"
+            },
+            "text": "Монца \nАталанта "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015371"
+            },
+            "text": "Ренн \nЛилль "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17113655"
+            },
+            "text": "Шелтон Б. \nАлькарас К. "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17006967"
+            },
+            "text": "Сандерленд \nЧелси "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17007033"
+            },
+            "text": "Кристал Пэлас \nЛиверпуль "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093951"
+            },
+            "text": "Сочи \nДинамо Минск "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17116995"
+            },
+            "text": "Россия (до20) \nБеларусь (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015394"
+            },
+            "text": "Кёльн \nБайер Л "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17021115"
+            },
+            "text": "Зенит СПб \nРостов "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17013673"
+            },
+            "text": "Камбюр \nПСВ Эйндховен "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015404"
+            },
+            "text": "Брест \nЛион "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015379"
+            },
+            "text": "Ле Ман \nМонако "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17007000"
+            },
+            "text": "Манчестер Юнайтед \nАстон Вилла "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17101563"
+            },
+            "text": "Финляндия \nШвеция "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17068208"
+            },
+            "text": "Виктория Плзень \nСпарта Прага "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17064835"
+            },
+            "text": "Пучхон \nПхоханг Стилерс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065045"
+            },
+            "text": "Паю Ситизен \nЧунгнам Асан "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107803"
+            },
+            "text": "Хой Кинг \n3 Синг "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107806"
+            },
+            "text": "Централ Вестерн \nСаут Чайна "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17029260"
+            },
+            "text": "Юньнань Юкун \nУхань Шанвэнь "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17029252"
+            },
+            "text": "Циндао Хайню \nШэньчжэнь "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17102510"
+            },
+            "text": "Полокване Сити (рез) \nОрландо Пайретс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17102506"
+            },
+            "text": "Сехухуне Юнайтед (рез) \nМамелоди Сандаунс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17110800"
+            },
+            "text": "Голден Эрроус (рез) \nМарумо Галлантс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117256"
+            },
+            "text": "Дельтрас (ж) \nМакассар (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117341"
+            },
+            "text": "Расинг Бейрут (до20) \nНэжмет Аль Сахра (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117421"
+            },
+            "text": "Шанхай Порт (до20) \nУхань Три Таунс (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117422"
+            },
+            "text": "Хэнань (до20) \nШаньдун Тайшань (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17066485"
+            },
+            "text": "Слеман \nБхаянгкара "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117415"
+            },
+            "text": "Бангкапи \nПрайм Бангкок "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117411"
+            },
+            "text": "Самутсонгкхрам Сити \nСамут Сакхон "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117418"
+            },
+            "text": "Персис Соло (до20) \nБорнео (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065444"
+            },
+            "text": "Бали Юнайтед \nПерсик Кедири "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117636"
+            },
+            "text": "Сингбури Варриорс \nЧамчури Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117637"
+            },
+            "text": "Касем Бундит (унив) \nРойал Тай Эир Форс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117638"
+            },
+            "text": "Банбуенг \nКастомс Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117639"
+            },
+            "text": "Эсан Файтер \nКхонкан Мор Диндаенг "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117640"
+            },
+            "text": "Пакнампу \nПхичит Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117641"
+            },
+            "text": "Муангнонт \nПхетчхабури "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107573"
+            },
+            "text": "Гонконг \nИстерн "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117551"
+            },
+            "text": "Ксилофагу (ж) \nАполлон Лимассол (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117544"
+            },
+            "text": "Омония Никосия (ж) \nПейя Акамас 2025 (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117545"
+            },
+            "text": "Петролул 52 (ж) \nКидс Тампа 2015 Брашов (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17114464"
+            },
+            "text": "Астерас Триполис (до19) \nКаламата (до19) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117538"
+            },
+            "text": "Махар Юнайтед (до20) \nЯнгон Юнайтед (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117554"
+            },
+            "text": "ИСПЕ (до20) \nТитсар Арман (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093915"
+            },
+            "text": "Амур\nБарыс"
+          }
+        ]
+      },
+      "sports_candidate": true,
+      "sha256": "cadbc8ad67d5a88b1c9a04e2fb36e50f66d7fdfd0b2a75e6bb52b42441fdca1d"
+    },
+    {
+      "source": "winline",
+      "kind": "public_dom",
+      "url": "https://winline.ru/",
+      "observed_at": "2026-11-08T09:11:41.616094+00:00",
+      "payload": {
+        "text": "Матч дня\nРПЛ\nСпартак М - Акрон Тольятти \nСегодня\n16:15\n1\n1.26\nX\n6.40\n2\n9.60\nАмур \nБарыс \n1\n0\n1.11\nМ\n1.5\nБ\n5.50\n3П 0'\n5x4\nТотал (осн. время)\nTHE MONGOLZ \nMOUZ \n0\n2\n6\n13\n2К\n3.19\n1.36\nПер.2\n+137\nПобедитель (3 карта)\nБарселона \nБреоган \n1.18\n4.90\nСегодня 14:00\n+138\nКрылья Советов \nОренбург \n2.50\n3.40\n2.80\nСегодня 14:00\n+156\nНефтехимик \nЛокомотив \n3.40\n4.15\n1.92\nСегодня 14:00\n+98\nТрактор \nАвтомобилист \n2.50\n4.20\n2.42\nСегодня 14:00\n+97\nНаполи \nЛацио \n2.31\n3.65\n2.90\nСегодня 14:30\n+206\nТВ\nЦСКА \nЗенит СПб \n1.26\n3.90\nСегодня 15:30\n+137\nБрюгге \nАндерлехт \n1.53\n4.70\n5.00\nСегодня 15:30\n+178\nАнадолу Эфес \nТофаш Бурса \n1.15\n4.50\nСегодня 15:30\n+109\nЧехия \nШвейцария \n2.02\n4.10\n2.95\nСегодня 15:30\n+78\nТвенте \nАякс \n1.95\n4.00\n3.35\nСегодня 16:30\n+198\nТВ\nГермания \nСловакия \n2.25\n4.00\n2.60\nСегодня 16:45\n+69\nДженоа \nМилан \n3.95\n3.35\n1.99\nСегодня 17:00\n+205\nТВ\nМонца \nАталанта \n3.40\n3.90\n2.00\nСегодня 17:00\n+206\nРенн \nЛилль \n2.35\n3.50\n2.95\nСегодня 17:00\n+194\nШелтон Б. \nАлькарас К. \n4.00\n1.25\nСегодня 17:00\n+53\nСандерленд \nЧелси \n3.45\n3.60\n2.07\nСегодня 17:00\n+207\nКристал Пэлас \nЛиверпуль \n5.20\n4.50\n1.57\nСегодня 17:00\n+210\nСочи \nДинамо Минск \n4.40\n4.40\n1.67\nСегодня 17:00\n+100\nРоссия (до20) \nБеларусь (до20) \n1.02\n17.0\n25.0\nСегодня 17:00\n+54\nКёльн \nБайер Л \n4.00\n4.10\n1.79\nСегодня 17:30\n+208\nЗенит СПб \nРостов \n1.42\n4.70\n7.60\nСегодня 18:30\n+212\nКамбюр \nПСВ Эйндховен \n6.20\n5.60\n1.39\nСегодня 18:45\n+202\nБрест \nЛион \n2.80\n3.40\n2.50\nСегодня 19:15\n+193\nЛе Ман \nМонако \n5.00\n3.95\n1.68\nСегодня 19:15\n+196\nМанчестер Юнайтед \nАстон Вилла \n2.16\n3.75\n3.10\nСегодня 19:30\n+207\nФинляндия \nШвеция \n2.36\n4.00\n2.46\nСегодня 19:30\n+76\nВиктория Плзень \nСпарта Прага \n2.60\n3.45\n2.46\nСегодня 20:00\n+120\nИнтер М \nКомо \n2.03\n3.90\n3.30\nСегодня 20:00\n+206\nТВ\n",
+        "nodes": [
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093915"
+            },
+            "text": "Амур \nБарыс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17111003"
+            },
+            "text": "THE MONGOLZ \nMOUZ "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17085854"
+            },
+            "text": "Барселона \nБреоган "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17021113"
+            },
+            "text": "Крылья Советов \nОренбург "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093949"
+            },
+            "text": "Нефтехимик \nЛокомотив "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093952"
+            },
+            "text": "Трактор \nАвтомобилист "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065924"
+            },
+            "text": "Наполи \nЛацио "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065012"
+            },
+            "text": "ЦСКА \nЗенит СПб "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17066634"
+            },
+            "text": "Брюгге \nАндерлехт "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17103356"
+            },
+            "text": "Анадолу Эфес \nТофаш Бурса "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17101541"
+            },
+            "text": "Чехия \nШвейцария "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17013664"
+            },
+            "text": "Твенте \nАякс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17114078"
+            },
+            "text": "Германия \nСловакия "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065920"
+            },
+            "text": "Дженоа \nМилан "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065922"
+            },
+            "text": "Монца \nАталанта "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015371"
+            },
+            "text": "Ренн \nЛилль "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17113655"
+            },
+            "text": "Шелтон Б. \nАлькарас К. "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17006967"
+            },
+            "text": "Сандерленд \nЧелси "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17007033"
+            },
+            "text": "Кристал Пэлас \nЛиверпуль "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093951"
+            },
+            "text": "Сочи \nДинамо Минск "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17116995"
+            },
+            "text": "Россия (до20) \nБеларусь (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015394"
+            },
+            "text": "Кёльн \nБайер Л "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17021115"
+            },
+            "text": "Зенит СПб \nРостов "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17013673"
+            },
+            "text": "Камбюр \nПСВ Эйндховен "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015404"
+            },
+            "text": "Брест \nЛион "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17015379"
+            },
+            "text": "Ле Ман \nМонако "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17007000"
+            },
+            "text": "Манчестер Юнайтед \nАстон Вилла "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17101563"
+            },
+            "text": "Финляндия \nШвеция "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17068208"
+            },
+            "text": "Виктория Плзень \nСпарта Прага "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065926"
+            },
+            "text": "Интер М \nКомо "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17064835"
+            },
+            "text": "Пучхон \nПхоханг Стилерс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065045"
+            },
+            "text": "Паю Ситизен \nЧунгнам Асан "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107803"
+            },
+            "text": "Хой Кинг \n3 Синг "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107806"
+            },
+            "text": "Централ Вестерн \nСаут Чайна "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17029260"
+            },
+            "text": "Юньнань Юкун \nУхань Шанвэнь "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17029252"
+            },
+            "text": "Циндао Хайню \nШэньчжэнь "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17102510"
+            },
+            "text": "Полокване Сити (рез) \nОрландо Пайретс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17102506"
+            },
+            "text": "Сехухуне Юнайтед (рез) \nМамелоди Сандаунс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17110800"
+            },
+            "text": "Голден Эрроус (рез) \nМарумо Галлантс (рез) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117256"
+            },
+            "text": "Дельтрас (ж) \nМакассар (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117341"
+            },
+            "text": "Расинг Бейрут (до20) \nНэжмет Аль Сахра (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117421"
+            },
+            "text": "Шанхай Порт (до20) \nУхань Три Таунс (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117422"
+            },
+            "text": "Хэнань (до20) \nШаньдун Тайшань (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17066485"
+            },
+            "text": "Слеман \nБхаянгкара "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117415"
+            },
+            "text": "Бангкапи \nПрайм Бангкок "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117411"
+            },
+            "text": "Самутсонгкхрам Сити \nСамут Сакхон "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117418"
+            },
+            "text": "Персис Соло (до20) \nБорнео (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17065444"
+            },
+            "text": "Бали Юнайтед \nПерсик Кедири "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117636"
+            },
+            "text": "Сингбури Варриорс \nЧамчури Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117637"
+            },
+            "text": "Касем Бундит (унив) \nРойал Тай Эир Форс "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117638"
+            },
+            "text": "Банбуенг \nКастомс Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117639"
+            },
+            "text": "Эсан Файтер \nКхонкан Мор Диндаенг "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117640"
+            },
+            "text": "Пакнампу \nПхичит Юнайтед "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117641"
+            },
+            "text": "Муангнонт \nПхетчхабури "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17107573"
+            },
+            "text": "Гонконг \nИстерн "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117551"
+            },
+            "text": "Ксилофагу (ж) \nАполлон Лимассол (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117544"
+            },
+            "text": "Омония Никосия (ж) \nПейя Акамас 2025 (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117545"
+            },
+            "text": "Петролул 52 (ж) \nКидс Тампа 2015 Брашов (ж) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17114464"
+            },
+            "text": "Астерас Триполис (до19) \nКаламата (до19) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117538"
+            },
+            "text": "Махар Юнайтед (до20) \nЯнгон Юнайтед (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17117554"
+            },
+            "text": "ИСПЕ (до20) \nТитсар Арман (до20) "
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://winline.ru/stavki/event/17093915"
+            },
+            "text": "Амур\nБарыс"
+          }
+        ]
+      },
+      "sports_candidate": true,
+      "sha256": "5c71a1b618a86a33b92087c1b623e076a4e13120add22454912d3a28c8f8c48c"
+    }
+  ]
+}

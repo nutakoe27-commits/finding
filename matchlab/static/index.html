@@ -29,6 +29,9 @@
           ><span>▥</span> Проверка модели</a
         >
         <a href="#data" class="nav-link"><span>▦</span> Источники данных</a>
+        <a href="#bookmakers" class="nav-link"
+          ><span>≋</span> Линия букмекеров</a
+        >
       </nav>
       <div class="sidebar-note">
         <span class="tiny-label">НАША ЗАДАЧА</span>
@@ -87,13 +90,77 @@
         </article>
         <article class="summary-card">
           <span class="tiny-label">ИСТОЧНИК КОЭФФИЦИЕНТОВ</span
-          ><strong class="text-stat"
+          ><strong class="text-stat" id="stat-odds-source"
             >Ручной ввод
             <span
               ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M3 13 13 3M3 3h10v10" /></svg></span></strong
-          ><span class="muted">Поток букмекеров не подключён</span>
+          ><span class="muted" id="stat-odds-note">Ожидаем снимки линии</span>
         </article>
+      </section>
+
+      <section id="bookmakers" class="panel bookmakers-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">ПРЕДМАТЧЕВАЯ ЛИНИЯ · 1X2</p>
+            <h2>Матчи букмекеров</h2>
+          </div>
+          <span class="subtle-badge">BETBOOM / WINLINE</span>
+        </div>
+        <p class="panel-description">
+          Коэффициенты из сохранённых снимков публичных страниц. Каждый источник
+          и время получения указаны отдельно. Прогнозная модель поддерживает
+          АПЛ.
+        </p>
+        <div class="bookmaker-controls">
+          <label for="bookmaker-source" class="sr-only">Букмекер</label
+          ><select id="bookmaker-source">
+            <option value="">Все источники</option>
+            <option value="betboom">BetBoom</option>
+            <option value="winline">Winline</option></select
+          ><label class="archive-toggle"
+            ><input type="checkbox" id="bookmaker-archive" /> Показать
+            начавшиеся матчи</label
+          ><button
+            id="bookmaker-refresh"
+            type="button"
+            class="secondary-button"
+          >
+            Обновить список
+          </button>
+        </div>
+        <p id="bookmaker-summary" class="small muted">Загружаем снимки…</p>
+        <div
+          id="bookmaker-error"
+          class="notice error"
+          role="alert"
+          hidden
+        ></div>
+        <div class="data-table-wrap bookmakers-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Матч / турнир</th>
+                <th>Начало, МСК</th>
+                <th>Источник</th>
+                <th>П1</th>
+                <th>Х</th>
+                <th>П2</th>
+                <th>Снимок</th>
+                <th>Расчёт</th>
+              </tr>
+            </thead>
+            <tbody id="bookmaker-rows"></tbody>
+          </table>
+        </div>
+        <p id="bookmaker-empty" class="small muted" hidden>
+          Подходящих снимков пока нет. Линия появится после первого сбора.
+        </p>
+        <p class="small muted">
+          Снимки старше пяти минут отмечены как устаревшие. Расчёт по такому
+          снимку показывает исследовательский сценарий, а не доступную сейчас
+          цену.
+        </p>
       </section>
 
       <section id="forecast" class="forecast-grid">
@@ -103,10 +170,14 @@
             <span class="step-label">01 / ВЫБОР</span>
           </div>
           <p class="panel-description">
-            Выберите соперников и дату расчёта. Расписание реальных встреч пока
-            не подключено.
+            Выберите соперников вручную или нажмите «Рассчитать» в линии
+            букмекера.
           </p>
           <form id="forecast-form">
+            <div id="quote-selection" class="selected-quote" hidden>
+              <span id="quote-selection-text"></span
+              ><button id="quote-clear" type="button">Сбросить снимок</button>
+            </div>
             <label for="as-of">Дата расчёта</label
             ><input id="as-of" type="date" required />
             <label for="home-team">Хозяева</label
@@ -382,8 +453,9 @@
         <div class="data-disclaimer">
           Источник исходных результатов — Football-Data.co.uk. Доступное зеркало
           — datasets/football-datasets. Лицензия зеркала для данных лиг: PDDL
-          1.0. Новости, составы, расписание и поток коэффициентов пока не
-          подключены.
+          1.0. Линия BetBoom/Winline берётся из наблюдаемых публичных
+          DOM-снимков. Бинарный протокол не декодируется; доступность всей линии
+          букмекера не подтверждена. Новости и составы пока не подключены.
         </div>
       </section>
       <footer class="page-footer">

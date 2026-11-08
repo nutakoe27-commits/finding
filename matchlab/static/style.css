@@ -1337,3 +1337,124 @@ td small {
   width: 11px;
   height: 11px;
 }
+.bookmakers-panel {
+  margin-bottom: 24px;
+}
+.bookmakers-panel .eyebrow {
+  font-size: 9px;
+}
+.bookmaker-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.bookmaker-controls select {
+  background: #151a13;
+  color: var(--text);
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.bookmaker-controls .secondary-button {
+  margin-left: auto;
+}
+.archive-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.bookmakers-scroll {
+  max-height: 410px;
+  overflow: auto;
+}
+.bookmakers-scroll table {
+  min-width: 910px;
+}
+.bookmakers-scroll th {
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  padding-top: 8px;
+}
+.bookmakers-scroll td {
+  vertical-align: middle;
+}
+.bookmakers-scroll td small {
+  display: block;
+  font-size: 9px;
+  line-height: 1.5;
+  margin-top: 5px;
+  max-width: 190px;
+  white-space: normal;
+}
+.bookmaker-match {
+  min-width: 200px;
+  font-size: 12px;
+}
+.odds-value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.stale-quote {
+  color: var(--amber);
+}
+.quote-button {
+  background: #2c3824;
+  border: 1px solid #485c35;
+  color: var(--lime);
+  padding: 8px 11px;
+  font-size: 10px;
+}
+.selected-quote {
+  margin: 12px 0;
+  background: #293323;
+  border: 1px solid #465b34;
+  padding: 10px;
+  border-radius: 7px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--lime);
+}
+.selected-quote button {
+  display: block;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+  padding: 4px 0 0;
+  text-decoration: underline;
+}
+.sidebar .brand {
+  flex-shrink: 0;
+}
+@media (max-width: 900px) {
+  .sidebar nav {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .sidebar {
+    align-items: center;
+  }
+}
+@media (max-width: 650px) {
+  .bookmaker-controls {
+    gap: 12px;
+  }
+  .bookmaker-controls .secondary-button {
+    width: 100%;
+    justify-content: center;
+  }
+  .archive-toggle {
+    font-size: 10px;
+  }
+  .bookmakers-scroll {
+    max-height: 370px;
+  }
+  .sidebar nav {
+    max-width: 220px;
+  }
+}

@@ -22,11 +22,11 @@ SOURCES = {
     "winline": "https://winline.ru/",
 }
 PRIVATE_PATH = re.compile(
-    r"(?:^|/)(?:auth|login|logout|register|registration|profile|account|cabinet|cashier|payment|payments|wallet|withdrawal|bets[_-]?history[^/]*)(?:/|$)", re.I
+    r"(?:^|/)(?:auth|login|logout|register|registration|profile|account|cabinet|cashier|payment|payments|wallet|withdrawal|bets[_-]?history[^/]*|__qrator|getip|videostream)(?:/|$)", re.I
 )
 SENSITIVE_KEY = re.compile(
     r"authorization|cookie|token|password|passwd|secret|session|csrf|xsrf|api.?key|access.?key|"
-    r"email|phone|user.?id|user.?name|account|balance|payment|wallet|passport|fingerprint|device.?id", re.I
+    r"email|phone|user.?id|user.?name|account|balance|payment|wallet|passport|fingerprint|device.?id|my_ip|ip_address", re.I
 )
 SPORT_KEYS = {
     "events", "matches", "markets", "odds", "outcomes", "factors", "coefficients",
@@ -53,6 +53,9 @@ def safe_url(value: str) -> str:
         if url.port:
             host += f":{url.port}"
         path = "/[private-path]" if PRIVATE_PATH.search(url.path) else url.path
+        # Signed media URLs can embed credentials in PATH segments, not query.
+        path = re.sub(r"eyJ[\w-]+\.[\w-]+\.[\w-]+", "[redacted]", path)
+        path = re.sub(r"(?:hdntl|hdnts|token|access_token|signature|hmac)=[^/]+", "[redacted]", path, flags=re.I)
         query = urlencode([(key, "[redacted]") for key, _ in parse_qsl(url.query)])
         return urlunsplit((url.scheme, host, path, query, ""))
     except ValueError:
@@ -210,7 +213,7 @@ DOM_SCRIPT = r"""() => {
 
 async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                   executable: str | None = None, entrypoints: dict[str, str] | None = None,
-                  quiet: bool = False) -> dict:
+                  quiet: bool = False, on_batch=None, batch_seconds: float = 30) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
 
     capture = Capture(sources)
@@ -243,7 +246,8 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
             base_host = urlsplit(entrypoints[source]).hostname or ""
             own_host = host == base_host or host.endswith("." + base_host)
             candidate = sports_json(payload)
-            if own_host or candidate:
+            public_path = re.search(r"(?:^|/)(?:sports?|events?|matches|markets?|feed|odds|line|sporthub)(?:/|$)", urlsplit(url).path, re.I)
+            if candidate or (own_host and public_path):
                 capture.add(source, "http_json", url, payload, candidate)
         except (ValueError, TypeError):
             capture.stats[source]["invalid_json"] += 1
@@ -293,6 +297,7 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                 print("Используйте только публичные страницы, без входа в аккаунт. Сборщик сам ничего не нажимает и не делает ставки.", flush=True)
             deadline = asyncio.get_running_loop().time() + seconds
             last_progress = 0.0
+            last_batch = asyncio.get_running_loop().time()
             while asyncio.get_running_loop().time() < deadline:
                 for source, page in pages:
                     if page.is_closed():
@@ -306,6 +311,15 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                         except Exception:
                             capture.stats[source]["dom_read_errors"] += 1
                 current = asyncio.get_running_loop().time()
+                if on_batch and current - last_batch >= batch_seconds:
+                    completed = capture.document()
+                    # Keep the browser session, but release archived bodies and
+                    # reset per-batch budgets so a long-running feed stays live.
+                    navigation = capture.navigation.copy()
+                    capture = Capture(sources)
+                    capture.navigation = navigation
+                    last_batch = asyncio.get_running_loop().time()
+                    await on_batch(completed)
                 if not quiet and current - last_progress >= 15:
                     print("Сохранено снимков:", dict(capture.counts), flush=True)
                     last_progress = current
@@ -319,6 +333,8 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
             await browser.close()
+    if on_batch:
+        await on_batch(capture.document())
     return capture.document()
 
 

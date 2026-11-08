@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -50,6 +50,22 @@ class Repository:
                     id TEXT PRIMARY KEY,
                     generated_at TEXT NOT NULL,
                     payload TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS bookmaker_quotes (
+                    id TEXT PRIMARY KEY,
+                    event_key TEXT NOT NULL,
+                    fixture_key TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    kickoff_at TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS bookmaker_quote_event ON bookmaker_quotes(event_key, observed_at DESC);
+                CREATE TABLE IF NOT EXISTS bookmaker_imports (
+                    id TEXT PRIMARY KEY,
+                    imported_at TEXT NOT NULL,
+                    quote_count INTEGER NOT NULL,
+                    report TEXT NOT NULL
                 );
             """)
 
@@ -133,3 +149,58 @@ class Repository:
         with self.connection() as db:
             rows = db.execute("SELECT payload FROM forecasts ORDER BY generated_at DESC LIMIT ?", (limit,))
             return [json.loads(row[0]) for row in rows]
+
+    def import_bookmakers(self, document: dict) -> dict:
+        from .bookmakers import instant, load_snapshots
+
+        parsed = load_snapshots(document)
+        rows = parsed["snapshots"]
+        if len(rows) > 10000:
+            raise ValueError("Слишком много снимков в одном импорте.")
+        current = datetime.now(timezone.utc)
+        if any(instant(row["observed_at"]) > current + timedelta(minutes=2) for row in rows):
+            raise ValueError("Время получения снимка находится в будущем. Проверьте часы компьютера-сборщика.")
+        batch_id = hashlib.sha256(json.dumps(sorted(row["id"] for row in rows)).encode()).hexdigest()
+        with self.connection() as db:
+            previous = db.execute("SELECT report FROM bookmaker_imports WHERE id = ?", (batch_id,)).fetchone()
+            if previous:
+                return {**json.loads(previous[0]), "inserted": 0, "already_imported": True}
+            before = db.total_changes
+            db.executemany("INSERT OR IGNORE INTO bookmaker_quotes VALUES (?, ?, ?, ?, ?, ?, ?)", [
+                (row["id"], row["event_key"], row["fixture_key"], row["source"], row["kickoff_at"], row["observed_at"], json.dumps(row, ensure_ascii=False))
+                for row in rows
+            ])
+            report = {"batch_id": batch_id, "inserted": db.total_changes - before, "parsed_snapshots": len(rows),
+                      "events": len({row["event_key"] for row in rows}), "report": parsed["report"]}
+            db.execute("INSERT INTO bookmaker_imports VALUES (?, ?, ?, ?)",
+                       (batch_id, utc_now(), report["inserted"], json.dumps(report, ensure_ascii=False)))
+            return report
+
+    def bookmaker_quote(self, quote_id: str) -> dict | None:
+        with self.connection() as db:
+            row = db.execute("SELECT payload FROM bookmaker_quotes WHERE id = ?", (quote_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def bookmaker_quotes(self, *, include_started: bool = False, source: str | None = None) -> list[dict]:
+        from .bookmakers import iso
+        query = """WITH ranked AS (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY event_key ORDER BY observed_at DESC) AS position
+            FROM bookmaker_quotes
+        ) SELECT payload FROM ranked WHERE position = 1"""
+        params = []
+        if not include_started:
+            query += " AND kickoff_at > ?"
+            params.append(iso(datetime.now(timezone.utc)))
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+        query += " ORDER BY kickoff_at, fixture_key, source"
+        with self.connection() as db:
+            return [json.loads(row[0]) for row in db.execute(query, params)]
+
+    def bookmaker_status(self) -> dict:
+        with self.connection() as db:
+            sources = [dict(row) for row in db.execute("""SELECT source, COUNT(*) AS snapshots,
+                COUNT(DISTINCT event_key) AS events, MAX(observed_at) AS last_observed_at
+                FROM bookmaker_quotes GROUP BY source ORDER BY source""")]
+        return {"sources": sources, "live_connection_verified": False, "market": "1x2_90m"}

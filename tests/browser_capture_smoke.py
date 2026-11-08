@@ -57,7 +57,18 @@ async def run(executable):
             assert document["stats"][source]["public_dom"] >= 1
             assert document["stats"][source]["sports_candidates"] >= 2
             assert any(r["source"] == source and "Arsenal" in json.dumps(r["payload"]) for r in document["records"])
+        batches = []
+
+        async def accept_batch(document):
+            batches.append(document)
+
+        await collect(list(urls), 0.3, headless=True, executable=executable, entrypoints=urls,
+                      quiet=True, on_batch=accept_batch, batch_seconds=0)
+        assert len(batches) >= 2, 'No streaming batch/reset cycle'
+        assert any(record['kind'] == 'public_dom' for batch in batches for record in batch['records'])
+        assert all(set(batch['navigation']) == set(urls) for batch in batches)
         print("PASS: two-source real browser capture, JSON and visible DOM, timestamped records, query/body/header/form privacy")
+        print("PASS: streaming batches reset budgets while preserving browser navigation")
     finally:
         server.shutdown()
         server.server_close()
