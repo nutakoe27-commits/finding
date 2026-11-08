@@ -49,8 +49,8 @@ Nginx не останавливается. После перечитывания
 Проверка:
 
 ```bash
-curl -I http://prognozich.online/
-curl -I -H 'Host: prognozich.online' http://127.0.0.1/
+curl -sS -D - -o /dev/null http://prognozich.online/
+curl -sS -D - -o /dev/null -H 'Host: prognozich.online' http://127.0.0.1/
 systemctl is-active matchlab nginx
 ```
 
