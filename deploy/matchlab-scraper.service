@@ -1,0 +1,39 @@
+# Managed by Matchlab server scraper
+[Unit]
+Description=Matchlab minute bookmaker collector
+After=network-online.target matchlab-scraper-tunnel.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=matchlab-scraper
+Group=matchlab-scraper
+WorkingDirectory=/opt/matchlab-scraper
+EnvironmentFile=/etc/matchlab-scraper-token.env
+EnvironmentFile=/etc/matchlab-scraper.conf
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/matchlab-scraper/.venv/bin/python -m matchlab.server_scraper --interval 60 --state-dir /var/lib/matchlab-scraper
+StateDirectory=matchlab-scraper
+StateDirectoryMode=0700
+Restart=always
+RestartSec=60
+RuntimeMaxSec=6h
+TimeoutStopSec=60
+MemoryHigh=640M
+MemoryMax=768M
+CPUQuota=50%
+Nice=10
+OOMScoreAdjust=500
+TasksMax=256
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

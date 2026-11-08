@@ -211,9 +211,11 @@ DOM_SCRIPT = r"""() => {
 }"""
 
 
-async def collect(sources: list[str], seconds: float, *, headless: bool = False,
+async def collect(sources: list[str], seconds: float | None, *, headless: bool = False,
                   executable: str | None = None, entrypoints: dict[str, str] | None = None,
-                  quiet: bool = False, on_batch=None, batch_seconds: float = 30) -> dict:
+                  quiet: bool = False, on_batch=None, batch_seconds: float = 30,
+                  stop_event: asyncio.Event | None = None, block_heavy_resources: bool = False,
+                  browser_env: dict | None = None, reconnect_seconds: float | None = None) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
 
     capture = Capture(sources)
@@ -221,6 +223,13 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
     pending: set[asyncio.Task] = set()
     closing = False
     pages = []
+    transport = {source: {} for source in sources}
+    unhealthy_since = {}
+
+    def document():
+        result = capture.document()
+        result["transport"] = {source: [dict(state) for state in items.values()] for source, items in transport.items()}
+        return result
 
     async def response_received(source, response):
         try:
@@ -265,11 +274,29 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
         task.add_done_callback(pending.discard)
 
     def websocket_opened(source, websocket):
+        if PRIVATE_PATH.search(urlsplit(websocket.url).path):
+            return
         capture.endpoint(source, "websocket", websocket.url)
-        websocket.on("framereceived", lambda data: capture.frame(source, websocket.url, data))
+        state = {"url": safe_url(websocket.url), "connected": True, "opened_at": now()}
+        transport[source][safe_url(websocket.url)] = state
+
+        def received(data):
+            state["last_frame_at"] = now()
+            capture.frame(source, websocket.url, data)
+
+        def disconnected(*args):
+            state.update(connected=False, closed_at=now())
+
+        websocket.on("framereceived", received)
+        websocket.on("close", disconnected)
+        websocket.on("socketerror", disconnected)
 
     async with async_playwright() as playwright:
         launch = {"headless": headless}
+        if block_heavy_resources:
+            launch["args"] = ["--disable-gpu"]
+        if browser_env is not None:
+            launch["env"] = browser_env
         if executable:
             launch["executable_path"] = executable
         try:
@@ -279,6 +306,13 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
         try:
             # New, nonpersistent profile: no access to the user's normal cookies.
             context = await browser.new_context(locale="ru-RU", timezone_id="Europe/Moscow")
+            if block_heavy_resources:
+                async def lightweight(route):
+                    if route.request.resource_type in ("image", "media", "font"):
+                        await route.abort()
+                    else:
+                        await route.continue_()
+                await context.route("**/*", lightweight)
 
             async def open_page(source):
                 page = await context.new_page()
@@ -295,13 +329,26 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
             if not quiet:
                 print("Открыты отдельные вкладки BetBoom/Winline. Выберите футбол, предматчевую линию и откройте карточку матча.", flush=True)
                 print("Используйте только публичные страницы, без входа в аккаунт. Сборщик сам ничего не нажимает и не делает ставки.", flush=True)
-            deadline = asyncio.get_running_loop().time() + seconds
+            deadline = asyncio.get_running_loop().time() + seconds if seconds is not None else float("inf")
             last_progress = 0.0
             last_batch = asyncio.get_running_loop().time()
-            while asyncio.get_running_loop().time() < deadline:
+            while asyncio.get_running_loop().time() < deadline and not (stop_event and stop_event.is_set()):
                 for source, page in pages:
                     if page.is_closed():
-                        continue
+                        raise ValueError("Вкладка сборщика закрылась. Требуется перезапуск браузера.")
+                    if reconnect_seconds:
+                        from .worker_protocol import source_state
+                        current = asyncio.get_running_loop().time()
+                        if source_state(document(), source) == "ok":
+                            unhealthy_since.pop(source, None)
+                        elif current - unhealthy_since.setdefault(source, current) >= reconnect_seconds:
+                            # Bounded retry of the public page; no challenge bypass.
+                            unhealthy_since[source] = current
+                            try:
+                                response = await page.goto(entrypoints[source], wait_until="domcontentloaded", timeout=30000)
+                                capture.navigation[source] = {"status": response.status if response else None}
+                            except PlaywrightError:
+                                capture.navigation[source] = {"error": "navigation_failed"}
                     for frame in page.frames:
                         if PRIVATE_PATH.search(urlsplit(frame.url).path):
                             continue
@@ -312,7 +359,7 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                             capture.stats[source]["dom_read_errors"] += 1
                 current = asyncio.get_running_loop().time()
                 if on_batch and current - last_batch >= batch_seconds:
-                    completed = capture.document()
+                    completed = document()
                     # Keep the browser session, but release archived bodies and
                     # reset per-batch budgets so a long-running feed stays live.
                     navigation = capture.navigation.copy()
@@ -323,7 +370,14 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                 if not quiet and current - last_progress >= 15:
                     print("Сохранено снимков:", dict(capture.counts), flush=True)
                     last_progress = current
-                await asyncio.sleep(max(0, min(3, deadline - asyncio.get_running_loop().time())))
+                pause = max(0, min(3, deadline - asyncio.get_running_loop().time()))
+                if stop_event:
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=pause)
+                    except asyncio.TimeoutError:
+                        pass
+                else:
+                    await asyncio.sleep(pause)
         finally:
             closing = True
             if pending:
@@ -332,10 +386,11 @@ async def collect(sources: list[str], seconds: float, *, headless: bool = False,
                     task.cancel()
                 if pending:
                     await asyncio.gather(*pending, return_exceptions=True)
+            final_document = document()
             await browser.close()
     if on_batch:
-        await on_batch(capture.document())
-    return capture.document()
+        await on_batch(final_document)
+    return final_document
 
 
 def save_document(document: dict, destination: Path) -> None:

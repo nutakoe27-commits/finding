@@ -16,6 +16,7 @@ class Settings:
     qwen_timeout: float = 90
     qwen_enable_thinking: bool | None = None
     qwen_max_tokens: int = 1024
+    bookmaker_ingest_token: str = ""
 
     @property
     def database(self) -> Path:
@@ -46,4 +47,5 @@ class Settings:
             qwen_timeout=float(os.getenv("QWEN_TIMEOUT_SECONDS", "90")),
             qwen_enable_thinking=None if not thinking else thinking == "true",
             qwen_max_tokens=max_tokens,
+            bookmaker_ingest_token=os.getenv("BOOKMAKER_INGEST_TOKEN", ""),
         )

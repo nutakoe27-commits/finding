@@ -67,6 +67,10 @@ class Repository:
                     quote_count INTEGER NOT NULL,
                     report TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS bookmaker_worker (
+                    id INTEGER PRIMARY KEY CHECK(id = 1),
+                    payload TEXT NOT NULL
+                );
             """)
 
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:
@@ -203,4 +207,20 @@ class Repository:
             sources = [dict(row) for row in db.execute("""SELECT source, COUNT(*) AS snapshots,
                 COUNT(DISTINCT event_key) AS events, MAX(observed_at) AS last_observed_at
                 FROM bookmaker_quotes GROUP BY source ORDER BY source""")]
-        return {"sources": sources, "live_connection_verified": False, "market": "1x2_90m"}
+            state = db.execute("SELECT payload FROM bookmaker_worker WHERE id = 1").fetchone()
+        worker = json.loads(state[0]) if state else None
+        if worker:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(worker["last_attempt_at"])).total_seconds()
+            worker["heartbeat_recent"] = age <= max(180, worker["interval_seconds"] * 3)
+        return {"sources": sources, "worker": worker, "live_connection_verified": False, "market": "1x2_90m"}
+
+    def save_worker_status(self, value: dict) -> dict:
+        from .worker_protocol import validate_status
+        status = validate_status(value)
+        with self.connection() as db:
+            row = db.execute("SELECT payload FROM bookmaker_worker WHERE id = 1").fetchone()
+            previous = json.loads(row[0]) if row else {}
+            status["last_attempt_at"] = utc_now()
+            status["last_success_at"] = status["last_attempt_at"] if status["state"] == "ok" else previous.get("last_success_at")
+            db.execute("INSERT OR REPLACE INTO bookmaker_worker VALUES (1, ?)", (json.dumps(status),))
+        return status

@@ -235,7 +235,7 @@ def parse_winline(record: dict, references: dict) -> list[dict]:
     return result
 
 
-def normalize_capture(document: dict) -> dict:
+def normalize_capture(document: dict, football_references: list[dict] | None = None) -> dict:
     if not isinstance(document, dict) or document.get("format") != CAPTURE_FORMAT or not isinstance(document.get("records"), list):
         raise ValueError("Нужен файл захвата Matchlab.")
     if any(not isinstance(record, dict) for record in document["records"]):
@@ -253,7 +253,8 @@ def normalize_capture(document: dict) -> dict:
         if record["source"] == "betboom":
             stats["betboom_dom_records"] += 1
             rows.extend(parse_betboom(record))
-    references = {(team_key(r["home"]), team_key(r["away"]), r["kickoff_at"]): r for r in rows}
+    references = {(team_key(r["home"]), team_key(r["away"]), r["kickoff_at"]): r for r in (football_references or []) if r.get("source") == "betboom" and r.get("sport") == "football"}
+    references.update({(team_key(r["home"]), team_key(r["away"]), r["kickoff_at"]): r for r in rows})
     for record in records:
         if record["source"] == "winline":
             stats["winline_dom_records"] += 1

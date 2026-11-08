@@ -532,6 +532,19 @@ async function loadBookmakers() {
             `${bookmakerName(source.source)}: ${source.events} событий`,
         )
         .join(" · ");
+    const worker = data.status.worker;
+    if (worker) {
+      const labels = { starting: "запускается", ok: "работает", partial: "доступен один источник",
+        blocked: "сайт ограничил доступ", disconnected: "нет соединения",
+        unavailable: "источник недоступен", empty: "нет распознанных матчей",
+        error: "ошибка сбора или передачи", stopped: "остановлен" };
+      const status = worker.heartbeat_recent ? labels[worker.state] : "давно не отвечает";
+      $("bookmaker-summary").textContent +=
+        ` · Автосбор ${worker.interval_seconds} с: ${status}. ` +
+        Object.entries(worker.sources).map(([source, item]) =>
+          `${bookmakerName(source)}: ${labels[item.state]}`).join(" · ") +
+        (worker.last_success_at ? ` · Оба источника получены: ${moscowTime(worker.last_success_at)} МСК` : "");
+    }
     if (all.length) {
       $("stat-odds-source").textContent = all
         .map((source) => bookmakerName(source.source))

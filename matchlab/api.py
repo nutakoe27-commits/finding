@@ -3,11 +3,12 @@ from collections import OrderedDict
 from datetime import date, datetime, timezone
 import json
 import math
+import secrets
 from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
@@ -15,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 from .config import Settings
 from .model import GoalModel
 from . import qwen
-from .bookmakers import instant, model_teams
+from .bookmakers import FORMAT as BOOKMAKER_FORMAT, instant, model_teams
 from .storage import Repository, utc_now
 
 STATIC = Path(__file__).parent / "static"
@@ -171,6 +172,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                            "age_seconds": age, "is_stale": age > 300, "started": started})
         return {"quotes": result, "status": repo.bookmaker_status(), "freshness_seconds": 300,
                 "coverage": "captured visible football pre-match 1X2 cards"}
+
+    def require_worker(request: Request):
+        if not settings.bookmaker_ingest_token:
+            raise HTTPException(503, "Серверный сборщик ещё не настроен.")
+        if request.client is None or request.client.host not in ("127.0.0.1", "::1"):
+            raise HTTPException(403, "Импорт сборщика доступен только локально на VPS.")
+        provided = request.headers.get("X-Matchlab-Collector-Key", "")
+        if not secrets.compare_digest(provided.encode(), settings.bookmaker_ingest_token.encode()):
+            raise HTTPException(401, "Неверный ключ сборщика.")
+
+    async def worker_body(request: Request, limit: int) -> dict:
+        require_worker(request)
+        parts, length = [], 0
+        async for part in request.stream():
+            length += len(part)
+            if length > limit:
+                raise HTTPException(413, "Пакет сборщика слишком большой.")
+            parts.append(part)
+        try:
+            body = json.loads(b"".join(parts))
+        except ValueError as exc:
+            raise HTTPException(400, "Нужен JSON-объект.") from exc
+        if not isinstance(body, dict):
+            raise HTTPException(400, "Нужен JSON-объект.")
+        return body
+
+    @app.post("/api/bookmakers/ingest")
+    async def worker_ingest(request: Request):
+        body = await worker_body(request, 2 * 1024 * 1024)
+        if body.get("format") != BOOKMAKER_FORMAT:
+            raise HTTPException(400, "Ожидаются нормализованные публичные снимки.")
+        try:
+            return repo.import_bookmakers(body)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise HTTPException(422, "Некорректные снимки. Проверьте формат, коэффициенты и часы сборщика.") from exc
+
+    @app.post("/api/bookmakers/worker-status")
+    async def worker_status(request: Request):
+        body = await worker_body(request, 32768)
+        try:
+            return repo.save_worker_status(body)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.get("/api/forecasts")
     def forecasts():
