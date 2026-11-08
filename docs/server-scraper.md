@@ -155,6 +155,25 @@ sudo systemctl start matchlab-scraper-check.service
 
 После её успеха: `sudo systemctl enable --now matchlab-scraper.service`.
 Детали сбоя: `sudo journalctl -u matchlab-scraper-check -n 40 --no-pager`.
+
+Если поток подключается, но состояние Winline — `empty`, нужен снимок
+фактической структуры футбольной страницы. На сервере Qwen после обновления
+репозитория можно выполнить диагностику без переустановки служб:
+
+```bash
+sudo install -m 644 scripts/diagnose_winline.py /opt/matchlab-scraper/diagnose_winline.py
+sudo -u matchlab-scraper env PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers \
+  /opt/matchlab-scraper/.venv/bin/python /opt/matchlab-scraper/diagnose_winline.py \
+  --output /var/lib/matchlab-scraper/winline-diagnostic.json
+```
+
+Диагностика ждёт загрузки публичной страницы 30 секунд, сохраняет видимый
+текст, ссылки и контекст карточек в закрытый JSON, выводит краткий отчёт.
+Она не подключается к приёмнику, не получает его ключ и не меняет данные
+Matchlab. Формы, скрипты и значения параметров URL в снимок не включаются.
+При повторе выберите другое имя выходного файла. Основная служба при этом
+остаётся выключенной до успешной проверки реального разбора.
+
 На отдельной странице Winline вид спорта подтверждается футбольным разделом
 и заголовком «Футбол». Ранее сохранённая идентичность встречи может уточнить
 турнир, но для получения новых футбольных карточек она не нужна. Без

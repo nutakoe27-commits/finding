@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import base64
 import hashlib
+import importlib.util
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -16,6 +17,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from matchlab.capture import collect
+from matchlab.capture import redact
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -104,6 +106,34 @@ async def run(executable):
         print("PASS: two-source real browser capture, JSON and visible DOM, timestamped records, query/body/header/form privacy")
         print("PASS: streaming batches reset budgets while preserving browser navigation")
         print("PASS: WebSocket activity/disconnect state and graceful shutdown of an indefinite headless session")
+        # The repair snapshot must expose layout even if the sports-text gate
+        # rejected it, while never exposing forms, scripts or URL credentials.
+        spec = importlib.util.spec_from_file_location("diagnose_winline", Path(__file__).resolve().parent.parent / "scripts/diagnose_winline.py")
+        diagnostics = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(diagnostics)
+        from playwright.async_api import async_playwright
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True, executable_path=executable)
+            try:
+                page = await browser.new_page()
+                await page.set_content('''<meta charset="utf-8"><h1>Футбол</h1>
+                    <section class="football-row"><a href="https://winline.ru/stavki/event/123?token=private-diagnostic-query"><div>Клуб А</div><div>Клуб Б</div></a>
+                    <div>2.10</div><div>3.20</div><div>3.40</div><div>Сегодня 21:00</div>
+                    <form><span>private-diagnostic-form</span><input value="private-diagnostic-input"></form></section>
+                    <script>window.example='private-diagnostic-script';</script>''')
+                payload = redact(await page.evaluate(diagnostics.DOM))
+                document = {"format": "matchlab.bookmaker-capture.v1", "navigation": {}, "records": [
+                    {"source": "winline", "kind": "public_dom", "url": diagnostics.URL,
+                     "observed_at": "2026-11-08T09:30:00+00:00", "payload": payload}]}
+                encoded = json.dumps({"document": document, "report": diagnostics.report(document)})
+                for private in ("private-diagnostic-query", "private-diagnostic-form", "private-diagnostic-input", "private-diagnostic-script"):
+                    assert private not in encoded, private
+                assert payload["event_links"] == 1
+                assert any("3.20" in parent["text"] for node in payload["nodes"] for parent in node.get("parents", []))
+                assert not diagnostics.report(document)["sports_text_filter"]
+            finally:
+                await browser.close()
+        print("PASS: diagnostic DOM retains card context without the sports filter and omits forms, scripts and query credentials")
     finally:
         server.shutdown()
         server.server_close()
