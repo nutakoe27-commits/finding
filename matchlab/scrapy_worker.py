@@ -27,7 +27,7 @@ from .capture import DOM_SCRIPT
 from .markets import validate_event_markets
 from .server_scraper import Publisher, local_api
 from .winline_browser import LINE_URL, event_id_from_url, select_public_line
-from .winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook, discover_statistics_link
+from .winline_markets import MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook, discover_statistics_link
 from .worker_protocol import market_feed
 from .sports import ordinary_sport, sport_from_url, sport_label, EXCLUDED
 
@@ -360,7 +360,7 @@ class WinlineSpider(scrapy.Spider):
     async def parse_event(self, response):
         page = response.meta['playwright_page']
         self.active_pages.add(page)
-        document = None
+        document, stage = None, 'event_page'
         try:
             if self.stopping: return
             if response.status in (401, 403, 429):
@@ -374,6 +374,7 @@ class WinlineSpider(scrapy.Spider):
             if not sport or (self.sports is not None and sport not in self.sports):
                 self.crawler.stats.inc_value('markets/skipped_other_sports')
                 return
+            stage = 'marketbook'
             snapshot = await read_marketbook(page)
             if snapshot.get('unparsed_outcomes') or snapshot.get('hidden_groups'):
                 self.logger.error('Event %s: unparsed_outcomes=%s hidden_groups=%s examples=%s',
@@ -385,11 +386,17 @@ class WinlineSpider(scrapy.Spider):
                 diagnostic={'at':stamp(),'url':urlunsplit((address.scheme,address.netloc,address.path,'','')),
                             **{key:snapshot.get(key) for key in ('home','away','title','expected_outcomes','unparsed_outcomes','hidden_groups')},
                             'examples':snapshot.get('unsupported',[])[:5]}
+                names=list({item['market'] for item in diagnostic['examples'] if item.get('reason')=='ambiguous_outcome_context' and item.get('market')})
+                if names:
+                    labels=list({outcome['name'] for item in diagnostic['examples'] for outcome in item.get('outcomes',[]) if outcome.get('name')})
+                    try: diagnostic['market_structure']=await page.evaluate(MARKET_CONTEXT_SCRIPT,{'names':names[:4],'labels':labels[:10]})
+                    except Exception as error: diagnostic['structure_error']=type(error).__name__
                 self.state_dir.mkdir(parents=True,exist_ok=True)
                 with tempfile.NamedTemporaryFile('w',dir=self.state_dir,delete=False,encoding='utf-8') as output:
                     temporary=Path(output.name); json.dump(diagnostic,output,ensure_ascii=False)
                 try: temporary.replace(self.state_dir/'market-diagnostic.json')
                 finally: temporary.unlink(missing_ok=True)
+            stage = 'market_feed'
             feeds = response.meta.get('market_feed', [])
             if not any(feed['connected'] and 0 <= time.monotonic() - feed['last_frame'] <= 180 for feed in feeds):
                 raise ValueError('No current public market feed')
@@ -411,7 +418,7 @@ class WinlineSpider(scrapy.Spider):
             # Our validation errors contain fixed diagnostic messages, while
             # browser exceptions can include request details. Keep those out
             # of the journal and still explain a failed source check.
-            reason = str(exc)[:200] if isinstance(exc, ValueError) else type(exc).__name__
+            reason = str(exc)[:200] if isinstance(exc, ValueError) else f'{type(exc).__name__} (stage={stage})'
             self.logger.error('Event %s could not be collected: %s', event_id_from_url(response.request.url), reason)
         finally:
             self.active_pages.discard(page)

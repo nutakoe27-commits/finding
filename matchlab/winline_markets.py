@@ -14,6 +14,38 @@ from .sports import sport_from_url, sport_label
 
 PARSER_VERSION = "winline-marketbook-dom-v1"
 
+# Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
+# form content or browser state are collected.
+MARKET_CONTEXT_SCRIPT = r"""({names,labels}) => {
+    const root=document.querySelector('ww-feature-marketbook-dsk');
+    if (!root) return [];
+    const text=el=>{
+        let value=(el && el.innerText || '');
+        for (const form of el ? el.querySelectorAll('form') : []) if (form.innerText) value=value.split(form.innerText).join('');
+        return value.trim().slice(0,200);
+    };
+    const describe=el=>({tag:el.tagName.toLowerCase(),class:(el.getAttribute('class') || '').slice(0,160),text:text(el)});
+    return [...root.querySelectorAll('button.market-header')].filter(header=>names.includes(text(header))).slice(0,2).map(header=>{
+        let container=header.parentElement;
+        for (let parent=container; parent && root.contains(parent); parent=parent.parentElement) {
+            if (parent.querySelectorAll('button.market-header').length!==1) break;
+            if (parent.querySelector('button.market__row-btn')) container=parent;
+            if (parent===root) break;
+        }
+        const buttons=[...container.querySelectorAll('button.market__row-btn')].filter(el=>!el.closest('form'));
+        const relevant=buttons.filter(button=>labels.includes(text(button).split('\n').slice(0,-1).join(' ').trim()));
+        return {market:text(header),container:describe(container),
+            children:[...container.children].filter(el=>!el.closest('form')).slice(0,5).map(describe),
+            outcomes:(relevant.length ? relevant : buttons).slice(0,6).map(button=>{
+                const ancestors=[];
+                for (let parent=button.parentElement; parent && parent!==container && ancestors.length<2; parent=parent.parentElement) {
+                    ancestors.push({...describe(parent),children:[...parent.children].filter(el=>!el.closest('form')).slice(0,5).map(describe)});
+                }
+                return {button:describe(button),ancestors};
+            })};
+    });
+}"""
+
 MARKETS_SCRIPT = r"""() => {
     const root = document.querySelector('ww-feature-marketbook-dsk');
     if (!root) return {ready: false};

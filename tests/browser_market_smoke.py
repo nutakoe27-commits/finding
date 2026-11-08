@@ -17,7 +17,7 @@ from threading import Thread
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from matchlab.winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook
+from matchlab.winline_markets import MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook
 
 PROJECTION = json.loads((Path(__file__).parent / 'fixtures/winline_market_projection.json').read_text())
 
@@ -86,6 +86,10 @@ async def browser_test(executable):
             assert all(market['name']!='Неоднозначный рынок' for market in ambiguous['markets'])
             assert primary_quote(ambiguous)['snapshots'][0]['odds']['home']==3.9
             assert ambiguous_snapshot['unsupported'][0]['reason']=='ambiguous_outcome_context'
+            await page.locator('button.market-header').filter(has_text='Неоднозначный рынок').evaluate("header => header.parentElement.insertAdjacentHTML('beforeend','<form>PRIVATE_FORM_CONTENT<input value=private></form>')")
+            structure=await page.evaluate(MARKET_CONTEXT_SCRIPT,{'names':['Неоднозначный рынок'],'labels':['Да','Нет']})
+            assert structure and len(structure[0]['outcomes'])==4
+            assert 'PRIVATE_FORM_CONTENT' not in json.dumps(structure,ensure_ascii=False)
             await page.set_content(fixture_html(unsupported=True))
             partial = market_document(await read_marketbook(page, maximum_passes=5), PROJECTION['url'], datetime.now(timezone.utc).isoformat())
             assert not partial['coverage']['complete']
