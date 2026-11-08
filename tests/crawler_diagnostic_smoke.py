@@ -19,6 +19,7 @@ from matchlab.scrapy_worker import WinlineSpider,settings
 
 def main():
     from scrapy.crawler import CrawlerProcess
+    no_publish='--no-publish' in sys.argv[1:]
     item=next(item for item in PROJECTIONS if item['sport']=='football')
     extra='''<section><button class="market-header">Неоднозначный рынок</button><div class="market__table"><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>2.0</span></button><button class="market__row-btn"><span>Нет</span><span>3.0</span></button></div><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>4.0</span></button><button class="market__row-btn"><span>Нет</span><span>5.0</span></button></div></div><form>PRIVATE_FORM_CONTENT<input value="secret"></form></section>'''
     html=event_html(item).replace('</ww-feature-marketbook-dsk>',extra+'</ww-feature-marketbook-dsk>')
@@ -49,7 +50,7 @@ def main():
             config=settings(args); config['DOWNLOAD_DELAY']=0
             process=CrawlerProcess(config); crawler=process.create_crawler(FixtureSpider)
             cache=Path(folder)/'cache'
-            process.crawl(crawler,state_dir=cache,api_url=api_url,seed=url)
+            process.crawl(crawler,state_dir=cache,api_url=api_url,seed=url,no_publish=no_publish)
             process.start()
             data=json.loads((cache/'market-diagnostic.json').read_text())
             assert data['url']==url and data['unparsed_outcomes']==4,data
@@ -57,10 +58,15 @@ def main():
             assert data['market_structure'] and len(data['market_structure'][0]['outcomes'])==4,data
             assert 'PRIVATE_FORM_CONTENT' not in json.dumps(data,ensure_ascii=False)
             assert token not in json.dumps(data,ensure_ascii=False)
-            with opener.open(api_url+'/api/bookmakers/events/'+item['id']+'/markets') as response:
-                document=json.load(response)
-            assert not document['coverage']['complete'] and document['coverage']['unparsed_outcomes']==4
-            print('PASS: real browser → crawler → private bounded diagnostic plus partial event delivery; no form or key content')
+            if no_publish:
+                with opener.open(api_url+'/api/bookmakers/events') as response:
+                    assert json.load(response)['total']==0
+                print('PASS: isolated seed probe writes diagnostics locally without publishing any event')
+            else:
+                with opener.open(api_url+'/api/bookmakers/events/'+item['id']+'/markets') as response:
+                    document=json.load(response)
+                assert not document['coverage']['complete'] and document['coverage']['unparsed_outcomes']==4
+                print('PASS: real browser → crawler → private bounded diagnostic plus partial event delivery; no form or key content')
         finally:
             server.terminate(); server.wait(timeout=10)
 
