@@ -101,7 +101,7 @@ async def select_football_line(page) -> dict:
         await line.click(timeout=15000)
         await page.wait_for_load_state("domcontentloaded")
     # Read the existing anchor instead of guessing a query parameter or route.
-    football = page.locator('a[href]').filter(has_text=re.compile(r"^\s*Футбол\s*$")).filter(visible=True)
+    football = page.locator('a[href]').filter(has_text=re.compile(r"^\s*Футбол(?:\s*\d+)?\s*$")).filter(visible=True)
     await football.first.wait_for(state="visible", timeout=15000)
     chosen = None
     for index in range(await football.count()):

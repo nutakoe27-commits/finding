@@ -25,7 +25,7 @@ from .capture import DOM_SCRIPT
 from .markets import validate_event_markets
 from .server_scraper import Publisher, local_api
 from .winline_browser import LINE_URL, event_id_from_url, select_public_line
-from .winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook
+from .winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook, discover_statistics_link
 from .worker_protocol import market_feed
 from .sports import ordinary_sport, sport_from_url, sport_label, EXCLUDED
 
@@ -324,7 +324,12 @@ class WinlineSpider(scrapy.Spider):
             feeds = response.meta.get('market_feed', [])
             if not any(feed['connected'] and 0 <= time.monotonic() - feed['last_frame'] <= 180 for feed in feeds):
                 raise ValueError('No current public market feed')
-            document = market_document(snapshot, page.url, stamp(), response.meta.get('event_metadata'))
+            captured_url,captured_at=page.url,stamp()
+            # Prices and their observation time are fixed before opening the
+            # read-only statistics control, which may navigate this page.
+            try: snapshot['statistics_links']=await discover_statistics_link(page,snapshot)
+            except Exception: pass  # Optional statistics must not stop market delivery.
+            document = market_document(snapshot, captured_url, captured_at, response.meta.get('event_metadata'))
         except Exception as exc:
             if '/sport/' in urlsplit(page.url).path and not sport_from_url(page.url):
                 self.crawler.stats.inc_value('markets/skipped_other_sports')

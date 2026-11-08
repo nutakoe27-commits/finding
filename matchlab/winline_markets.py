@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from .bookmakers import DATE_RE, EPL, FORMAT as QUOTE_FORMAT, instant, iso, kickoff, lines, make_snapshot
 from .markets import FORMAT, identity, validate_event_markets
-from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link
+from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
 from .sports import sport_from_url, sport_label
 
 PARSER_VERSION = "winline-marketbook-dom-v1"
@@ -244,6 +244,44 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
         await asyncio.sleep(0.75)
     snapshot.update(stable_passes=stable, scroll_exhausted=False, capture_started_at=capture_started_at)
     return snapshot
+
+
+async def discover_statistics_link(page, snapshot: dict) -> list[str]:
+    """Resolve only the current event's explicitly labelled statistics control."""
+    known=snapshot.get('statistics_links',[])
+    url,status=event_statistics_link(known)
+    if status!='missing': return [url] if url else known
+    controls=page.locator('.ww-markets__stickybar a,.ww-markets__stickybar button,.marketbook-header--prematch a,.marketbook-header--prematch button,.marketbook-header--live a,.marketbook-header--live button,.special__btns-wrapper > *')
+    matches=await controls.evaluate_all(r'''nodes=>nodes.flatMap((node,index)=>{
+        if (!node.getClientRects().length || node.closest('form') || node.matches('.market__row-btn')) return [];
+        if (node.querySelectorAll('a,button,[role="button"]').length>1) return [];
+        const marker=[node.tagName,node.className,node.title,node.getAttribute('aria-label'),node.getAttribute('data-testid'),...[...node.querySelectorAll('svg,use,img')].map(icon=>[icon.tagName,icon.getAttribute('class'),icon.getAttribute('alt'),icon.getAttribute('src'),icon.getAttribute('href') || icon.getAttribute('xlink:href')].join(' '))].join(' ');
+        return /statistic|статист|stats(?:[._\-#]|$)/i.test(marker)?[index]:[];
+    })''')
+    if not matches: return []
+    popups=[]
+    def opened(popup): popups.append(popup)
+    page.on('popup',opened)
+    original_frames={frame.url for frame in page.frames}
+    try:
+        try: await controls.nth(matches[0]).click(timeout=3000,no_wait_after=True)
+        except Exception: pass
+        for _ in range(10):
+            candidates=[page.url]+[popup.url for popup in popups]
+            ids={value for candidate in candidates if (value:=statistics_id_from_url(candidate))}
+            for frame in page.frames:
+                if frame.url in original_frames: continue
+                parsed=urlsplit(frame.url)
+                if parsed.hostname in ('statshub.yunai.tech','statshub.sportradar.com'):
+                    match=re.fullmatch(r'/winline/(?:ru|en)/match/(\d{1,20})/?',parsed.path)
+                    if match: ids.add(match[1])
+            if ids: return ['https://winline.ru/stats/match/'+value for value in sorted(ids)]
+            await asyncio.sleep(.2)
+        return []
+    finally:
+        page.remove_listener('popup',opened)
+        for popup in popups:
+            if not popup.is_closed(): await popup.close()
 
 
 def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict | None = None) -> dict:

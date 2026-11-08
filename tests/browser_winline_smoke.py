@@ -14,7 +14,7 @@ from matchlab.capture import DOM_SCRIPT, redact
 from matchlab.winline_browser import open_event_link, select_football_line
 
 
-NAV = '<nav><a href="/stavki">Линия</a><a href="/live">Live сейчас</a><a href="/stavki/sport/futbol/">Футбол</a></nav>'
+NAV = '<nav><a href="/stavki">Линия</a><a href="/live">Live сейчас</a><a href="/stavki/sport/futbol/">Футбол<span>168</span></a></nav>'
 
 
 def card(event_id, home, away, body):

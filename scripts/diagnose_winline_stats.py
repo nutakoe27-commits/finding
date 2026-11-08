@@ -74,29 +74,39 @@ async def run(args):
             if args.probe_line:
                 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
                 from matchlab.winline_browser import select_football_line, open_event_link
+                stage='open_line'; market_page=None
                 try:
                     market_page=await context.new_page()
                     await market_page.goto('https://winline.ru/stavki',wait_until='domcontentloaded',timeout=45000)
+                    stage='select_football'
                     await select_football_line(market_page)
+                    stage='select_current_event'
                     anchor=market_page.locator('.block-tournament a[href*="/event/"]').first
                     target=await anchor.get_attribute('href')
                     event_id=int(urlsplit(target).path.rstrip('/').split('/')[-1])
                     await open_event_link(market_page,event_id=event_id)
+                    stage='read_event_controls'
                     await market_page.wait_for_selector('ww-feature-marketbook-dsk',timeout=30000)
                     probe=await market_page.evaluate(r'''() => {
                         const root=document.querySelector('.ww-markets') || document.body;
                         return {titles:[...document.querySelectorAll('h1')].map(node=>node.innerText),
                             links:[...root.querySelectorAll('a[href*="/stats/"]')].map(node=>({url:node.href,title:node.title,text:node.innerText})),
-                            controls:[...root.querySelectorAll('.special__btns-wrapper a,.special__btns-wrapper button,button[title],button[aria-label]')].filter(node=>!node.closest('form')).slice(0,25).map(node=>({tag:node.tagName.toLowerCase(),class:node.className,title:node.title,aria:node.getAttribute('aria-label'),href:node.getAttribute('href')}))};
+                            controls:[...root.querySelectorAll('.special__btns-wrapper > *,.special__btns-wrapper a,.special__btns-wrapper button,button[title],button[aria-label]')].filter(node=>!node.closest('form')).slice(0,25).map(node=>({tag:node.tagName.toLowerCase(),class:node.className,title:node.title,aria:node.getAttribute('aria-label'),href:node.getAttribute('href'),icons:[...node.querySelectorAll('svg,use,img')].map(icon=>({tag:icon.tagName,class:icon.getAttribute('class'),href:icon.getAttribute('href')||icon.getAttribute('xlink:href'),alt:icon.getAttribute('alt')}))}))};
                     }''')
                     for link in probe['links']: link['url']=public_url(link['url'])
                     for control in probe['controls']:
                         if control.get('href'): control['href']=public_url(urljoin(market_page.url,control['href']))
                     summary['market_probe']={'url':public_url(market_page.url),'source_event_id':str(event_id),**probe}
+                    try:
+                        from matchlab.winline_markets import discover_statistics_link
+                        summary['market_probe']['resolved_statistics_links']=await discover_statistics_link(market_page,{'statistics_links':[link['url'] for link in probe['links']]})
+                    except Exception as error:
+                        summary['market_probe']['resolution_error']=type(error).__name__
                 except Exception as error:
-                    summary['market_probe']={'error':type(error).__name__}
+                    summary['market_probe']={'error':type(error).__name__,'stage':stage,'url':public_url(market_page.url) if market_page else None}
                 result['market_probe']=summary['market_probe']
                 path.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+            if args.probe_only: summary['frames']=[]
             print(json.dumps(summary,ensure_ascii=False,indent=2),flush=True)
         finally:
             await browser.close()
@@ -110,8 +120,10 @@ def main():
     parser.add_argument('--headed',action='store_true',help='Open a separate visible browser, without the normal user profile')
     parser.add_argument('--channel',choices=('chrome','msedge'),help='Use an already installed browser')
     parser.add_argument('--probe-line',action='store_true',help='Inspect statistics links on one current football event')
+    parser.add_argument('--probe-only',action='store_true',help='Print only the event association probe')
     parser.add_argument('--output-dir',type=Path,default=Path('/var/lib/matchlab-crawler/diagnostics'))
     args=parser.parse_args()
+    if args.probe_only: args.probe_line=True; args.seconds=1
     parsed=urlsplit(args.url)
     if parsed.scheme!='https' or parsed.hostname not in ('winline.ru','www.winline.ru') or parsed.username or parsed.password or not re.fullmatch(r'/stats/match/\d{1,20}/?',parsed.path) or parsed.query or parsed.fragment:
         parser.error('Нужен публичный адрес https://winline.ru/stats/match/ID без параметров.')
