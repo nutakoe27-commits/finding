@@ -1,0 +1,2 @@
+# Separate browser collector; no scientific packages or server dependencies.
+playwright==1.62.0
