@@ -14,10 +14,10 @@
 Избранное хранится в браузере отдельно для каждого адреса сайта.
 
 Домен имеет A-запись `89.111.143.45`. Настраивается только сам
-`prognozich.online`, без автоматического добавления `www`. SSL выпускает
-провайдер: скрипт не запускает Certbot, не настраивает 443 и не перенаправляет
-HTTP на HTTPS. Если TLS завершается на прокси провайдера, этот HTTP-сайт
-используется как origin. Схема TLS на стороне провайдера проверяется отдельно.
+`prognozich.online`, без автоматического добавления `www`. При наличии файлов
+сертификата на VPS скрипт может добавить HTTPS только этому сайту. Сертификат
+нужен заранее: скрипт не запускает Certbot и не выпускает его. HTTP остаётся
+доступен; автоматическое перенаправление на HTTPS не включается.
 
 ## VPS
 
@@ -32,6 +32,65 @@ python3 scripts/configure_domain.py --domain prognozich.online
 команде. Скрипт проверяет работающий Nginx, исходную конфигурацию и каталог
 Matchlab на локальном порту. Если домен уже указан в другой активной конфигурации
 (например, панели провайдера), выполнение прекращается до записи файлов.
+
+Чтобы подключить существующий сертификат на VPS, укажите реальные абсолютные
+пути к полной цепочке и соответствующему закрытому ключу:
+
+```bash
+sudo python3 scripts/configure_domain.py --domain prognozich.online \
+  --tls-cert /path/to/fullchain.pem --tls-key /path/to/privkey.pem --check
+```
+
+Вместо приведённых обозначений должны быть фактические пути без пробелов.
+Команда `--check` проверяет домен сертификата, срок его действия и соответствие
+ключа, но не меняет файлы. Для применения запускается та же команда без
+`--check`; после проверки `nginx -t` и перечитывания скрипт проверяет HTTPS с
+SNI, доверенной цепочкой и ответом именно Matchlab. При ошибке он возвращает
+предыдущий файл сайта и повторно перечитывает Nginx. Повторный запуск без
+параметров сертификата откажется убирать уже настроенный HTTPS.
+
+### Если сертификат есть только в панели хостинга
+
+Можно выпустить отдельный сертификат Let’s Encrypt для этого домена через
+работающий HTTP, не останавливая Nginx и не изменяя сертификаты других сайтов.
+Сначала подготовьте отдельный webroot и включите его в управляемом сайте:
+
+```bash
+cd /root/matchlab
+git pull --ff-only origin main &&
+sudo bash scripts/prepare_matchlab_acme.sh &&
+sudo python3 scripts/configure_domain.py --domain prognozich.online --acme-webroot /var/lib/matchlab-acme --check &&
+sudo python3 scripts/configure_domain.py --domain prognozich.online --acme-webroot /var/lib/matchlab-acme
+```
+
+После успешной проверки выпустите сертификат через webroot:
+
+```bash
+sudo certbot certonly --webroot -w /var/lib/matchlab-acme \
+  --cert-name prognozich.online -d prognozich.online --keep-until-expiring
+```
+
+Если Certbot сообщает об ошибке, остановитесь и проверьте доступность домена и
+порта 80 снаружи. После успешного выпуска включите HTTPS и отдельный hook,
+который при обновлении только этого сертификата проверит и перечитает Nginx:
+
+```bash
+sudo python3 scripts/configure_domain.py --domain prognozich.online \
+  --acme-webroot /var/lib/matchlab-acme \
+  --tls-cert /etc/letsencrypt/live/prognozich.online/fullchain.pem \
+  --tls-key /etc/letsencrypt/live/prognozich.online/privkey.pem --check &&
+sudo python3 scripts/configure_domain.py --domain prognozich.online \
+  --acme-webroot /var/lib/matchlab-acme \
+  --tls-cert /etc/letsencrypt/live/prognozich.online/fullchain.pem \
+  --tls-key /etc/letsencrypt/live/prognozich.online/privkey.pem &&
+sudo bash scripts/install_matchlab_certbot_hook.sh
+```
+
+Проверьте `curl --resolve prognozich.online:443:127.0.0.1 -I https://prognozich.online/`
+и наличие планировщика Certbot: `systemctl list-timers --all | grep -i certbot`;
+на некоторых системах вместо таймера используется `/etc/cron.d/certbot`.
+HTTP-адрес для проверки выпуска остаётся доступным и при продлении; обычный
+запуск скрипта без `--acme-webroot` не удалит эту настройку.
 
 Создаются только собственный файл
 `/etc/nginx/sites-available/matchlab-prognozich.online.conf` и ссылка на него
