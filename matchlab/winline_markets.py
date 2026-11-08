@@ -1,0 +1,292 @@
+"""Public Winline marketbook extraction, separate from Scrapy scheduling."""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+import json
+import re
+from urllib.parse import urlsplit
+
+from .bookmakers import DATE_RE, EPL, FORMAT as QUOTE_FORMAT, instant, iso, kickoff, lines, make_snapshot
+from .markets import FORMAT, identity, validate_event_markets
+from .winline_browser import event_id_from_url, open_event_link, public_event_id
+
+PARSER_VERSION = "winline-marketbook-dom-v1"
+
+MARKETS_SCRIPT = r"""() => {
+    const root = document.querySelector('ww-feature-marketbook-dsk');
+    if (!root) return {ready: false};
+    const text = el => (el && el.innerText || '').trim();
+    const visible = el => !!el.getClientRects().length && !el.closest('form');
+    const headers = [...root.querySelectorAll('button.market-header')];
+    const all = [...root.querySelectorAll('.marketbook__filter .ww-tabs__item')].find(el => text(el) === 'Все');
+    const allSelected = !!all && all.classList.contains('ww-tabs__item--active');
+    const top = document.querySelector('.marketbook-header--prematch');
+    const home = top && top.querySelector('.prematch__competitor-left');
+    const away = top && top.querySelector('.prematch__competitor-right');
+    const names = el => el && (el.querySelector('h1,h2') || el);
+    const titleText = el => text(names(el)).split('\n')[0].trim();
+    const dateText = text(top && top.querySelector('.prematch-info'));
+    const groups = [...root.querySelectorAll('h2,h3')].filter(el => !el.closest('.market-header'));
+    const isPeriod = value => /^(?:осн\.?\s*время|матч|\d+\s*тайм|\d+[-–]\d+\s*мин\.?)$/i.test(value);
+    const inTitle = value => (value.match(/осн\.?\s*время|\d+\s*тайм/i) || [null])[0];
+    const variants = new Map();
+    const unsupported = [];
+    let hidden = 0;
+    const seenButtons = new Set();
+    for (const header of headers) {
+        let container = null;
+        for (let parent = header.parentElement; parent && root.contains(parent); parent = parent.parentElement) {
+            if (parent.querySelectorAll('button.market-header').length !== 1) break;
+            if (parent.querySelector('button.market__row-btn')) container = parent;
+            if (parent === root) break;
+        }
+        if (!container) { hidden++; continue; }
+        const buttons = [...container.querySelectorAll('button.market__row-btn')];
+        if (!buttons.some(visible)) { hidden++; continue; }
+        let group = null;
+        for (const heading of groups) {
+            if (heading.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING) group = text(heading);
+        }
+        const name = text(header);
+        const sourceMarket = container.getAttribute('data-market-id') || header.getAttribute('data-market-id');
+        let contextLabels = null;
+        for (const button of buttons) {
+            if (seenButtons.has(button) || !visible(button)) continue;
+            seenButtons.add(button);
+            const tokens = text(button).split('\n').map(value => value.trim()).filter(Boolean);
+            const last = tokens[tokens.length - 1] || '';
+            const numeric = /^\d+(?:[.,]\d+)?$/.test(last);
+            const suspended = button.disabled || button.getAttribute('aria-disabled') === 'true' || /(?:^|[\s_-])(?:disabled|suspended|locked|blocked)(?:$|[\s_-])/.test(button.className);
+            let price = numeric ? Number(last.replace(',', '.')) : null;
+            let labelTokens = numeric ? tokens.slice(0, -1) : tokens.filter(value => !/^[-—–]+$/.test(value));
+            let outcomeName = labelTokens.join(' ').trim();
+            if (!outcomeName) outcomeName = button.getAttribute('aria-label') || button.getAttribute('title') || '';
+            if (!outcomeName || (!numeric && !suspended && tokens.length)) {
+                unsupported.push({market: name, text: text(button).slice(0, 200)});
+                continue;
+            }
+            let context = '';
+            for (let parent = button.parentElement; parent && parent !== container; parent = parent.parentElement) {
+                const siblings = [...parent.querySelectorAll('button.market__row-btn')];
+                if (siblings.length < 2) continue;
+                let prefix = text(parent);
+                for (const sibling of siblings) prefix = prefix.split(text(sibling)).join('');
+                for (const heading of parent.querySelectorAll('button.market-header')) prefix = prefix.split(text(heading)).join('');
+                const parts = prefix.split('\n').map(value => value.trim()).filter(Boolean);
+                if (parts.length === 1 && parts[0].length < 150) { context = parts[0]; break; }
+            }
+            if (!context) {
+                if (contextLabels === null) {
+                    contextLabels = [];
+                    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+                    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                        const value = (node.textContent || '').trim();
+                        if (value && value.length < 150 && node.parentElement && visible(node.parentElement) &&
+                            !node.parentElement.closest('button.market__row-btn,button.market-header,form,script,style')) contextLabels.push([node, value]);
+                    }
+                }
+                for (const [node, value] of contextLabels) {
+                    if (node.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) context = value;
+                }
+            }
+            const period = isPeriod(context) ? context : inTitle(name);
+            const parameter = context && !isPeriod(context) ? context : null;
+            const key = JSON.stringify([name, group, period, parameter, sourceMarket]);
+            if (!variants.has(key)) variants.set(key, {name, group, period, parameter, source_market_id: sourceMarket, outcomes: []});
+            const sourceOutcome = button.getAttribute('data-outcome-id') || button.getAttribute('data-id');
+            variants.get(key).outcomes.push({name: outcomeName, parameter: null, source_outcome_id: sourceOutcome,
+                odds: price, state: suspended ? 'suspended' : numeric ? 'open' : 'unavailable'});
+        }
+    }
+    const allButtons = [...root.querySelectorAll('button.market__row-btn')].filter(visible);
+    return {ready: true, home: titleText(home), away: titleText(away), date_text: dateText,
+        phase: top ? 'prematch' : document.querySelector('.marketbook-header--live') ? 'live' : 'unknown', markets: [...variants.values()],
+        market_sections: headers.length, expected_outcomes: allButtons.length,
+        unparsed_outcomes: allButtons.length - [...variants.values()].reduce((total, item) => total + item.outcomes.length, 0),
+        hidden_groups: hidden, all_tab_selected: allSelected, unsupported: unsupported.slice(0, 20),
+        structure_keys: [...variants.entries()].flatMap(([key, market]) => market.outcomes.map(outcome =>
+            JSON.stringify([key, outcome.name, outcome.parameter, outcome.source_outcome_id]))),
+        structure: JSON.stringify([...variants.entries()].map(([key, market]) =>
+            [key, market.outcomes.map(outcome => [outcome.name, outcome.parameter, outcome.source_outcome_id])]))};
+}"""
+
+
+async def ensure_event_page(page, expected_url: str, metadata: dict | None = None):
+    wanted = event_id_from_url(expected_url)
+    if not wanted:
+        raise ValueError("Некорректный адрес события Winline.")
+    if public_event_id(page.url) != wanted:
+        # A short /event link can initialize on the homepage first. Follow its
+        # real current anchor when present, exactly as the verified diagnostic.
+        try:
+            await open_event_link(page, event_id=int(wanted))
+        except Exception:
+            # Ordinary SPA navigation for a link discovered in the public
+            # inventory but currently outside the homepage's visible slice.
+            if urlsplit(page.url).hostname not in ('winline.ru', 'www.winline.ru'):
+                raise
+            beginning = (await page.locator('body').inner_text())[:500]
+            if re.search(r'verify you are human|access denied|подтвердите.{0,40}человек|проверка безопасности', beginning, re.I):
+                raise ValueError('Source requires an access check')
+            if not await page.locator('a[href="/stavki"],a[href="https://winline.ru/stavki"]').count():
+                raise ValueError('The public application did not initialize')
+            await page.evaluate("url => { history.pushState({}, '', url); dispatchEvent(new PopStateEvent('popstate')); }", expected_url)
+            await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted, timeout=15000)
+    if '/stavki/sport/' in urlsplit(page.url).path and '/stavki/sport/futbol/' not in urlsplit(page.url).path:
+        return
+    await page.wait_for_selector('ww-feature-marketbook-dsk button.market-header', timeout=30000)
+
+
+async def read_marketbook(page, *, maximum_passes=200) -> dict:
+    root = page.locator('ww-feature-marketbook-dsk')
+    await root.wait_for(state='visible', timeout=30000)
+    all_tab = root.locator('.marketbook__filter .ww-tabs__item').filter(has_text=re.compile(r'^\s*Все\s*$')).first
+    await all_tab.wait_for(state='visible', timeout=15000)
+    if 'ww-tabs__item--active' not in (await all_tab.get_attribute('class') or ''):
+        await all_tab.click()
+    stable, previous = 0, None
+    snapshot, accumulated = {}, {}
+    initial_keys, virtualized = None, False
+    reached_bottom = False
+    max_unparsed, max_hidden, max_duplicates = 0, 0, 0
+    capture_started_at = datetime.now(timezone.utc).isoformat()
+    expanded_headers = set()
+    for _ in range(maximum_passes):
+        # Only group headers can be expanded. Outcome/price buttons are read.
+        headers = root.locator('button.market-header')
+        collapsed = await headers.evaluate_all("""headers => headers.flatMap((header, index) => {
+                if (header.disabled) return [];
+                for (let parent = header.parentElement; parent; parent = parent.parentElement) {
+                    if (parent.querySelectorAll('button.market-header').length !== 1) break;
+                    const buttons = [...parent.querySelectorAll('button.market__row-btn')];
+                    if (buttons.length) return buttons.some(button => button.getClientRects().length) ? [] : [{index, name: header.innerText}];
+                }
+                return [{index, name: header.innerText}];
+            })""")
+        for item in collapsed[:1000]:
+            key = (item['index'], item['name'])
+            if key not in expanded_headers:
+                await headers.nth(item['index']).click()
+                expanded_headers.add(key)
+        snapshot = await page.evaluate(MARKETS_SCRIPT)
+        part_outcomes, duplicates = {}, 0
+        for market in snapshot.get('markets', []):
+            market_id = identity({key: value for key, value in market.items() if key != 'outcomes'})
+            previous_market = accumulated.setdefault(market_id, {**market, 'outcomes': {}})
+            for outcome in market['outcomes']:
+                outcome_id = identity({key: value for key, value in outcome.items() if key not in ('odds', 'state')})
+                key = (market_id, outcome_id)
+                if key in part_outcomes:
+                    if part_outcomes[key] != outcome:
+                        raise ValueError('Ambiguous outcome context in marketbook')
+                    duplicates += 1
+                part_outcomes[key] = outcome
+                previous_market['outcomes'][outcome_id] = outcome
+        max_duplicates = max(max_duplicates, duplicates)
+        signature = snapshot.get('structure')
+        keys = set(snapshot.get('structure_keys', []))
+        max_unparsed = max(max_unparsed, snapshot.get('unparsed_outcomes', 0))
+        max_hidden = max(max_hidden, snapshot.get('hidden_groups', 0))
+        if initial_keys is None:
+            initial_keys = keys
+        elif not virtualized and not initial_keys.issubset(keys):
+            # A structural change after jumping to the end can indicate a
+            # virtual list. Restart at its top and scan viewport by viewport.
+            virtualized = True
+            await root.evaluate("""root => {
+                for (let parent = root; parent && parent !== document.body; parent = parent.parentElement) {
+                    if (parent.scrollHeight > parent.clientHeight && /auto|scroll/.test(getComputedStyle(parent).overflowY)) { parent.scrollTop = 0; return; }
+                }
+                window.scrollTo(0, 0);
+            }""")
+            reached_bottom = False
+            await asyncio.sleep(0.3)
+        if not virtualized:
+            initial_keys = keys
+        stable = stable + 1 if signature == previous else 0
+        previous = signature
+        reached_bottom = await root.evaluate("""(root, virtualized) => {
+            const headers = root.querySelectorAll('button.market-header');
+            if (!virtualized && headers.length) headers[headers.length - 1].scrollIntoView({block: 'end'});
+            for (let parent = root; parent && parent !== document.body; parent = parent.parentElement) {
+                if (parent.scrollHeight > parent.clientHeight && /auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+                    if (virtualized) parent.scrollTop += Math.max(300, parent.clientHeight * 0.8);
+                    else parent.scrollTop = parent.scrollHeight;
+                    return parent.scrollTop + parent.clientHeight >= parent.scrollHeight - 5;
+                }
+            }
+            if (virtualized) window.scrollBy(0, Math.max(300, window.innerHeight * 0.8));
+            else window.scrollTo(0, document.documentElement.scrollHeight);
+            return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 5;
+        }""", virtualized)
+        if stable >= 2 and reached_bottom and snapshot.get('hidden_groups') == 0:
+            if virtualized:
+                snapshot['markets'] = [{**market, 'outcomes': list(market['outcomes'].values())} for market in accumulated.values()]
+                snapshot['unparsed_outcomes'] = max_unparsed + max_duplicates
+                snapshot['hidden_groups'] = max_hidden
+                snapshot['expected_outcomes'] = sum(len(market['outcomes']) for market in accumulated.values()) + max_unparsed + max_duplicates
+            snapshot['stable_passes'] = stable
+            snapshot['scroll_exhausted'] = True
+            snapshot['capture_started_at'] = capture_started_at
+            return snapshot
+        if stable >= 3 and reached_bottom and snapshot.get('hidden_groups', 0) > 0:
+            break
+        await asyncio.sleep(0.75)
+    snapshot.update(stable_passes=stable, scroll_exhausted=False, capture_started_at=capture_started_at)
+    return snapshot
+
+
+def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict | None = None) -> dict:
+    metadata = metadata or {}
+    event_id = event_id_from_url(url)
+    if not event_id or '/stavki/sport/futbol/' not in urlsplit(url).path:
+        raise ValueError("Нужна подтверждённая футбольная страница события.")
+    start = metadata.get('kickoff_at')
+    date_tokens = lines(snapshot.get('date_text', ''))
+    date_labels = [token for token in date_tokens if DATE_RE.fullmatch(token)]
+    if len(date_labels) == 1:
+        start = kickoff(date_labels[0], observed_at)
+    competition = metadata.get('competition', 'Турнир не указан')
+    if re.fullmatch(r'/stavki/sport/futbol/angliya/apl/\d+/?', urlsplit(url).path):
+        competition = EPL
+    document = {'format': FORMAT, 'source': 'winline', 'sport': 'football', 'source_event_id': event_id,
+                'url': url, 'home': snapshot.get('home') or metadata.get('home'), 'away': snapshot.get('away') or metadata.get('away'),
+                'competition': competition, 'kickoff_at': start,
+                'phase': snapshot.get('phase') if snapshot.get('phase') != 'unknown' else metadata.get('phase', 'unknown'),
+                'observed_at': observed_at, 'capture_started_at': snapshot.get('capture_started_at', observed_at),
+                'parser_version': PARSER_VERSION, 'markets': snapshot.get('markets', []),
+                'coverage': {key: snapshot.get(key) for key in ('expected_outcomes', 'unparsed_outcomes', 'hidden_groups',
+                                                            'all_tab_selected', 'stable_passes', 'scroll_exhausted')}}
+    return validate_event_markets(document)
+
+
+def primary_quote(document: dict) -> dict | None:
+    """Project only an explicit regular-time 1X2 into the existing forecasts."""
+    if document['phase'] != 'prematch' or not document.get('kickoff_at'):
+        return None
+    selected = []
+    names = {'П1': 'home', '1': 'home', 'X': 'draw', 'Х': 'draw', 'П2': 'away', '2': 'away'}
+    for market in document['markets']:
+        if not re.fullmatch(r'Исход\s+1[XХ]2', market['name'], re.I) or market.get('parameter'):
+            continue
+        if re.sub(r'[.\s]', '', market.get('period') or '').casefold() not in ('оснвремя', 'основноевремя'):
+            continue
+        prices = {}
+        for outcome in market['outcomes']:
+            key = names.get(outcome['name'].upper())
+            if key and outcome['state'] == 'open' and outcome['odds'] is not None:
+                prices[key] = outcome['odds']
+        if len(market['outcomes']) == 3 and set(prices) == {'home', 'draw', 'away'}:
+            selected.append(prices)
+    if len(selected) != 1:
+        return None
+    try:
+        row = make_snapshot('winline', document['competition'], document['home'], document['away'],
+                            document['kickoff_at'], document.get('capture_started_at', document['observed_at']),
+                            [selected[0][key] for key in ('home', 'draw', 'away')], document['url'],
+                            external_id=document['source_event_id'], competition_origin='winline_marketbook')
+        row['parser_version'] = PARSER_VERSION
+        return {'format': QUOTE_FORMAT, 'snapshots': [row]}
+    except ValueError:
+        return None

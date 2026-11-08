@@ -1,0 +1,3 @@
+-r requirements-server-scraper.txt
+Scrapy==2.20.0
+scrapy-playwright==0.0.48

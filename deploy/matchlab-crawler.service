@@ -1,0 +1,39 @@
+# Managed by Matchlab market crawler
+[Unit]
+Description=Matchlab Scrapy Winline market crawler
+After=network-online.target matchlab-scraper-tunnel.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=matchlab-scraper
+Group=matchlab-scraper
+WorkingDirectory=/opt/matchlab-crawler
+EnvironmentFile=/etc/matchlab-scraper-token.env
+EnvironmentFile=/etc/matchlab-crawler.conf
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers
+Environment=HOME=/var/lib/matchlab-crawler
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/matchlab-crawler/.venv/bin/python -m matchlab.scrapy_worker --interval 60 --state-dir /var/lib/matchlab-crawler
+StateDirectory=matchlab-crawler
+StateDirectoryMode=0700
+Restart=always
+RestartSec=60
+TimeoutStopSec=60
+MemoryHigh=3500M
+MemoryMax=4096M
+CPUQuota=200%
+Nice=10
+OOMScoreAdjust=500
+TasksMax=1024
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

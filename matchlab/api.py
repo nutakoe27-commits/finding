@@ -216,6 +216,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    @app.post("/api/bookmakers/events/ingest")
+    async def event_market_ingest(request: Request):
+        body = await worker_body(request, 2 * 1024 * 1024)
+        try:
+            return repo.import_event_markets(body)
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise HTTPException(422, "Некорректный документ рынков события.") from exc
+
+    @app.get("/api/bookmakers/events")
+    def market_events(include_started: bool = False, limit: int = 100, offset: int = 0):
+        if not 1 <= limit <= 200 or offset < 0:
+            raise HTTPException(422, "Некорректная страница списка событий.")
+        result = repo.market_events(include_started=include_started, limit=limit, offset=offset)
+        current = datetime.now(timezone.utc)
+        for event in result["events"]:
+            event["age_seconds"] = max(0, int((current - instant(event["capture_started_at"])).total_seconds()))
+            event["is_stale"] = event["age_seconds"] > 180
+        return result
+
+    @app.get("/api/bookmakers/events/{event_id}/markets")
+    def market_detail(event_id: str):
+        if not event_id.isdigit() or len(event_id) > 20:
+            raise HTTPException(422, "Некорректный ID события.")
+        document = repo.event_markets(event_id)
+        if not document:
+            raise HTTPException(404, "Рынки этого события ещё не собраны.")
+        age = max(0, int((datetime.now(timezone.utc) - instant(document["capture_started_at"])).total_seconds()))
+        return {**document, "age_seconds": age, "is_stale": age > 180}
+
     @app.get("/api/forecasts")
     def forecasts():
         return {"forecasts": repo.recent_forecasts()}

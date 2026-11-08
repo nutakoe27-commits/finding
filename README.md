@@ -8,7 +8,9 @@
 Подключён разбор наблюдаемой футбольной линии BetBoom/Winline: исходы П1/Х/П2
 за основное время, хранение истории и выбор матча в интерфейсе.
 Установка и обновление с Mac: [docs/bookmaker-line.md](docs/bookmaker-line.md).
-Постоянный сбор Winline каждые 60 секунд на сервере Qwen с передачей на VPS:
+Сбор всех рынков каждой встречи через Scrapy + Playwright на сервере Qwen:
+[docs/winline-crawler.md](docs/winline-crawler.md).
+Прежний сбор только основной линии:
 [docs/server-scraper.md](docs/server-scraper.md).
 Инструмент захвата для диагностики изменений сайтов:
 [docs/bookmaker-capture.md](docs/bookmaker-capture.md).

@@ -32,6 +32,7 @@
         <a href="#bookmakers" class="nav-link"
           ><span>≋</span> Линия букмекеров</a
         >
+        <a href="#markets" class="nav-link"><span>▤</span> Рынки Winline</a>
       </nav>
       <div class="sidebar-note">
         <span class="tiny-label">НАША ЗАДАЧА</span>
@@ -97,6 +98,23 @@
                 <path d="M3 13 13 3M3 3h10v10" /></svg></span></strong
           ><span class="muted" id="stat-odds-note">Ожидаем снимки линии</span>
         </article>
+      </section>
+
+      <section id="markets" class="panel bookmakers-panel">
+        <div class="panel-heading"><div><p class="eyebrow">КОЭФФИЦИЕНТЫ ПО РЫНКАМ</p><h2>Рынки Winline</h2></div><span class="subtle-badge">ФУТБОЛ</span></div>
+        <p class="panel-description">Последние наблюдения каждой встречи: исходы, таймы, тоталы, форы и другие рынки. Полнота и время снимка указаны отдельно.</p>
+        <div class="bookmaker-controls"><label class="archive-toggle"><input id="market-include-started" type="checkbox" checked /> Включить live и начавшиеся матчи</label><button id="market-refresh" class="secondary-button" type="button">Обновить рынки</button></div>
+        <p id="market-list-summary" class="small muted">Загружаем события…</p>
+        <div id="market-list-error" class="notice error" role="alert" hidden></div>
+        <div class="data-table-wrap bookmakers-scroll all-markets-scroll"><table><thead><tr><th>Матч / турнир</th><th>Статус</th><th>Рынков / исходов</th><th>Наблюдение, МСК</th><th>Полнота</th><th></th></tr></thead><tbody id="market-event-rows"></tbody></table></div>
+        <p id="market-list-empty" class="small muted" hidden>Снимков рынков пока нет. Они появятся после сбора страниц матчей.</p>
+        <div class="bookmaker-controls"><button id="market-prev" class="quote-button" type="button" disabled>Назад</button><button id="market-next" class="quote-button" type="button" disabled>Дальше</button></div>
+        <article id="market-detail" class="market-detail" hidden>
+          <h3 id="market-detail-title"></h3><p id="market-detail-meta" class="small muted"></p>
+          <label for="market-search" class="sr-only">Поиск по рынкам</label><input id="market-search" type="search" placeholder="Найти рынок, период или параметр…" />
+          <div id="market-groups"></div>
+        </article>
+        <p class="small muted">Прогноз статистической модели относится к П1/Х/П2 за основное время. Остальные рынки доступны для просмотра и анализа.</p>
       </section>
 
       <section id="bookmakers" class="panel bookmakers-panel">

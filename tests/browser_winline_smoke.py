@@ -86,6 +86,9 @@ async def run(executable):
                 if path == '/':
                     body = '<a href="/stavki/event/900001"><div>Сандерленд</div><div>Челси</div></a>'
                 elif path == '/stavki/event/900001':
+                    await route.fulfill(status=302, headers={'Location': '/stavki/sport/futbol/angliya/apl/900001'}, body='')
+                    return
+                elif path == '/stavki/sport/futbol/angliya/apl/900001':
                     body = '<h1>Сандерленд — Челси</h1><div class="market">Исход 2.10 3.20 3.40</div>'
                 else:
                     raise AssertionError(path)
@@ -95,7 +98,7 @@ async def run(executable):
             await page.goto('https://winline.ru/')
             selected_event = await open_event_link(page, teams=['Сандерленд', 'Челси'])
             assert selected_event['source_event_id'] == '900001'
-            assert page.url.endswith('/stavki/event/900001')
+            assert page.url.endswith('/stavki/sport/futbol/angliya/apl/900001')
         finally:
             await browser.close()
     print('PASS: public Line → Football navigation, bounded lazy loading, separate event/league context, full-match prices and live rejection; all network responses mocked')

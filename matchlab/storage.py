@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import zlib
 from typing import Iterator
 
 
@@ -71,6 +72,20 @@ class Repository:
                     id INTEGER PRIMARY KEY CHECK(id = 1),
                     payload TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS bookmaker_event_markets (
+                    event_id TEXT PRIMARY KEY,
+                    phase TEXT NOT NULL,
+                    kickoff_at TEXT,
+                    observed_at TEXT NOT NULL,
+                    changed_at TEXT NOT NULL,
+                    market_count INTEGER NOT NULL,
+                    outcome_count INTEGER NOT NULL,
+                    complete INTEGER NOT NULL,
+                    metadata TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    payload BLOB NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS bookmaker_market_kickoff ON bookmaker_event_markets(kickoff_at);
             """)
 
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:
@@ -224,3 +239,54 @@ class Repository:
             status["last_success_at"] = status["last_attempt_at"] if status["state"] == "ok" else previous.get("last_success_at")
             db.execute("INSERT OR REPLACE INTO bookmaker_worker VALUES (1, ?)", (json.dumps(status),))
         return status
+
+    def import_event_markets(self, value: dict) -> dict:
+        from .markets import validate_event_markets
+        document = validate_event_markets(value)
+        if datetime.fromisoformat(document["observed_at"]) > datetime.now(timezone.utc) + timedelta(minutes=2):
+            raise ValueError("Время наблюдения находится в будущем.")
+        event_id, observed = document["source_event_id"], document["observed_at"]
+        metadata = {key: item for key, item in document.items() if key != "markets"}
+        content = {key: item for key, item in document.items() if key not in ("observed_at", "capture_started_at")}
+        encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(encoded).hexdigest()
+        with self.connection() as db:
+            previous = db.execute("SELECT observed_at, content_hash FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
+            if previous and observed < previous["observed_at"]:
+                return {"updated": False, "reason": "older_observation", "source_event_id": event_id}
+            if previous and not document['coverage']['complete']:
+                return {"updated": False, "reason": "incomplete_snapshot", "source_event_id": event_id}
+            if previous and digest == previous["content_hash"]:
+                db.execute("UPDATE bookmaker_event_markets SET observed_at = ?, metadata = ? WHERE event_id = ?",
+                           (observed, json.dumps(metadata, ensure_ascii=False), event_id))
+                return {"updated": True, "changed": False, "source_event_id": event_id, "coverage": document["coverage"]}
+            # Keep the latest full market document, compressed. Repeating a
+            # whole book every minute must not create unbounded full archives.
+            db.execute("""INSERT INTO bookmaker_event_markets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO UPDATE SET phase=excluded.phase, kickoff_at=excluded.kickoff_at,
+                observed_at=excluded.observed_at, changed_at=excluded.changed_at,
+                market_count=excluded.market_count, outcome_count=excluded.outcome_count,
+                complete=excluded.complete, metadata=excluded.metadata, content_hash=excluded.content_hash,
+                payload=excluded.payload""", (event_id, document["phase"], document["kickoff_at"], observed, observed,
+                len(document["markets"]), document["coverage"]["captured_outcomes"], int(document["coverage"]["complete"]),
+                json.dumps(metadata, ensure_ascii=False), digest, zlib.compress(encoded)))
+        return {"updated": True, "changed": True, "source_event_id": event_id, "coverage": document["coverage"]}
+
+    def event_markets(self, event_id: str) -> dict | None:
+        with self.connection() as db:
+            row = db.execute("SELECT observed_at, changed_at, metadata, payload FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
+        if not row:
+            return None
+        return {**json.loads(zlib.decompress(row["payload"])), **json.loads(row["metadata"]),
+                "observed_at": row["observed_at"], "changed_at": row["changed_at"]}
+
+    def market_events(self, *, include_started=False, limit=100, offset=0) -> dict:
+        query, params = "FROM bookmaker_event_markets", []
+        if not include_started:
+            query += " WHERE phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)"
+            params.append(datetime.now(timezone.utc).isoformat(timespec='microseconds'))
+        with self.connection() as db:
+            total = db.execute("SELECT COUNT(*) " + query, params).fetchone()[0]
+            rows = db.execute("SELECT metadata, observed_at, changed_at " + query + " ORDER BY COALESCE(kickoff_at, '9999'), event_id LIMIT ? OFFSET ?", [*params, limit, offset])
+            events = [{**json.loads(row["metadata"]), "observed_at": row["observed_at"], "changed_at": row["changed_at"]} for row in rows]
+        return {"events": events, "total": total, "offset": offset, "limit": limit}

@@ -18,3 +18,9 @@ kickoff timestamp. The printed report did not include an observation time,
 so none is invented here. Tests supply their own clock and mark constructed
 future-card variants as synthetic; these prices are not claimed as recorded
 pre-match prices.
+
+`winline_market_projection.json` projects a few labels, periods and prices
+from the user's successful Sunderland–Chelsea event report. The canonical
+URL and observed CSS class names come from that report. Browser tests build
+synthetic HTML around this data and use a future test kickoff; this is not
+a captured HTML document or evidence that every current market is parsed.

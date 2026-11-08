@@ -8,6 +8,11 @@ const state = {
   forecastRequest: 0,
   selectedQuote: null,
   bookmakerRequest: 0,
+  marketOffset: 0,
+  marketRequest: 0,
+  marketDetailRequest: 0,
+  marketSelected: null,
+  marketDocument: null,
 };
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const localDate = (value) =>
@@ -467,7 +472,7 @@ async function init() {
     $("ai-badge").textContent = state.qwen
       ? "АДРЕС НАСТРОЕН"
       : "ОЖИДАЕТ ПОДКЛЮЧЕНИЯ";
-    await Promise.all([loadTeams(), loadBacktest(), loadBookmakers()]);
+    await Promise.all([loadTeams(), loadBacktest(), loadBookmakers(), loadMarketEvents()]);
   } catch (error) {
     showError("global-error", `Не удалось загрузить данные: ${error.message}`);
   }
@@ -534,7 +539,7 @@ async function loadBookmakers() {
         .join(" · ");
     const worker = data.status.worker;
     if (worker) {
-      const labels = { starting: "запускается", ok: "работает", partial: "доступен один источник",
+      const labels = { starting: "запускается", ok: "работает", partial: "данные получены частично",
         blocked: "сайт ограничил доступ", disconnected: "нет соединения",
         unavailable: "источник недоступен", empty: "нет распознанных матчей",
         error: "ошибка сбора или передачи", stopped: "остановлен" };
@@ -544,6 +549,8 @@ async function loadBookmakers() {
         Object.entries(worker.sources).map(([source, item]) =>
           `${bookmakerName(source)}: ${labels[item.state]}`).join(" · ") +
         (worker.last_success_at ? ` · Успешное обновление: ${moscowTime(worker.last_success_at)} МСК` : "");
+      if (worker.mode === "event_markets") $("bookmaker-summary").textContent +=
+        ` · Страницы матчей: ${worker.progress.saved} сохранено, ${worker.progress.discovered} найдено, ${worker.progress.failed} ошибок.`;
     }
     if (all.length) {
       $("stat-odds-source").textContent = all
@@ -612,6 +619,84 @@ $("bookmaker-refresh").addEventListener("click", loadBookmakers);
 $("bookmaker-source").addEventListener("change", loadBookmakers);
 $("bookmaker-archive").addEventListener("change", loadBookmakers);
 setInterval(() => {
-  if (document.visibilityState === "visible") loadBookmakers();
+  if (document.visibilityState === "visible") {
+    loadBookmakers();
+    loadMarketEvents();
+    if (state.marketSelected) loadMarketDetail(state.marketSelected);
+  }
 }, 30000);
+
+async function loadMarketEvents() {
+  const request = ++state.marketRequest;
+  try {
+    const query = new URLSearchParams({offset: String(state.marketOffset), limit: "50", include_started: String($("market-include-started").checked)});
+    const result = await api("/api/bookmakers/events?" + query);
+    if (request !== state.marketRequest) return;
+    showError("market-list-error", "");
+    $("market-list-summary").textContent = `${result.total} событий сохранено · показаны ${result.offset + (result.events.length ? 1 : 0)}–${result.offset + result.events.length}.`;
+    $("market-list-empty").hidden = result.events.length > 0;
+    $("market-prev").disabled = result.offset === 0;
+    $("market-next").disabled = result.offset + result.events.length >= result.total;
+    $("market-event-rows").replaceChildren(...result.events.map(event => {
+      const row = document.createElement("tr");
+      row.dataset.eventId = event.source_event_id;
+      const cell = value => { const element = document.createElement("td"); element.textContent = value; row.append(element); return element; };
+      const match = cell(`${event.home} — ${event.away}`);
+      const league = document.createElement("small"); league.textContent = event.competition; match.append(league);
+      cell(({prematch:"До матча",live:"Live",finished:"Завершён",unknown:"Не указан"})[event.phase]);
+      cell(`${event.coverage.captured_markets} / ${event.coverage.captured_outcomes}`);
+      const observed = cell(moscowTime(event.capture_started_at));
+      observed.className = event.is_stale ? "stale-quote" : "lime";
+      const freshness = document.createElement("small"); freshness.textContent = event.is_stale ? "Снимок старше трёх минут" : "Получен недавно"; observed.append(freshness);
+      cell(event.coverage.complete ? "Полный снимок страницы" : "Неполный снимок");
+      const action = cell(""); const open = document.createElement("button"); open.type = "button"; open.className = "quote-button"; open.textContent = "Рынки";
+      open.addEventListener("click", () => { state.marketSelected = event.source_event_id; $("market-search").value = ""; loadMarketDetail(event.source_event_id); }); action.append(open);
+      return row;
+    }));
+  } catch (error) {
+    if (request === state.marketRequest) showError("market-list-error", error.message);
+  }
+}
+
+async function loadMarketDetail(eventId) {
+  const request = ++state.marketDetailRequest;
+  try {
+    const document = await api(`/api/bookmakers/events/${encodeURIComponent(eventId)}/markets`);
+    if (request !== state.marketDetailRequest || state.marketSelected !== eventId) return;
+    state.marketDocument = document;
+    $("market-detail").hidden = false;
+    $("market-detail-title").textContent = `${document.home} — ${document.away}`;
+    $("market-detail-meta").textContent = `${document.competition} · ${document.coverage.captured_markets} рынков · ${document.coverage.captured_outcomes} исходов · наблюдение ${moscowTime(document.capture_started_at)}–${moscowTime(document.observed_at)} МСК · ${document.coverage.complete ? "полный снимок страницы" : "неполный снимок"}${document.is_stale ? " · данные устарели" : ""}`;
+    renderMarketGroups();
+  } catch (error) { if (request === state.marketDetailRequest) showError("market-list-error", error.message); }
+}
+
+function renderMarketGroups() {
+  if (!state.marketDocument) return;
+  const open = new Set([...$("market-groups").querySelectorAll("details[open]")].map(element => element.dataset.key));
+  const query = $("market-search").value.toLocaleLowerCase("ru-RU");
+  const markets = state.marketDocument.markets.filter(market => [market.name,market.group,market.period,market.parameter].filter(Boolean).join(" ").toLocaleLowerCase("ru-RU").includes(query));
+  $("market-groups").replaceChildren(...markets.map(market => {
+    const details = document.createElement("details"); details.className = "market-group"; details.dataset.key = market.key;
+    const summary = document.createElement("summary"); summary.textContent = [market.group,market.name,market.period,market.parameter].filter(Boolean).join(" · ") + ` (${market.outcomes.length})`; details.append(summary);
+    let rendered = false;
+    const render = () => {
+      if (rendered || !details.open) return;
+      rendered = true; const outcomes = document.createElement("div"); outcomes.className = "market-outcomes";
+      market.outcomes.forEach(outcome => {
+        const item = document.createElement("div"); const label = document.createElement("span"); label.textContent = [outcome.name,outcome.parameter].filter(Boolean).join(" · ");
+        const price = document.createElement("strong"); price.textContent = outcome.state === "open" ? String(outcome.odds) : outcome.state === "suspended" ? "Приостановлен" : "Недоступен";
+        item.append(label,price); outcomes.append(item);
+      }); details.append(outcomes);
+    };
+    details.addEventListener("toggle", render);
+    details.open = open.has(market.key);
+    render(); return details;
+  }));
+}
+$("market-refresh").addEventListener("click", loadMarketEvents);
+$("market-include-started").addEventListener("change", () => { state.marketOffset = 0; loadMarketEvents(); });
+$("market-prev").addEventListener("click", () => { state.marketOffset = Math.max(0,state.marketOffset - 50); loadMarketEvents(); });
+$("market-next").addEventListener("click", () => { state.marketOffset += 50; loadMarketEvents(); });
+$("market-search").addEventListener("input", renderMarketGroups);
 init();

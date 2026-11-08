@@ -8,6 +8,22 @@ from urllib.parse import urljoin, urlsplit
 LINE_URL = "https://winline.ru/stavki"
 FOOTBALL_PATH = "/stavki/sport/futbol"
 
+
+def event_id_from_url(value: str) -> str | None:
+    parsed = urlsplit(value)
+    if parsed.scheme != "https" or parsed.hostname not in ("winline.ru", "www.winline.ru"):
+        return None
+    match = re.fullmatch(r"(?:/stavki/event|/stavki/sport/futbol(?:/[a-zA-Z0-9_-]+){1,6})/(\d{1,20})/?", parsed.path)
+    return match[1] if match else None
+
+
+def public_event_id(value: str) -> str | None:
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or parsed.hostname not in ('winline.ru', 'www.winline.ru'):
+        return None
+    match = re.fullmatch(r'(?:/stavki/event|/stavki/sport/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+){1,6})/(\d{1,20})/?', parsed.path)
+    return match[1] if match else None
+
 CARD_CONTEXT = r"""el => {
     const text = node => {
         let value = node.innerText || '';
@@ -104,9 +120,9 @@ async def open_event_link(page, *, event_id: int | None = None, teams: list[str]
     else:
         raise ValueError("Нужны ID или обе команды для выбора текущей ссылки.")
     address = urlsplit(urljoin(page.url, await target.get_attribute("href", timeout=15000) or ""))
-    match = re.fullmatch(r"/stavki/event/(\d+)/?", address.path)
-    if address.scheme != "https" or address.hostname not in ("winline.ru", "www.winline.ru") or not match:
+    selected_id = event_id_from_url(urljoin(page.url, address.geturl()))
+    if not selected_id:
         raise ValueError("Неожиданный адрес страницы матча.")
     await target.click(timeout=15000)
-    await page.wait_for_url(re.compile(r"https://(?:www\.)?winline\.ru/stavki/event/" + match[1] + r"/?(?:\?.*)?$"), timeout=15000)
-    return {"event_selected": True, "source_event_id": match[1]}
+    await page.wait_for_url(lambda value: public_event_id(str(value)) == selected_id, timeout=15000)
+    return {"event_selected": True, "source_event_id": selected_id}

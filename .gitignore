@@ -1,5 +1,6 @@
 .venv/
 .collector-venv/
+.crawler-venv/
 .local/
 .env
 __pycache__/

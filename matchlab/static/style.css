@@ -1395,6 +1395,15 @@ td small {
   min-width: 200px;
   font-size: 12px;
 }
+.all-markets-scroll table { min-width: 760px; }
+.market-detail { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); }
+.market-detail input { width: 100%; margin: 12px 0; padding: 12px; background: #151a13; color: var(--text); border: 1px solid var(--line); border-radius: 7px; }
+.market-group { margin: 10px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.market-group summary { cursor: pointer; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.market-outcomes { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 8px; margin-top: 12px; }
+.market-outcomes > div { display: flex; justify-content: space-between; gap: 12px; padding: 10px; background: #151a13; border-radius: 5px; font-size: 12px; }
+.market-outcomes span { overflow-wrap: anywhere; }
+.market-outcomes strong { flex-shrink: 0; font-variant-numeric: tabular-nums; color: var(--lime); }
 .odds-value {
   font-size: 13px;
   font-variant-numeric: tabular-nums;

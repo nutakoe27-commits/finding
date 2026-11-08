@@ -36,7 +36,19 @@ def validate_status(value: dict) -> dict:
         if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 10000:
             raise ValueError("Некорректный счётчик событий.")
         sources[source] = {"state": item["state"], "events": count}
-    return {"state": value["state"], "interval_seconds": interval, "sources": sources}
+    result = {"state": value["state"], "interval_seconds": interval, "sources": sources}
+    if value.get('mode') == 'event_markets':
+        progress = value.get('progress', {})
+        if not isinstance(progress, dict):
+            raise ValueError('Некорректный прогресс сбора.')
+        clean = {}
+        for key in ('discovered', 'saved', 'skipped', 'failed'):
+            count = progress.get(key, 0)
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 100000:
+                raise ValueError('Некорректный счётчик прогресса.')
+            clean[key] = count
+        result.update(mode='event_markets', progress=clean)
+    return result
 
 
 def market_feed(source: str, value: str) -> bool:
