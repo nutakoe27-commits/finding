@@ -4,11 +4,13 @@ set -euo pipefail
 umask 077
 ssh_target=""
 ssh_user="${SUDO_USER:-root}"
+ssh_identity=""
 while (($#)); do
   case "$1" in
     --ssh-target) ssh_target="${2:?Missing SSH target}"; shift 2 ;;
     --local-user) ssh_user="${2:?Missing local user}"; shift 2 ;;
-    *) echo "Использование: sudo bash $0 --ssh-target root@VPS_IP [--local-user user]" >&2; exit 1 ;;
+    --identity-file) ssh_identity="${2:?Missing identity file}"; shift 2 ;;
+    *) echo "Использование: sudo bash $0 --ssh-target root@VPS_IP [--local-user user] [--identity-file /home/user/.ssh/matchlab_scraper]" >&2; exit 1 ;;
   esac
 done
 if [[ "$EUID" != 0 || ! "$ssh_target" =~ ^[A-Za-z0-9][A-Za-z0-9_.@-]*$ || ! "$ssh_user" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
@@ -16,6 +18,14 @@ if [[ "$EUID" != 0 || ! "$ssh_target" =~ ^[A-Za-z0-9][A-Za-z0-9_.@-]*$ || ! "$ss
   exit 1
 fi
 id "$ssh_user" >/dev/null
+identity_options=""
+if [[ -n "$ssh_identity" ]]; then
+  if [[ ! "$ssh_identity" =~ ^/[A-Za-z0-9_./@+-]+$ ]] || ! runuser -u "$ssh_user" -- test -f "$ssh_identity" || ! runuser -u "$ssh_user" -- test -r "$ssh_identity"; then
+    echo 'Укажите абсолютный путь к доступному SSH-ключу без пробелов и специальных символов.' >&2
+    exit 1
+  fi
+  identity_options="-i $ssh_identity -o IdentitiesOnly=yes"
+fi
 unit=/etc/systemd/system/matchlab-scraper-tunnel.service
 if [[ -e "$unit" ]]; then
   IFS= read -r first_line < "$unit" || true
@@ -37,6 +47,9 @@ with socket.socket() as probe:
         raise SystemExit('Порт 127.0.0.1:18081 на сервере сбора занят; существующий процесс не изменён.')
 PY
 ssh_options=(-o BatchMode=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ConnectTimeout=10 -o ControlMaster=no -o ControlPath=none)
+if [[ -n "$ssh_identity" ]]; then
+  ssh_options+=(-i "$ssh_identity" -o IdentitiesOnly=yes)
+fi
 if ! runuser -u "$ssh_user" -- ssh "${ssh_options[@]}" "$ssh_target" true; then
   echo "Нет автономного SSH-доступа от $ssh_user. Настройте SSH-ключ и проверьте host key обычным ssh перед повтором." >&2
   exit 1
@@ -68,7 +81,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 User=$ssh_user
-ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPath=none -o ConnectTimeout=10 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18081:127.0.0.1:8080 $ssh_target
+ExecStart=/usr/bin/ssh -NT $identity_options -o BatchMode=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPath=none -o ConnectTimeout=10 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 127.0.0.1:18081:127.0.0.1:8080 $ssh_target
 Restart=always
 RestartSec=15
 MemoryMax=64M

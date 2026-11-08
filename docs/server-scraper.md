@@ -57,24 +57,28 @@ ssh root@VPS_IP true
 `~/.ssh/config` и используйте его вместо `root@VPS_IP`.
 
 Фоновый туннель требует SSH-ключ без интерактивного запроса и без ssh-agent.
-Если использовали только пароль, создайте ключ при его отсутствии:
+Если использовали только пароль, создайте отдельный ключ для сборщика
+на сервере Qwen. Команда сохраняет уже существующий файл:
 
 ```bash
-test -f "$HOME/.ssh/id_ed25519" || ssh-keygen -t ed25519 -f "$HOME/.ssh/id_ed25519" -N ''
-ssh-copy-id -i "$HOME/.ssh/id_ed25519.pub" root@VPS_IP
-ssh -o BatchMode=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes root@VPS_IP true
+install -d -m 700 "$HOME/.ssh"
+test -e "$HOME/.ssh/matchlab_scraper" || ssh-keygen -t ed25519 -f "$HOME/.ssh/matchlab_scraper" -N ''
+ssh-copy-id -i "$HOME/.ssh/matchlab_scraper.pub" root@VPS_IP
+ssh -i "$HOME/.ssh/matchlab_scraper" -o IdentitiesOnly=yes -o BatchMode=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes root@VPS_IP true
 ```
 
-Если существующий ключ защищён паролем, настройте отдельный ключ/SSH alias
-для фоновой службы. Не заменяйте рабочие ключи и не отключайте проверку
-host key. Скрипты сами не генерируют и не изменяют SSH-ключи.
+`ssh-copy-id` один раз запросит пароль root на VPS и добавит только публичный
+ключ в `authorized_keys`. Последняя проверка должна завершиться без запроса
+пароля и без ошибок. Существующие ключи и SSH-конфигурация не заменяются.
+Если выбранный ключ уже есть и защищён паролем, используйте другое свободное
+имя для отдельного ключа фоновой службы. Скрипты сами ключи не меняют.
 
 ## 3. Туннель и сборщик на сервере Qwen
 
 Из того же каталога на **сервере Qwen**:
 
 ```bash
-sudo bash scripts/install_scraper_tunnel.sh --ssh-target root@VPS_IP
+sudo bash scripts/install_scraper_tunnel.sh --ssh-target root@VPS_IP --identity-file "$HOME/.ssh/matchlab_scraper"
 sudo bash scripts/install_server_scraper.sh --api-url http://127.0.0.1:18081
 ```
 
@@ -83,6 +87,8 @@ sudo bash scripts/install_server_scraper.sh --api-url http://127.0.0.1:18081
 `matchlab-scraper-tunnel`. Для другого локального пользователя есть
 `--local-user user`. Занятый порт 18081 вызывает остановку установки;
 существующий процесс не меняется. Прежний туннель Qwen/порт 23333 сохраняется.
+`--identity-file` выбирает один и тот же ключ для проверки, копирования файла
+и фоновой службы. При уже настроенном SSH alias этот параметр необязателен.
 
 Второй скрипт проверяет **MemAvailable ≥ 1536 МиБ** до изменений, создаёт
 пользователя `matchlab-scraper`, код и venv в `/opt/matchlab-scraper`, состояние
