@@ -3,6 +3,8 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 from io import StringIO
+from argparse import Namespace
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -16,7 +18,7 @@ from matchlab.config import Settings
 from matchlab.statistics import FORMAT,analysis_statistics,validate_statistics
 from matchlab.event_analysis import analysis_context
 from matchlab.storage import Repository
-from matchlab.statistics_worker import read_config
+from matchlab.statistics_worker import read_config, runtime_config, report
 from scripts import configure_statistics_client
 from test_product import event
 
@@ -128,6 +130,21 @@ class StatisticsTests(unittest.TestCase):
         config=json.loads(output.read_text()); config['api_url']='https://example.com'
         output.write_text(json.dumps(config))
         with self.assertRaises(ValueError): read_config(output)
+
+    def test_server_reads_existing_environment_key_without_any_mac_config(self):
+        args=Namespace(api_url='http://127.0.0.1:18081',config=None)
+        with patch.dict(os.environ,BOOKMAKER_INGEST_TOKEN=KEY):
+            self.assertEqual(runtime_config(args)['collector_key'],KEY)
+        with patch.dict(os.environ,BOOKMAKER_INGEST_TOKEN=''):
+            with self.assertRaises(ValueError): runtime_config(args)
+
+    def test_server_status_preserves_blocked_state_without_secrets(self):
+        output=self.path/'server/status.json'
+        with redirect_stdout(StringIO()) as messages:
+            report(Namespace(status_file=output),{'state':'blocked','statistics':{'blocked':1}})
+        self.assertEqual(json.loads(output.read_text())['state'],'blocked')
+        self.assertEqual(output.stat().st_mode&0o777,0o600)
+        self.assertNotIn(KEY,messages.getvalue())
 
 
 if __name__=='__main__': unittest.main()

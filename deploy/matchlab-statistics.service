@@ -1,0 +1,38 @@
+# Managed by Matchlab server statistics
+[Unit]
+Description=Matchlab public team statistics collector
+After=network-online.target matchlab-scraper-tunnel.service
+Wants=network-online.target matchlab-scraper-tunnel.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=matchlab-scraper
+Group=matchlab-scraper
+WorkingDirectory=/opt/matchlab-statistics
+EnvironmentFile=/etc/matchlab-scraper-token.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers
+Environment=HOME=/var/lib/matchlab-statistics
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/matchlab-crawler/.venv/bin/python -m matchlab.statistics_worker --api-url http://127.0.0.1:18081 --headless --interval 60 --batch-size 2 --status-file /var/lib/matchlab-statistics/status.json
+StateDirectory=matchlab-statistics
+StateDirectoryMode=0700
+Restart=always
+RestartSec=60
+TimeoutStopSec=30
+MemoryHigh=768M
+MemoryMax=1024M
+CPUQuota=50%
+Nice=15
+OOMScoreAdjust=500
+TasksMax=512
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
