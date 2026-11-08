@@ -69,14 +69,18 @@ fi
 if ! id matchlab-scraper >/dev/null 2>&1; then
   useradd --system --user-group --home-dir /var/lib/matchlab-scraper --shell /usr/sbin/nologin matchlab-scraper
 fi
+echo '[1/6] Подготовка кода и отдельного Python-окружения...'
 install -d -m 755 "$target" "$target/matchlab"
 install -d -m 700 -o matchlab-scraper -g matchlab-scraper /var/lib/matchlab-crawler /var/lib/matchlab-scraper
 touch "$target/.matchlab-managed"
 install -m 644 matchlab/{__init__,bookmakers,capture,worker_protocol,server_scraper,winline_browser,winline_markets,markets,scrapy_worker}.py "$target/matchlab/"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt requirements-crawler.txt "$target/"
 python3 -m venv "$target/.venv"
-"$target/.venv/bin/python" -m pip install --quiet -r "$target/requirements-crawler.txt"
+echo '[2/6] Установка Python-пакетов. Первая загрузка может занять несколько минут; прогресс pip показан ниже.'
+"$target/.venv/bin/python" -m pip install --disable-pip-version-check --progress-bar off -r "$target/requirements-crawler.txt"
+echo '[3/6] Проверка Chromium; при отсутствии браузера начнётся загрузка...'
 runuser -u matchlab-scraper -- env PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers "$target/.venv/bin/python" -m playwright install chromium
+echo '[4/6] Установка конфигурации служб Matchlab...'
 printf '# Managed by Matchlab market crawler\nBOOKMAKER_API_URL=%s\nBOOKMAKER_CRAWL_CONCURRENCY=%s\n' "$api_url" "$concurrency" > /etc/matchlab-crawler.conf
 chmod 600 /etc/matchlab-crawler.conf
 install -m 644 deploy/matchlab-crawler{,-check}.service /etc/systemd/system/
@@ -86,6 +90,8 @@ if [[ "$install_only" == 1 ]]; then
   exit 0
 fi
 check_since="$(date --iso-8601=seconds)"
+echo '[5/6] Проверка страницы Winline и доставки данных. Ожидание — до четырёх минут.'
+echo 'Журнал проверки во втором SSH-сеансе: sudo journalctl -fu matchlab-crawler-check.service'
 if ! systemctl start matchlab-crawler-check.service; then
   journalctl -u matchlab-crawler-check.service --since "$check_since" -n 40 --no-pager || true
   echo 'Не подтверждены полный снимок матча и его доставка. Автосбор не включён.' >&2
@@ -100,5 +106,6 @@ if [[ -f "$old" ]]; then
   fi
   systemctl disable --now matchlab-scraper.service
 fi
+echo '[6/6] Включение автосбора...'
 systemctl enable --now matchlab-crawler.service
 echo 'Проверен полный снимок страницы и приёмник. Очередь Scrapy включена; интервал между началами циклов — 60 секунд, без наложения обходов. Фактическая свежесть каждого матча видна в интерфейсе.'
