@@ -18,6 +18,7 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from matchlab.winline_markets import MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook
+from scripts.diagnose_winline_header import HEADER_SCRIPT
 
 PROJECTION = json.loads((Path(__file__).parent / 'fixtures/winline_market_projection.json').read_text())
 GOAL_VARIANTS = json.loads((Path(__file__).parent / 'fixtures/winline_goal_market_variants.json').read_text())
@@ -49,6 +50,10 @@ async def browser_test(executable):
         browser = await playwright.chromium.launch(headless=True, executable_path=executable)
         try:
             page = await browser.new_page(locale='ru-RU', timezone_id='Europe/Moscow')
+            await page.set_content('<div class="ww-markets"><div class="ww-markets__stickybar"><div class="marketbook-header--live"><div class="team-home">Команда А</div><div class="team-away">Команда Б</div><form>PRIVATE_FORM<input value="secret"></form></div></div><ww-feature-marketbook-dsk><h2>Рынок скрыт из диагностики</h2></ww-feature-marketbook-dsk></div>')
+            header=await page.evaluate(HEADER_SCRIPT)
+            assert header['found'] and any('Команда А' in item['text'] for item in header['candidates'])
+            assert 'PRIVATE_FORM' not in json.dumps(header,ensure_ascii=False) and 'Рынок скрыт' not in json.dumps(header,ensure_ascii=False)
             async def event_fixture(route):
                 await route.fulfill(status=200,content_type='text/html',body=fixture_html())
             await page.route('https://winline.ru/**',event_fixture)

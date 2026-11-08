@@ -81,6 +81,7 @@ touch "$target/.matchlab-managed"
 install -m 644 matchlab/{__init__,sports,bookmakers,capture,worker_protocol,server_scraper,winline_browser,winline_markets,markets,scrapy_worker}.py "$target/matchlab/"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt requirements-crawler.txt "$target/"
 install -m 644 scripts/diagnose_winline_stats.py "$target/diagnose_winline_stats.py"
+install -m 644 scripts/diagnose_winline_header.py "$target/diagnose_winline_header.py"
 python3 -m venv "$target/.venv"
 echo '[2/6] Установка Python-пакетов. Первая загрузка может занять несколько минут; прогресс pip показан ниже.'
 "$target/.venv/bin/python" -m pip install --disable-pip-version-check --progress-bar off -r "$target/requirements-crawler.txt"
