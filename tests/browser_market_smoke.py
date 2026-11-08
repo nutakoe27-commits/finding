@@ -67,6 +67,16 @@ async def browser_test(executable):
             variants = [market for market in teams['markets'] if market['name'] == 'Победит (осн.время)']
             assert {market['parameter'] for market in variants} == {'Сандерленд', 'Челси'}
             assert teams['coverage']['complete'] and teams['coverage']['captured_outcomes'] == 17
+            # Missing distinguishing context must not silently choose one of
+            # two prices or discard unrelated, correctly parsed markets.
+            await page.set_content(fixture_html()+'''<script>document.querySelector('ww-feature-marketbook-dsk').insertAdjacentHTML('beforeend',`<h2>Неоднозначная группа</h2><section><button class="market-header">Неоднозначный рынок</button><div class="market__table"><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>2.0</span></button><button class="market__row-btn"><span>Нет</span><span>3.0</span></button></div><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>4.0</span></button><button class="market__row-btn"><span>Нет</span><span>5.0</span></button></div></div></section>`)</script>''')
+            ambiguous_snapshot=await read_marketbook(page,maximum_passes=10)
+            ambiguous=market_document(ambiguous_snapshot,PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert not ambiguous['coverage']['complete'],ambiguous['coverage']
+            assert ambiguous['coverage']['captured_outcomes']==13 and ambiguous['coverage']['unparsed_outcomes']==4,ambiguous['coverage']
+            assert all(market['name']!='Неоднозначный рынок' for market in ambiguous['markets'])
+            assert primary_quote(ambiguous)['snapshots'][0]['odds']['home']==3.9
+            assert ambiguous_snapshot['unsupported'][0]['reason']=='ambiguous_outcome_context'
             await page.set_content(fixture_html(unsupported=True))
             partial = market_document(await read_marketbook(page, maximum_passes=5), PROJECTION['url'], datetime.now(timezone.utc).isoformat())
             assert not partial['coverage']['complete']
@@ -86,7 +96,7 @@ async def browser_test(executable):
             assert merged['coverage']['captured_outcomes'] == 10, merged
         finally:
             await browser.close()
-    print('PASS: All tab, collapsed groups, every outcome accounted, periods/parameters separated, virtual-list union, no price-button clicks, unsupported labels prevent completeness')
+    print('PASS: All tab, collapsed groups, period/parameter separation, virtual-list union, no bet clicks, ambiguous variants excluded while valid markets survive, incomplete coverage stays explicit')
 
 
 def scrapy_test(executable, publish=False):

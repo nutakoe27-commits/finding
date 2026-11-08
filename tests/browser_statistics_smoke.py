@@ -62,11 +62,12 @@ async def exercise(base,repo):
             assert repo.statistics('123')['sections']==snapshot['sections']
             # An explicit statistics icon can expose the real ID via a popup;
             # its ID must not be derived from the bookmaker's event number.
-            await page.goto(parent['url'])
-            await page.set_content('<div class="special__btns-wrapper"><button class="plain-button" onclick="window.open(\'https://winline.ru/stats/match/72334410\')">Статистика</button><button onclick="window.betClicks++">Ставка</button></div><script>window.betClicks=0;</script>')
-            links=await discover_statistics_link(page,{'statistics_links':[]})
-            assert links==['https://winline.ru/stats/match/72334410'],links
-            assert await page.evaluate('window.betClicks')==0
+            for event_id,statistics_id in (('123','72334410'),('124','72334422')):
+                await page.goto(parent['url'].rsplit('/',1)[0]+'/'+event_id)
+                await page.set_content('<div class="ww-markets"><button class="plain-button" onclick="window.open(\'https://winline.ru/stats/match/'+statistics_id+'\')">Статистика</button><button class="market__row-btn" onclick="window.betClicks++">Статистика</button></div><a href="https://winline.ru/stats/match/999">Чужая статистика вне матча</a><script>window.betClicks=0;</script>')
+                links=await discover_statistics_link(page,{'statistics_links':[]})
+                assert links==['https://winline.ru/stats/match/'+statistics_id],(event_id,links)
+                assert await page.evaluate('window.betClicks')==0
             await context.close()
             for width in (1440,390):
                 page=await browser.new_page(viewport={'width':width,'height':900})
@@ -81,7 +82,7 @@ async def exercise(base,repo):
                 assert not errors,errors
                 await page.close()
         finally: await browser.close()
-    print('PASS: public StatsHub h3/header extraction, finished-result provenance, Access Denied rejection, cache preservation, scoped statistics popup and real desktop/mobile statistics interface')
+    print('PASS: public StatsHub extraction, finished-result provenance, blocked-page rejection, cache preservation, different statistics buttons for two events, unrelated-link rejection and desktop/mobile interface')
 
 
 def main():

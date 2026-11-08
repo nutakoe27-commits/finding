@@ -179,18 +179,33 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
                 await headers.nth(item['index']).click()
                 expanded_headers.add(key)
         snapshot = await page.evaluate(MARKETS_SCRIPT)
-        part_outcomes, duplicates = {}, 0
+        part_outcomes, duplicates, ambiguous = {}, 0, set()
+        conflicts=[]
         for market in snapshot.get('markets', []):
             market_id = identity({key: value for key, value in market.items() if key != 'outcomes'})
-            previous_market = accumulated.setdefault(market_id, {**market, 'outcomes': {}})
             for outcome in market['outcomes']:
                 outcome_id = identity({key: value for key, value in outcome.items() if key not in ('odds', 'state')})
                 key = (market_id, outcome_id)
                 if key in part_outcomes:
                     if part_outcomes[key] != outcome:
-                        raise ValueError('Ambiguous outcome context in marketbook')
-                    duplicates += 1
+                        ambiguous.add(market_id)
+                        if len(conflicts)<5:
+                            conflicts.append({'market':market['name'],'period':market.get('period'),
+                                              'parameter':market.get('parameter'),'reason':'ambiguous_outcome_context',
+                                              'outcomes':[part_outcomes[key],outcome]})
+                    else: duplicates += 1
                 part_outcomes[key] = outcome
+        if ambiguous:
+            rejected=[market for market in snapshot['markets'] if identity({key:value for key,value in market.items() if key!='outcomes'}) in ambiguous]
+            snapshot['markets']=[market for market in snapshot['markets'] if market not in rejected]
+            snapshot['unparsed_outcomes']=snapshot.get('unparsed_outcomes',0)+sum(len(market['outcomes']) for market in rejected)
+            snapshot['unsupported']=(snapshot.get('unsupported',[])+conflicts)[:20]
+            for market_id in ambiguous: accumulated.pop(market_id,None)
+        for market in snapshot.get('markets', []):
+            market_id = identity({key: value for key, value in market.items() if key != 'outcomes'})
+            previous_market = accumulated.setdefault(market_id, {**market, 'outcomes': {}})
+            for outcome in market['outcomes']:
+                outcome_id = identity({key:value for key,value in outcome.items() if key not in ('odds','state')})
                 previous_market['outcomes'][outcome_id] = outcome
         max_duplicates = max(max_duplicates, duplicates)
         signature = snapshot.get('structure')
@@ -248,12 +263,14 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
 
 async def discover_statistics_link(page, snapshot: dict) -> list[str]:
     """Resolve only the current event's explicitly labelled statistics control."""
+    # Never resolve a global/menu statistics link outside an open event.
+    if not event_id_from_url(page.url): return []
     known=snapshot.get('statistics_links',[])
     url,status=event_statistics_link(known)
     if status!='missing': return [url] if url else known
-    controls=page.locator('.ww-markets__stickybar a,.ww-markets__stickybar button,.marketbook-header--prematch a,.marketbook-header--prematch button,.marketbook-header--live a,.marketbook-header--live button,.special__btns-wrapper > *')
+    controls=page.locator('.ww-markets a,.ww-markets button,.ww-markets [role="button"],.ww-markets__stickybar a,.ww-markets__stickybar button,.marketbook-header--prematch a,.marketbook-header--prematch button,.marketbook-header--live a,.marketbook-header--live button,.special__btns-wrapper > *')
     matches=await controls.evaluate_all(r'''nodes=>nodes.flatMap((node,index)=>{
-        if (!node.getClientRects().length || node.closest('form') || node.matches('.market__row-btn')) return [];
+        if (!node.getClientRects().length || node.closest('form') || node.matches('.market__row-btn,.market-header')) return [];
         if (node.querySelectorAll('a,button,[role="button"]').length>1) return [];
         const marker=[node.tagName,node.className,node.title,(node.innerText || '').slice(0,120),node.getAttribute('aria-label'),node.getAttribute('data-testid'),...[...node.querySelectorAll('svg,use,img')].map(icon=>[icon.tagName,icon.getAttribute('class'),icon.getAttribute('alt'),icon.getAttribute('src'),icon.getAttribute('href') || icon.getAttribute('xlink:href')].join(' '))].join(' ');
         return /statistic|статист|stats(?:[._\-#]|$)/i.test(marker)?[index]:[];

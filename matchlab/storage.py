@@ -296,12 +296,24 @@ class Repository:
         encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(encoded).hexdigest()
         with self.connection() as db:
-            previous = db.execute("SELECT observed_at, content_hash, json_extract(metadata, '$.sport') AS sport FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
+            previous = db.execute("SELECT observed_at, metadata, complete, content_hash, json_extract(metadata, '$.sport') AS sport FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
             if previous and previous['sport'] != document['sport']:
                 raise ValueError('Вид спорта существующего события не может измениться.')
             if previous and observed < previous["observed_at"]:
                 return {"updated": False, "reason": "older_observation", "source_event_id": event_id}
-            if previous and not document['coverage']['complete']:
+            if previous and previous['complete'] and not document['coverage']['complete']:
+                if document['statistics_link_status']=='found':
+                    # A verified event button is independent of whether every
+                    # price on that page could be parsed. Preserve old prices
+                    # and their times while recording only the observed link.
+                    old_metadata=json.loads(previous['metadata'])
+                    fields=('home','away') if document['event_kind']=='match' else ('title',)
+                    same_participants=(old_metadata.get('event_kind','match')==document['event_kind'] and
+                        all(' '.join((old_metadata.get(key) or '').casefold().split())==' '.join((document.get(key) or '').casefold().split()) for key in fields))
+                    if same_participants and observed>=old_metadata.get('statistics_link_observed_at',previous['observed_at']):
+                        old_metadata.update(statistics_url=document['statistics_url'],statistics_link_status='found',statistics_link_observed_at=observed)
+                        db.execute('UPDATE bookmaker_event_markets SET metadata=? WHERE event_id=?',
+                                   (json.dumps(old_metadata,ensure_ascii=False),event_id))
                 return {"updated": False, "reason": "incomplete_snapshot", "source_event_id": event_id}
             if previous and digest == previous["content_hash"]:
                 db.execute("UPDATE bookmaker_event_markets SET observed_at = ?, metadata = ? WHERE event_id = ?",
@@ -359,7 +371,7 @@ class Repository:
                 LEFT JOIN event_statistics s ON s.event_id=b.event_id
                 WHERE json_extract(b.metadata,'$.statistics_link_status')='found'
                   AND json_extract(b.metadata,'$.statistics_url') IS NOT NULL
-                  AND b.observed_at>=?
+                  AND MAX(b.observed_at,COALESCE(json_extract(b.metadata,'$.statistics_link_observed_at'),b.observed_at))>=?
                   AND (s.event_id IS NULL OR s.statistics_id != substr(json_extract(b.metadata,'$.statistics_url'),length('https://winline.ru/stats/match/')+1)
                     OR s.last_attempt_at < CASE s.last_state WHEN 'ok' THEN ? WHEN 'blocked' THEN ? WHEN 'empty' THEN ? ELSE ? END)
                 ORDER BY COALESCE(s.last_attempt_at,''),COALESCE(b.kickoff_at,'9999'),b.event_id LIMIT ?""",

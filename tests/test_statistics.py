@@ -53,6 +53,45 @@ class StatisticsTests(unittest.TestCase):
         self.repo.import_event_markets(event('124'))
         self.assertEqual(len(self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs']),1)
 
+    def test_each_events_statistics_url_remains_independent(self):
+        second=event('124'); second['statistics_url']='https://winline.ru/stats/match/72334422'
+        self.repo.import_event_markets(second)
+        jobs=self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs']
+        self.assertEqual({job['source_event_id']:job['statistics_url'] for job in jobs},
+            {'123':'https://winline.ru/stats/match/72334410','124':'https://winline.ru/stats/match/72334422'})
+        wrong=stats(event_id='124')
+        self.assertEqual(self.post(wrong).status_code,422)
+
+    def test_new_statistics_button_survives_partial_prices_without_restamping_old_prices(self):
+        previous=self.repo.event_markets('123')
+        partial=event(); partial['statistics_url']='https://winline.ru/stats/match/72334422'
+        partial.update(home=previous['home'],away=previous['away'])
+        partial['markets'][0]['outcomes'].pop()
+        result=self.repo.import_event_markets(partial)
+        self.assertFalse(result['updated'])
+        current=self.repo.event_markets('123')
+        self.assertEqual(current['markets'],previous['markets'])
+        self.assertEqual(current['observed_at'],previous['observed_at'])
+        self.assertEqual(current['capture_started_at'],previous['capture_started_at'])
+        self.assertEqual(current['statistics_url'],'https://winline.ru/stats/match/72334422')
+        self.assertEqual(self.repo.statistics_queue()['jobs'][0]['statistics_url'],current['statistics_url'])
+
+    def test_partial_page_with_different_participants_cannot_replace_statistics_link(self):
+        previous=self.repo.event_markets('123')
+        partial=event(); partial['statistics_url']='https://winline.ru/stats/match/72334422'
+        partial['markets'][0]['outcomes'].pop()
+        self.repo.import_event_markets(partial)
+        self.assertEqual(self.repo.event_markets('123')['statistics_url'],previous['statistics_url'])
+
+    def test_partial_event_prices_can_refresh_until_a_full_snapshot_is_available(self):
+        partial=event('124'); partial['markets'][0]['outcomes'].pop()
+        self.repo.import_event_markets(partial)
+        partial['markets'][0]['outcomes'][0]['odds']=3.7
+        self.assertTrue(self.repo.import_event_markets(partial)['updated'])
+        current=self.repo.event_markets('124')
+        self.assertFalse(current['coverage']['complete'])
+        self.assertEqual(current['markets'][0]['outcomes'][0]['odds'],3.7)
+
     def test_ready_statistics_preserve_exact_source_and_do_not_change_training_data(self):
         revision=self.repo.revision()
         response=self.post(stats()); self.assertEqual(response.status_code,200,response.text)

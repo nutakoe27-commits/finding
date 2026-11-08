@@ -49,11 +49,11 @@ async def run(args):
             page=await context.new_page()
             result={'requested_url':args.url,'observed_at':datetime.now(timezone.utc).isoformat(),'frames':[]}
             try:
-                response=await page.goto(args.url,wait_until='domcontentloaded',timeout=45000)
+                response=await page.goto(args.url,wait_until='domcontentloaded',timeout=45000) if not args.probe_only else None
                 result['status']=response.status if response else None
-                await asyncio.sleep(args.seconds)
-                result['url']=public_url(page.url)
-                for frame in page.frames[:8]:
+                if not args.probe_only: await asyncio.sleep(args.seconds)
+                result['url']=public_url(page.url) if not args.probe_only else None
+                for frame in ([] if args.probe_only else page.frames[:8]):
                     try:
                         data=await asyncio.wait_for(frame.evaluate(SCRIPT),timeout=5)
                         for link in data['links']: link['url']=public_url(link['url'])
@@ -115,7 +115,7 @@ async def run(args):
 def main():
     os.umask(0o077)
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url',default='https://winline.ru/stats/match/72334410')
+    parser.add_argument('--url',help='Optional observed statistics URL; without it inspect the current event button')
     parser.add_argument('--seconds',type=int,default=10)
     parser.add_argument('--headed',action='store_true',help='Open a separate visible browser, without the normal user profile')
     parser.add_argument('--channel',choices=('chrome','msedge'),help='Use an already installed browser')
@@ -123,10 +123,12 @@ def main():
     parser.add_argument('--probe-only',action='store_true',help='Print only the event association probe')
     parser.add_argument('--output-dir',type=Path,default=Path('/var/lib/matchlab-crawler/diagnostics'))
     args=parser.parse_args()
+    if not args.url: args.probe_only=True
     if args.probe_only: args.probe_line=True; args.seconds=1
-    parsed=urlsplit(args.url)
-    if parsed.scheme!='https' or parsed.hostname not in ('winline.ru','www.winline.ru') or parsed.username or parsed.password or not re.fullmatch(r'/stats/match/\d{1,20}/?',parsed.path) or parsed.query or parsed.fragment:
-        parser.error('Нужен публичный адрес https://winline.ru/stats/match/ID без параметров.')
+    if args.url:
+        parsed=urlsplit(args.url)
+        if parsed.scheme!='https' or parsed.hostname not in ('winline.ru','www.winline.ru') or parsed.username or parsed.password or not re.fullmatch(r'/stats/match/\d{1,20}/?',parsed.path) or parsed.query or parsed.fragment:
+            parser.error('Нужен публичный адрес https://winline.ru/stats/match/ID без параметров.')
     if not 1<=args.seconds<=60: parser.error('Ожидание — от 1 до 60 секунд.')
     asyncio.run(run(args))
 

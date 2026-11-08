@@ -17,7 +17,9 @@ import time
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import scrapy
+from scrapy import signals
 from scrapy.crawler import CrawlerProcess
+from scrapy.exceptions import IgnoreRequest
 from scrapy_playwright.page import PageMethod
 
 from .bookmakers import lines
@@ -143,7 +145,9 @@ class MarketPipeline:
                 self.crawler.stats.inc_value('markets/publish_failed')
                 spider.logger.error('Receiver rejected event %s; the validated document remains in the local cache', document['source_event_id'])
         if spider.check and document['coverage']['complete'] and (not spider.publisher or self.crawler.stats.get_value('markets/published_complete_events', 0)):
-            asyncio.get_running_loop().call_soon(lambda: asyncio.create_task(self.crawler.engine.close_spider_async(reason='verified_complete_event')))
+            spider.request_stop('verified_complete_event')
+        if spider.stopping:
+            return document
         if time.monotonic() - spider.last_status > 60:
             await spider.publish_status('partial')
         return document
@@ -152,6 +156,13 @@ class MarketPipeline:
 class WinlineSpider(scrapy.Spider):
     name = 'winline_markets'
     allowed_domains = ['winline.ru']
+
+    @classmethod
+    def from_crawler(cls,crawler,*args,**kwargs):
+        spider=super().from_crawler(crawler,*args,**kwargs)
+        crawler.signals.connect(spider.collection_opened,signal=signals.spider_opened)
+        crawler.signals.connect(spider.collection_closed,signal=signals.spider_closed)
+        return spider
 
     def __init__(self, *, state_dir, api_url, no_publish=False, seed=None, max_events=5000,
                  max_listings=200, max_scrolls=200, check=False, interval=60, sports='all', **kwargs):
@@ -168,6 +179,42 @@ class WinlineSpider(scrapy.Spider):
         self.sport_counts = {}
         self.sport_labels = {}
         self.sport_queued = {}
+        self.stopping = False
+        self.active_pages = set()
+        self.close_task = None
+        self.close_timer = None
+
+    def collection_opened(self):
+        timeout=self.crawler.settings.getfloat('MARKET_CYCLE_TIMEOUT',1800)
+        self.close_timer=asyncio.get_running_loop().call_later(timeout,self.request_stop,'cycle_timeout')
+
+    def collection_closed(self):
+        if self.close_timer: self.close_timer.cancel()
+
+    async def prepare_page(self, page, request):
+        self.active_pages.add(page)
+        def closed(): self.active_pages.discard(page)
+        page.on('close',closed)
+        if self.stopping:
+            await page.close()
+            raise IgnoreRequest('Collector is stopping')
+        await init_page(page,request)
+
+    def request_stop(self, reason):
+        if self.stopping:
+            return
+        self.stopping = True
+        # Run after the acknowledged item's pipeline has returned. Waiting
+        # for the engine from inside that pipeline would wait for ourselves.
+        self.close_task = asyncio.create_task(self.close_collection(reason))
+
+    async def close_collection(self, reason):
+        closing = asyncio.create_task(self.crawler.engine.close_spider_async(reason=reason,mode='fast'))
+        # Fast engine shutdown drops downloads, but active browser callbacks
+        # can still wait for navigation/DOM/scrolling. Close only our pages.
+        await asyncio.gather(*(asyncio.wait_for(page.close(),timeout=5)
+                               for page in tuple(self.active_pages) if not page.is_closed()),return_exceptions=True)
+        await closing
 
     async def publish_status(self, state):
         self.last_status = time.monotonic()
@@ -191,7 +238,7 @@ class WinlineSpider(scrapy.Spider):
         return scrapy.Request(url, callback=callback, errback=self.failed,
                               priority=priority,
                               meta={'playwright': True, 'playwright_include_page': True,
-                                    'playwright_page_init_callback': init_page, **kwargs})
+                                    'playwright_page_init_callback': self.prepare_page, **kwargs})
 
     async def start(self):
         if self.publisher:
@@ -217,8 +264,10 @@ class WinlineSpider(scrapy.Spider):
 
     async def parse_listing(self, response):
         page = response.meta['playwright_page']
+        self.active_pages.add(page)
         candidates, links, stable, previous, bottom = {}, set(), 0, None, False
         try:
+            if self.stopping: return
             selector = 'a[href*="/event/"],.block-tournament a[href]' if sport_from_url(response.request.url) else 'a[href*="/sport/"]'
             try:
                 await page.wait_for_selector(selector, timeout=20000)
@@ -227,6 +276,7 @@ class WinlineSpider(scrapy.Spider):
                 if not re.search(r'нет событий|нет доступных|ничего не найдено|событий пока нет', text, re.I):
                     self.crawler.stats.inc_value('markets/listing_not_ready')
             for _ in range(self.max_scrolls):
+                if self.stopping: return
                 payload = await page.evaluate(LISTING_SCRIPT)
                 if payload.get('truncated'):
                     self.crawler.stats.inc_value('markets/bounds_reached')
@@ -266,13 +316,18 @@ class WinlineSpider(scrapy.Spider):
                 await asyncio.sleep(0.3)
             else:
                 self.crawler.stats.inc_value('markets/bounds_reached')
+        except Exception:
+            if not self.stopping: raise
         finally:
+            self.active_pages.discard(page)
             await page.close()
+        if self.stopping: return
         self.crawler.stats.inc_value('markets/listing_pages')
         def cache_time(item):
             cache = self.state_dir / 'events' / (item[0] + '.json.gz')
             return cache.stat().st_mtime if cache.exists() else 0
         for event_id, event in sorted(candidates.items(), key=cache_time):
+            if self.stopping: return
             if event_id in self.events:
                 continue
             if len(self.events) >= self.max_events:
@@ -290,6 +345,7 @@ class WinlineSpider(scrapy.Spider):
             priority = 10000000 - ordinal * 1000 + min(age, 499)
             yield self.request(event['url'], self.parse_event, event_metadata=event, priority=priority)
         for url in sorted(links):
+            if self.stopping: return
             if url in self.listings:
                 continue
             if len(self.listings) >= self.max_listings:
@@ -303,8 +359,10 @@ class WinlineSpider(scrapy.Spider):
 
     async def parse_event(self, response):
         page = response.meta['playwright_page']
+        self.active_pages.add(page)
         document = None
         try:
+            if self.stopping: return
             if response.status in (401, 403, 429):
                 raise ValueError('Source limited access')
             source_sport = sport_from_url(page.url)
@@ -321,6 +379,17 @@ class WinlineSpider(scrapy.Spider):
                 self.logger.error('Event %s: unparsed_outcomes=%s hidden_groups=%s examples=%s',
                                   event_id_from_url(page.url), snapshot.get('unparsed_outcomes'), snapshot.get('hidden_groups'),
                                   json.dumps(snapshot.get('unsupported', [])[:3], ensure_ascii=False))
+                # Keep one bounded public diagnostic, not browser state, forms
+                # or a growing HTML archive. It can be inspected on the server.
+                address=urlsplit(page.url)
+                diagnostic={'at':stamp(),'url':urlunsplit((address.scheme,address.netloc,address.path,'','')),
+                            **{key:snapshot.get(key) for key in ('home','away','title','expected_outcomes','unparsed_outcomes','hidden_groups')},
+                            'examples':snapshot.get('unsupported',[])[:5]}
+                self.state_dir.mkdir(parents=True,exist_ok=True)
+                with tempfile.NamedTemporaryFile('w',dir=self.state_dir,delete=False,encoding='utf-8') as output:
+                    temporary=Path(output.name); json.dump(diagnostic,output,ensure_ascii=False)
+                try: temporary.replace(self.state_dir/'market-diagnostic.json')
+                finally: temporary.unlink(missing_ok=True)
             feeds = response.meta.get('market_feed', [])
             if not any(feed['connected'] and 0 <= time.monotonic() - feed['last_frame'] <= 180 for feed in feeds):
                 raise ValueError('No current public market feed')
@@ -331,6 +400,7 @@ class WinlineSpider(scrapy.Spider):
             except Exception: pass  # Optional statistics must not stop market delivery.
             document = market_document(snapshot, captured_url, captured_at, response.meta.get('event_metadata'))
         except Exception as exc:
+            if self.stopping: return
             if '/sport/' in urlsplit(page.url).path and not sport_from_url(page.url):
                 self.crawler.stats.inc_value('markets/skipped_other_sports')
                 return
@@ -344,14 +414,16 @@ class WinlineSpider(scrapy.Spider):
             reason = str(exc)[:200] if isinstance(exc, ValueError) else type(exc).__name__
             self.logger.error('Event %s could not be collected: %s', event_id_from_url(response.request.url), reason)
         finally:
+            self.active_pages.discard(page)
             await page.close()
-        if document:
+        if document and not self.stopping:
             yield document
 
     async def failed(self, failure):
         page = failure.request.meta.get('playwright_page')
         if page and not page.is_closed():
             await page.close()
+        if self.stopping: return
         self.crawler.stats.inc_value('markets/request_failures')
         self.logger.error('Public page request failed (%s)', failure.type.__name__)
 
@@ -373,7 +445,8 @@ def settings(args):
             'ITEM_PIPELINES': {'matchlab.scrapy_worker.MarketPipeline': 100},
             'LOG_LEVEL': 'ERROR', 'LOGSTATS_INTERVAL': 0, 'TELNETCONSOLE_ENABLED': False,
             'REMOTE_CONTROL_ENABLED': False,
-            'MEMUSAGE_ENABLED': False, 'CLOSESPIDER_TIMEOUT': args.cycle_timeout}
+            'MEMUSAGE_ENABLED': False, 'CLOSESPIDER_TIMEOUT': 0,
+            'MARKET_CYCLE_TIMEOUT': args.cycle_timeout}
 
 
 def one_cycle(args) -> int:
