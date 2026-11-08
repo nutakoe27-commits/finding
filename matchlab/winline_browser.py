@@ -97,7 +97,7 @@ async def select_football_line(page) -> dict:
 async def open_event_link(page, *, event_id: int | None = None, teams: list[str] | None = None) -> dict:
     """Open a current public event anchor after the homepage has initialized."""
     if teams:
-        expression = re.compile(r"^\s*" + re.escape(teams[0]) + r"\s+" + re.escape(teams[1]) + r"\s*$")
+        expression = re.compile(r"^\s*" + re.escape(teams[0]) + r"\s*" + re.escape(teams[1]) + r"\s*$")
         target = page.locator('a[href*="/stavki/event/"]').filter(has_text=expression).filter(visible=True).first
     elif event_id:
         target = page.locator(f'a[href$="/stavki/event/{event_id}"],a[href$="/stavki/event/{event_id}/"]').filter(visible=True).first
