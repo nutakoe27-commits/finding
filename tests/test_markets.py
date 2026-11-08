@@ -12,7 +12,7 @@ from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.markets import FORMAT, validate_event_markets
 from matchlab.storage import Repository
-from matchlab.winline_markets import distinguish_market_sections, primary_quote
+from matchlab.winline_markets import distinguish_market_sections, exclude_invalid_market_labels, primary_quote
 from matchlab.winline_browser import event_statistics_link
 
 FROZEN = datetime(2026, 11, 8, 9, 30, tzinfo=timezone.utc)
@@ -130,6 +130,16 @@ class MarketValidationTests(unittest.TestCase):
         distinguish_market_sections(first); distinguish_market_sections(second)
         variants=lambda snapshot:{frozenset(outcome['name'] for outcome in market['outcomes']):market['variant_id'] for market in snapshot['markets']}
         self.assertEqual(variants(first),variants(second))
+
+    def test_invalid_group_label_excludes_only_affected_market(self):
+        base={'name':'Исход','group':'Футбол','period':'осн.время','parameter':None,'source_market_id':None,
+              'outcomes':[{'name':'П1','parameter':None,'source_outcome_id':None,'odds':2.0,'state':'open'}]}
+        snapshot={'markets':[deepcopy(base),{**deepcopy(base),'group':'х'*201}], 'unparsed_outcomes':0,'unsupported':[]}
+        exclude_invalid_market_labels(snapshot)
+        self.assertEqual(len(snapshot['markets']),1)
+        self.assertEqual(snapshot['unparsed_outcomes'],1)
+        self.assertEqual(snapshot['unsupported'][0]['field'],'market.group')
+        self.assertEqual(snapshot['unsupported'][0]['length'],201)
 
     def test_primary_quote_uses_regular_time_only_and_canonical_source(self):
         document = validate_event_markets(example())

@@ -99,6 +99,19 @@ async def browser_test(executable):
             found_again=[market for market in refreshed['markets'] if market['name']==GOAL_VARIANTS['market']]
             assert {market['variant_id']:market['key'] for market in found_again}==keys
             assert found_again[0]['outcomes'][0]['odds']==3.8
+            blank_attributes=blocks.replace('<h2>Тотал</h2>','<h2></h2>').replace('class="market__row-btn"','class="market__row-btn" data-id=""')
+            await page.set_content(fixture_html()+f'<script>document.querySelector("ww-feature-marketbook-dsk").insertAdjacentHTML("beforeend",{json.dumps(blank_attributes)});</script>')
+            blanks=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert blanks['coverage']['complete'] and blanks['coverage']['captured_outcomes']==21,blanks['coverage']
+            blank_variants=[market for market in blanks['markets'] if market['name']==GOAL_VARIANTS['market']]
+            assert len(blank_variants)==2 and all(market['group'] is None for market in blank_variants)
+            invalid_blocks=blocks.replace('<button class="market__row-btn"><span>4-6</span>','<button class="market__row-btn" data-id="'+('x'*101)+'"><span>4-6</span>')
+            await page.set_content(fixture_html()+f'<script>document.querySelector("ww-feature-marketbook-dsk").insertAdjacentHTML("beforeend",{json.dumps(invalid_blocks)});</script>')
+            invalid_snapshot=await read_marketbook(page,maximum_passes=10)
+            invalid=market_document(invalid_snapshot,PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert not invalid['coverage']['complete'] and invalid['coverage']['unparsed_outcomes']==4,invalid['coverage']
+            assert invalid['coverage']['captured_outcomes']==17 and primary_quote(invalid)
+            assert invalid_snapshot['unsupported'][0]['field']=='outcome.source_outcome_id'
             same_sets=blocks.replace('4-6','4-5').replace('7+','6+')
             await page.set_content(fixture_html()+f'<script>document.querySelector("ww-feature-marketbook-dsk").insertAdjacentHTML("beforeend",{json.dumps(same_sets)});</script>')
             same=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())

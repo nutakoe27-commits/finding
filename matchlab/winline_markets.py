@@ -8,11 +8,11 @@ import re
 from urllib.parse import urlsplit
 
 from .bookmakers import DATE_RE, EPL, FORMAT as QUOTE_FORMAT, instant, iso, kickoff, lines, make_snapshot
-from .markets import FORMAT, identity, validate_event_markets
+from .markets import FORMAT, identity, label, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
 from .sports import sport_from_url, sport_label
 
-PARSER_VERSION = "winline-marketbook-dom-v2"
+PARSER_VERSION = "winline-marketbook-dom-v3"
 
 # Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
 # form content or browser state are collected.
@@ -54,6 +54,7 @@ MARKETS_SCRIPT = r"""() => {
     const headers = [...root.querySelectorAll('button.market-header')];
     const all = [...root.querySelectorAll('.marketbook__filter .ww-tabs__item')].find(el => text(el) === 'Все');
     const allSelected = !!all && all.classList.contains('ww-tabs__item--active');
+    const attribute = (node, key) => (node.getAttribute(key) || '').trim() || null;
     const top = document.querySelector('.marketbook-header--prematch');
     const home = top && top.querySelector('.prematch__competitor-left');
     const away = top && top.querySelector('.prematch__competitor-right');
@@ -84,10 +85,10 @@ MARKETS_SCRIPT = r"""() => {
         if (!buttons.some(visible)) { hidden++; continue; }
         let group = null;
         for (const heading of groups) {
-            if (heading.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING) group = text(heading);
+            if (heading.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING) group = text(heading) || null;
         }
         const name = text(header);
-        const sourceMarket = container.getAttribute('data-market-id') || header.getAttribute('data-market-id');
+        const sourceMarket = attribute(container,'data-market-id') || attribute(header,'data-market-id');
         let contextLabels = null;
         for (const button of buttons) {
             if (seenButtons.has(button) || !visible(button)) continue;
@@ -132,7 +133,7 @@ MARKETS_SCRIPT = r"""() => {
             const parameter = context && !isPeriod(context) ? context : null;
             const key = JSON.stringify([name, group, period, parameter, sourceMarket, scope]);
             if (!variants.has(key)) variants.set(key, {name, group, period, parameter, source_market_id: sourceMarket, _scope: scope, outcomes: []});
-            const sourceOutcome = button.getAttribute('data-outcome-id') || button.getAttribute('data-id');
+            const sourceOutcome = attribute(button,'data-outcome-id') || attribute(button,'data-id');
             variants.get(key).outcomes.push({name: outcomeName, parameter: null, source_outcome_id: sourceOutcome,
                 odds: price, state: suspended ? 'suspended' : numeric ? 'open' : 'unavailable'});
         }
@@ -175,6 +176,45 @@ def distinguish_market_sections(snapshot: dict) -> None:
             market_id=identity(market)
             merged.setdefault(market_id,{**market,'outcomes':[]})['outcomes'].extend(outcomes)
     snapshot['markets']=list(merged.values())
+
+
+def exclude_invalid_market_labels(snapshot: dict) -> None:
+    """Retain valid markets and report malformed source labels without guessing."""
+    valid=[]
+    for market in snapshot.get('markets',[]):
+        fields=[('market.name',market.get('name'),300,False),('market.group',market.get('group'),200,True),
+                ('market.period',market.get('period'),100,True),('market.parameter',market.get('parameter'),100,True),
+                ('market.source_market_id',market.get('source_market_id'),100,True)]
+        for outcome in market.get('outcomes',[]):
+            fields.extend([('outcome.name',outcome.get('name'),300,False),('outcome.parameter',outcome.get('parameter'),100,True),
+                           ('outcome.source_outcome_id',outcome.get('source_outcome_id'),100,True)])
+        issue=None
+        for name,value,maximum,optional in fields:
+            try: label(value,maximum,optional=optional)
+            except ValueError:
+                issue={'reason':'invalid_source_label','market':str(market.get('name') or '')[:120],
+                       'field':name,'length':len(value) if isinstance(value,str) else None,'maximum':maximum}
+                break
+        if issue:
+            snapshot['unparsed_outcomes']=snapshot.get('unparsed_outcomes',0)+len(market.get('outcomes',[]))
+            snapshot['unsupported']=([issue]+snapshot.get('unsupported',[]))[:20]
+        else: valid.append(market)
+    snapshot['markets']=valid
+
+
+def validate_event_labels_for_diagnostics(document: dict) -> None:
+    kind=document['event_kind']
+    fields=[('sport_label',document.get('sport_label'),100,False),
+            ('title',document.get('title'),300,kind=='match'),
+            ('home',document.get('home'),200,kind=='outright'),
+            ('away',document.get('away'),200,kind=='outright'),
+            ('competition',document.get('competition'),200,False),
+            ('parser_version',document.get('parser_version'),80,False)]
+    for name,value,maximum,optional in fields:
+        try: label(value,maximum,optional=optional)
+        except ValueError as exc:
+            size=len(value) if isinstance(value,str) else 'не текст'
+            raise ValueError(f'Некорректная подпись события: {name}, длина {size}, предел {maximum}') from exc
 
 
 async def ensure_event_page(page, expected_url: str, metadata: dict | None = None):
@@ -245,6 +285,7 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
                 expanded_headers.add(key)
         snapshot = await page.evaluate(MARKETS_SCRIPT)
         distinguish_market_sections(snapshot)
+        exclude_invalid_market_labels(snapshot)
         part_outcomes, duplicates, ambiguous = {}, 0, set()
         conflicts=[]
         for market in snapshot.get('markets', []):
@@ -402,6 +443,7 @@ def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict |
                 'parser_version': PARSER_VERSION, 'markets': snapshot.get('markets', []),
                 'coverage': {key: snapshot.get(key) for key in ('expected_outcomes', 'unparsed_outcomes', 'hidden_groups',
                                                             'all_tab_selected', 'stable_passes', 'scroll_exhausted')}}
+    validate_event_labels_for_diagnostics(document)
     return validate_event_markets(document)
 
 
