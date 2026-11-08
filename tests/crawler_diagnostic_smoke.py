@@ -20,8 +20,17 @@ from matchlab.scrapy_worker import WinlineSpider,settings
 def main():
     from scrapy.crawler import CrawlerProcess
     no_publish='--no-publish' in sys.argv[1:]
+    variants='--variants' in sys.argv[1:]
     item=next(item for item in PROJECTIONS if item['sport']=='football')
     extra='''<section><button class="market-header">Неоднозначный рынок</button><div class="market__table"><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>2.0</span></button><button class="market__row-btn"><span>Нет</span><span>3.0</span></button></div><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>4.0</span></button><button class="market__row-btn"><span>Нет</span><span>5.0</span></button></div></div><form>PRIVATE_FORM_CONTENT<input value="secret"></form></section>'''
+    real=json.loads((ROOT/'tests/fixtures/winline_goal_market_variants.json').read_text())
+    if variants:
+        extra=''
+        for selections in real['variants']:
+            extra+='<ww-marketbook-market-dsk><div><button class="market-header">'+real['market']+'</button><div class="market__table"><div class="market__row">'
+            for name,price in selections:
+                extra+=f'<button class="market__row-btn"><span>{name}</span><span>{price}</span></button>'
+            extra+='</div></div></div></ww-marketbook-market-dsk>'
     html=event_html(item).replace('</ww-feature-marketbook-dsk>',extra+'</ww-feature-marketbook-dsk>')
     url=f'https://winline.ru/stavki/sport/{item["slug"]}/test/league/{item["id"]}'
     with tempfile.TemporaryDirectory(prefix='crawler-diagnostic-') as folder:
@@ -52,12 +61,13 @@ def main():
             cache=Path(folder)/'cache'
             process.crawl(crawler,state_dir=cache,api_url=api_url,seed=url,no_publish=no_publish)
             process.start()
-            data=json.loads((cache/'market-diagnostic.json').read_text())
-            assert data['url']==url and data['unparsed_outcomes']==4,data
-            assert data['examples'][0]['reason']=='ambiguous_outcome_context',data
-            assert data['market_structure'] and len(data['market_structure'][0]['outcomes'])==4,data
-            assert 'PRIVATE_FORM_CONTENT' not in json.dumps(data,ensure_ascii=False)
-            assert token not in json.dumps(data,ensure_ascii=False)
+            if not variants:
+                data=json.loads((cache/'market-diagnostic.json').read_text())
+                assert data['url']==url and data['unparsed_outcomes']==4,data
+                assert data['examples'][0]['reason']=='ambiguous_outcome_context',data
+                assert data['market_structure'] and len(data['market_structure'][0]['outcomes'])==4,data
+                assert 'PRIVATE_FORM_CONTENT' not in json.dumps(data,ensure_ascii=False)
+                assert token not in json.dumps(data,ensure_ascii=False)
             if no_publish:
                 with opener.open(api_url+'/api/bookmakers/events') as response:
                     assert json.load(response)['total']==0
@@ -65,8 +75,15 @@ def main():
             else:
                 with opener.open(api_url+'/api/bookmakers/events/'+item['id']+'/markets') as response:
                     document=json.load(response)
-                assert not document['coverage']['complete'] and document['coverage']['unparsed_outcomes']==4
-                print('PASS: real browser → crawler → private bounded diagnostic plus partial event delivery; no form or key content')
+                if variants:
+                    found=[market for market in document['markets'] if market['name']==real['market']]
+                    assert document['coverage']['complete'] and len(found)==2,document['coverage']
+                    assert len({market['variant_id'] for market in found})==2
+                    assert [[(outcome['name'],outcome['odds']) for outcome in market['outcomes']] for market in found]==[[tuple(outcome) for outcome in variant] for variant in real['variants']]
+                    print('PASS: real browser → crawler → authenticated receiver preserves both observed football market variants as a complete snapshot')
+                else:
+                    assert not document['coverage']['complete'] and document['coverage']['unparsed_outcomes']==4
+                    print('PASS: real browser → crawler → private bounded diagnostic plus partial event delivery; no form or key content')
         finally:
             server.terminate(); server.wait(timeout=10)
 

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from matchlab.winline_markets import MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook
 
 PROJECTION = json.loads((Path(__file__).parent / 'fixtures/winline_market_projection.json').read_text())
+GOAL_VARIANTS = json.loads((Path(__file__).parent / 'fixtures/winline_goal_market_variants.json').read_text())
 
 
 def fixture_html(*, collapsed=False, unsupported=False, virtual=False):
@@ -76,6 +77,33 @@ async def browser_test(executable):
             variants = [market for market in teams['markets'] if market['name'] == 'Победит (осн.время)']
             assert {market['parameter'] for market in variants} == {'Сандерленд', 'Челси'}
             assert teams['coverage']['complete'] and teams['coverage']['captured_outcomes'] == 17
+            # Real public report: two distinct DOM blocks share a title and
+            # two outcome labels, but differ in the rest of their selections.
+            blocks='<h2>Тотал</h2>'
+            for outcomes in GOAL_VARIANTS['variants']:
+                blocks+='<ww-marketbook-market-dsk><div><button class="market-header">'+escape(GOAL_VARIANTS['market'])+'</button><div class="market__table"><div class="market__row">'
+                for name,price in outcomes:
+                    blocks+=f'<button class="market__row-btn"><span>{escape(name)}</span><span>{price}</span></button>'
+                blocks+='</div></div></div></ww-marketbook-market-dsk>'
+            await page.set_content(fixture_html()+f'<script>document.querySelector("ww-feature-marketbook-dsk").insertAdjacentHTML("beforeend",{json.dumps(blocks)});</script>')
+            separate=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            found=[market for market in separate['markets'] if market['name']==GOAL_VARIANTS['market']]
+            assert separate['coverage']['complete'] and separate['coverage']['captured_outcomes']==21,separate['coverage']
+            assert len(found)==2 and len({market['variant_id'] for market in found})==2,found
+            assert all(market['source_market_id'] is None for market in found)
+            observed=[[(outcome['name'],outcome['odds']) for outcome in market['outcomes']] for market in found]
+            assert observed==[[tuple(outcome) for outcome in variant] for variant in GOAL_VARIANTS['variants']],observed
+            keys={market['variant_id']:market['key'] for market in found}
+            await page.locator('ww-marketbook-market-dsk').first.locator('.market__row-btn').first.locator('span').last.evaluate("node => node.textContent='3.80'")
+            refreshed=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            found_again=[market for market in refreshed['markets'] if market['name']==GOAL_VARIANTS['market']]
+            assert {market['variant_id']:market['key'] for market in found_again}==keys
+            assert found_again[0]['outcomes'][0]['odds']==3.8
+            same_sets=blocks.replace('4-6','4-5').replace('7+','6+')
+            await page.set_content(fixture_html()+f'<script>document.querySelector("ww-feature-marketbook-dsk").insertAdjacentHTML("beforeend",{json.dumps(same_sets)});</script>')
+            same=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert not same['coverage']['complete'] and same['coverage']['unparsed_outcomes']==8,same['coverage']
+            assert not [market for market in same['markets'] if market['name']==GOAL_VARIANTS['market']]
             # Missing distinguishing context must not silently choose one of
             # two prices or discard unrelated, correctly parsed markets.
             await page.set_content(fixture_html()+'''<script>document.querySelector('ww-feature-marketbook-dsk').insertAdjacentHTML('beforeend',`<h2>Неоднозначная группа</h2><section><button class="market-header">Неоднозначный рынок</button><div class="market__table"><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>2.0</span></button><button class="market__row-btn"><span>Нет</span><span>3.0</span></button></div><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>4.0</span></button><button class="market__row-btn"><span>Нет</span><span>5.0</span></button></div></div></section>`)</script>''')
@@ -107,6 +135,21 @@ async def browser_test(executable):
             merged = market_document(await read_marketbook(page, maximum_passes=40), PROJECTION['url'], datetime.now(timezone.utc).isoformat())
             assert merged['coverage']['complete'], merged['coverage']
             assert merged['coverage']['captured_outcomes'] == 10, merged
+            virtual_variants=fixture_html()+'''<style>body{height:5000px}ww-feature-marketbook-dsk{position:fixed;top:70px;left:0;right:0;background:white}</style><script>
+                const root=document.querySelector('ww-feature-marketbook-dsk'); let last=-1;
+                function draw(){const bucket=Math.min(4,Math.floor(window.scrollY/900));if(bucket===last)return;last=bucket;
+                  const market=(name,rows)=>'<section><button class="market-header">'+name+'</button><div class="market__table"><div><span>осн.время</span>'+rows.map(([label,price])=>'<button class="market__row-btn"><span>'+label+'</span><span>'+price+'</span></button>').join('')+'</div></div></section>';
+                  const pairs=bucket===0 ? [[['A','2.0'],['B','3.0']],[['C','2.1'],['D','3.1']]] : [[['A','2.0'],['C','3.0']],[['B','2.1'],['D','3.1']]];
+                  root.innerHTML='<div class="marketbook__filter"><div class="ww-tabs__item ww-tabs__item--active">Все</div></div><h2>Тотал</h2>'+
+                    market('Исход 1X2',[['П1','2.0'],['X','3.0'],['П2','4.0']])+
+                    market('Скрытый вариант',pairs[0])+market('Скрытый вариант',pairs[1]);}
+                window.addEventListener('scroll',draw);draw();</script>'''
+            await page.goto('about:blank')
+            await page.set_content(virtual_variants)
+            await page.evaluate('window.scrollTo(0,0)')
+            virtual_result=market_document(await read_marketbook(page,maximum_passes=40),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert not virtual_result['coverage']['complete'] and virtual_result['coverage']['unparsed_outcomes']>0,virtual_result['coverage']
+            assert not any(market.get('variant_id') for market in virtual_result['markets'])
         finally:
             await browser.close()
     print('PASS: All tab, collapsed groups, period/parameter separation, virtual-list union, no bet clicks, ambiguous variants excluded while valid markets survive, incomplete coverage stays explicit')

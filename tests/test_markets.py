@@ -12,7 +12,7 @@ from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.markets import FORMAT, validate_event_markets
 from matchlab.storage import Repository
-from matchlab.winline_markets import primary_quote
+from matchlab.winline_markets import distinguish_market_sections, primary_quote
 from matchlab.winline_browser import event_statistics_link
 
 FROZEN = datetime(2026, 11, 8, 9, 30, tzinfo=timezone.utc)
@@ -97,6 +97,39 @@ class MarketValidationTests(unittest.TestCase):
         for value in bad:
             with self.assertRaises(ValueError):
                 validate_event_markets(value)
+
+    def test_distinct_observed_variants_have_stable_independent_selection_keys(self):
+        value=example()
+        first=deepcopy(value['markets'][0]); second=deepcopy(first)
+        first['variant_id']='a'*32; second['variant_id']='b'*32
+        second['outcomes'][0]['odds']=7.7
+        value['markets']=[first,second]
+        document=validate_event_markets(value)
+        self.assertEqual(len(document['markets']),2)
+        self.assertNotEqual(document['markets'][0]['key'],document['markets'][1]['key'])
+        value['markets'][0]['variant_id']='not-a-variant'
+        with self.assertRaises(ValueError): validate_event_markets(value)
+
+    def test_equal_or_subset_selection_sets_remain_ambiguous(self):
+        base={'name':'Кол-во голов','group':'Тотал','period':'осн.время','parameter':None,'source_market_id':None}
+        def outcomes(labels): return [{'name':name,'parameter':None,'source_outcome_id':None,'odds':2.0,'state':'open'} for name in labels]
+        for second in (['0-1','2-3'],['0-1','2-3','4-5']):
+            snapshot={'unparsed_outcomes':0,'hidden_groups':0,'markets':[
+                {**base,'_scope':0,'outcomes':outcomes(['0-1','2-3'])},
+                {**base,'_scope':1,'outcomes':outcomes(second)}]}
+            distinguish_market_sections(snapshot)
+            self.assertEqual(len(snapshot['markets']),1)
+            self.assertNotIn('variant_id',snapshot['markets'][0])
+
+    def test_variant_identity_ignores_header_order_and_price_changes(self):
+        base={'name':'Кол-во голов','group':'Тотал','period':'осн.время','parameter':None,'source_market_id':None}
+        def market(scope,names,price):
+            return {**base,'_scope':scope,'outcomes':[{'name':name,'parameter':None,'source_outcome_id':None,'odds':price,'state':'open'} for name in names]}
+        first={'markets':[market(0,['0-1','2-3','4-5','6+'],2),market(1,['0-1','2-3','4-6','7+'],3)],'unparsed_outcomes':0,'hidden_groups':0}
+        second={'markets':[market(0,['7+','4-6','2-3','0-1'],9),market(1,['6+','4-5','2-3','0-1'],8)],'unparsed_outcomes':0,'hidden_groups':0}
+        distinguish_market_sections(first); distinguish_market_sections(second)
+        variants=lambda snapshot:{frozenset(outcome['name'] for outcome in market['outcomes']):market['variant_id'] for market in snapshot['markets']}
+        self.assertEqual(variants(first),variants(second))
 
     def test_primary_quote_uses_regular_time_only_and_canonical_source(self):
         document = validate_event_markets(example())

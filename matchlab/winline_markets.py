@@ -12,7 +12,7 @@ from .markets import FORMAT, identity, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
 from .sports import sport_from_url, sport_label
 
-PARSER_VERSION = "winline-marketbook-dom-v1"
+PARSER_VERSION = "winline-marketbook-dom-v2"
 
 # Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
 # form content or browser state are collected.
@@ -72,7 +72,7 @@ MARKETS_SCRIPT = r"""() => {
     const unsupported = [];
     let hidden = 0;
     const seenButtons = new Set();
-    for (const header of headers) {
+    for (const [scope,header] of headers.entries()) {
         let container = null;
         for (let parent = header.parentElement; parent && root.contains(parent); parent = parent.parentElement) {
             if (parent.querySelectorAll('button.market-header').length !== 1) break;
@@ -130,8 +130,8 @@ MARKETS_SCRIPT = r"""() => {
             }
             const period = isPeriod(context) ? context : inTitle(name);
             const parameter = context && !isPeriod(context) ? context : null;
-            const key = JSON.stringify([name, group, period, parameter, sourceMarket]);
-            if (!variants.has(key)) variants.set(key, {name, group, period, parameter, source_market_id: sourceMarket, outcomes: []});
+            const key = JSON.stringify([name, group, period, parameter, sourceMarket, scope]);
+            if (!variants.has(key)) variants.set(key, {name, group, period, parameter, source_market_id: sourceMarket, _scope: scope, outcomes: []});
             const sourceOutcome = button.getAttribute('data-outcome-id') || button.getAttribute('data-id');
             variants.get(key).outcomes.push({name: outcomeName, parameter: null, source_outcome_id: sourceOutcome,
                 odds: price, state: suspended ? 'suspended' : numeric ? 'open' : 'unavailable'});
@@ -143,11 +143,38 @@ MARKETS_SCRIPT = r"""() => {
         market_sections: headers.length, expected_outcomes: allButtons.length,
         unparsed_outcomes: allButtons.length - [...variants.values()].reduce((total, item) => total + item.outcomes.length, 0),
         hidden_groups: hidden, all_tab_selected: allSelected, unsupported: unsupported.slice(0, 20),
-        structure_keys: [...variants.entries()].flatMap(([key, market]) => market.outcomes.map(outcome =>
-            JSON.stringify([key, outcome.name, outcome.parameter, outcome.source_outcome_id]))),
-        structure: JSON.stringify([...variants.entries()].map(([key, market]) =>
-            [key, market.outcomes.map(outcome => [outcome.name, outcome.parameter, outcome.source_outcome_id])]))};
+        structure_keys: [...variants.values()].flatMap(market => market.outcomes.map(outcome =>
+            JSON.stringify([[market.name,market.group,market.period,market.parameter,market.source_market_id], outcome.name, outcome.parameter, outcome.source_outcome_id]))),
+        structure: JSON.stringify([...variants.values()].map(market =>
+            [[market.name,market.group,market.period,market.parameter,market.source_market_id], market.outcomes.map(outcome => [outcome.name, outcome.parameter, outcome.source_outcome_id])]))};
 }"""
+
+
+def distinguish_market_sections(snapshot: dict) -> None:
+    """Separate distinct visible selection sets under repeated source headings.
+
+    The fingerprint identifies the observed set, not the bookmaker's market
+    ID or its rules. Identical/subset sets remain ambiguous and fail closed.
+    """
+    groups={}
+    for raw in snapshot.get('markets',[]):
+        base={key:value for key,value in raw.items() if key not in ('outcomes','_scope')}
+        key=identity(base)
+        groups.setdefault(key,[]).append((base,raw.get('_scope'),raw['outcomes']))
+    merged={}
+    for group in groups.values():
+        scopes={scope for _,scope,_ in group}
+        signatures=[{identity({key:value for key,value in outcome.items() if key not in ('odds','state')}) for outcome in outcomes} for _,_,outcomes in group]
+        separate=(not snapshot.get('unparsed_outcomes') and not snapshot.get('hidden_groups') and
+                  None not in scopes and len(scopes)==len(group) and len(group)>1 and
+                  all(len(signature)>=2 and len(signature)==len(outcomes) for signature,(_,_,outcomes) in zip(signatures,group)) and
+                  all(not (left<=right or right<=left) for index,left in enumerate(signatures) for right in signatures[index+1:]))
+        for (base,_,outcomes),signature in zip(group,signatures):
+            market=dict(base)
+            if separate: market['variant_id']=identity({'outcomes':sorted(signature)})
+            market_id=identity(market)
+            merged.setdefault(market_id,{**market,'outcomes':[]})['outcomes'].extend(outcomes)
+    snapshot['markets']=list(merged.values())
 
 
 async def ensure_event_page(page, expected_url: str, metadata: dict | None = None):
@@ -194,7 +221,7 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
         await all_tab.click()
     stable, previous = 0, None
     snapshot, accumulated = {}, {}
-    initial_keys, virtualized = None, False
+    initial_keys, initial_variant_ids, virtualized = None, None, False
     reached_bottom = False
     max_unparsed, max_hidden, max_duplicates = 0, 0, 0
     capture_started_at = datetime.now(timezone.utc).isoformat()
@@ -217,6 +244,7 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
                 await headers.nth(item['index']).click()
                 expanded_headers.add(key)
         snapshot = await page.evaluate(MARKETS_SCRIPT)
+        distinguish_market_sections(snapshot)
         part_outcomes, duplicates, ambiguous = {}, 0, set()
         conflicts=[]
         for market in snapshot.get('markets', []):
@@ -248,11 +276,12 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
         max_duplicates = max(max_duplicates, duplicates)
         signature = snapshot.get('structure')
         keys = set(snapshot.get('structure_keys', []))
+        variant_ids=frozenset(market['variant_id'] for market in snapshot.get('markets',[]) if market.get('variant_id'))
         max_unparsed = max(max_unparsed, snapshot.get('unparsed_outcomes', 0))
         max_hidden = max(max_hidden, snapshot.get('hidden_groups', 0))
         if initial_keys is None:
             initial_keys = keys
-        elif not virtualized and not initial_keys.issubset(keys):
+        elif not virtualized and (not initial_keys.issubset(keys) or (initial_variant_ids is not None and variant_ids != initial_variant_ids)):
             # A structural change after jumping to the end can indicate a
             # virtual list. Restart at its top and scan viewport by viewport.
             virtualized = True
@@ -264,8 +293,16 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
             }""")
             reached_bottom = False
             await asyncio.sleep(0.3)
+        if virtualized:
+            # A virtualized viewport may expose only part of an outcome set;
+            # discard these derived variants and mark the snapshot partial.
+            uncertain=[key for key,market in accumulated.items() if market.get('variant_id')]
+            if uncertain:
+                max_unparsed=max(max_unparsed,sum(len(accumulated[key]['outcomes']) for key in uncertain))
+                for key in uncertain: del accumulated[key]
         if not virtualized:
             initial_keys = keys
+            if initial_variant_ids is None and variant_ids: initial_variant_ids=variant_ids
         stable = stable + 1 if signature == previous else 0
         previous = signature
         reached_bottom = await root.evaluate("""(root, virtualized) => {

@@ -6,7 +6,7 @@ import json
 from .bookmakers import instant
 from .markets import headline_market
 
-ANALYSIS_VERSION = 'grouped-reasoning-v2'
+ANALYSIS_VERSION = 'grouped-reasoning-v3'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -31,7 +31,7 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
         # Always retain an explicitly selected outcome even in a large table.
         if outcome and selected["key"] == market["key"] and outcome not in outcomes:
             outcomes = [outcome, *outcomes[:-1]]
-        markets.append({key: market.get(key) for key in ("key", "name", "group", "period", "parameter")} | {
+        markets.append({key: market.get(key) for key in ("key", "name", "group", "period", "parameter", "variant_id")} | {
             "outcomes": [{key: item.get(key) for key in ("key", "name", "parameter", "odds", "state")} for item in outcomes]})
         count += len(outcomes)
     current = datetime.now(timezone.utc)

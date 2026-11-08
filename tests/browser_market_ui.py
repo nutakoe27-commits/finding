@@ -22,6 +22,7 @@ from matchlab.winline_markets import primary_quote
 from sports_fixtures import PROJECTIONS, document as sport_document
 
 REQUESTS = []
+GOAL_VARIANTS=json.loads((ROOT/'tests/fixtures/winline_goal_market_variants.json').read_text())
 
 
 class AIHandler(BaseHTTPRequestHandler):
@@ -130,6 +131,20 @@ async def run(url):
                 await page.wait_for_function("!document.getElementById('explain-button').disabled")
                 assert not await page.locator('#explanation').is_visible(), 'Old analysis appeared for another match'
                 await page.unroute('**/api/bookmakers/events/17006967/explain', delayed_answer)
+                variant_groups=page.locator('.market-group').filter(has_text=GOAL_VARIANTS['market'])
+                assert await variant_groups.count()==2
+                assert '4-5' in await variant_groups.nth(0).inner_text() and '4-6' in await variant_groups.nth(1).inner_text()
+                await variant_groups.nth(1).locator('summary').click()
+                await variant_groups.nth(1).locator('.market-outcome').filter(has_text='0-1').click()
+                assert (await page.locator('#ai-outcome-label').inner_text())=='0-1 · 3.7'
+                assert '4-6' in await page.locator('#ai-market-label').inner_text()
+                await page.locator('#ai-notes-details summary').click()
+                await page.locator('#notes').fill(f'Проверка выбранного варианта {width}')
+                await page.locator('#ai-notes-details summary').click()
+                await page.locator('#explain-button').click()
+                await page.locator('#explanation').wait_for(state='visible')
+                selected=next(item for item in REQUESTS[-1]['markets'] if item['key']==REQUESTS[-1]['selection']['market_key'])
+                assert selected['variant_id']=='b'*32,(selected,REQUESTS[-1]['selection'])
                 await page.locator('.nav-link[href="#history"]').click()
                 await page.locator('.history-card').first.wait_for()
                 await page.locator('#history-refresh').click()
@@ -223,7 +238,13 @@ def main():
             document = repo.event_markets('17006967')
             repo.import_bookmakers(primary_quote(document))
             for index in range(33):
-                repo.import_event_markets(make_event(17007000+index,'Уникальная Команда' if index == 32 else f'Команда {index}',competition='Россия. Премьер-лига',start=2))
+                event=make_event(17007000+index,'Уникальная Команда' if index == 32 else f'Команда {index}',competition='Россия. Премьер-лига',start=2)
+                if index==0:
+                    for variant_id,variant in zip(('a'*32,'b'*32),GOAL_VARIANTS['variants']):
+                        event['markets'].append({'name':GOAL_VARIANTS['market'],'group':'Тотал','period':'осн.время','variant_id':variant_id,
+                            'outcomes':[{'name':name,'odds':price} for name,price in variant]})
+                    event['coverage']['expected_outcomes']+=8
+                repo.import_event_markets(event)
             repo.import_event_markets(make_event(18000000,'Наполи',competition='Италия. Серия А',phase='live',start=-1))
             for projection in PROJECTIONS[1:]: repo.import_event_markets(sport_document(projection))
             with socket.socket() as probe:

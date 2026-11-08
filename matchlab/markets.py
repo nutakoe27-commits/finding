@@ -130,6 +130,11 @@ def validate_event_markets(value: dict) -> dict:
         market = {"name": label(item.get("name")), "group": label(item.get("group"), 200, optional=True),
                   "period": label(item.get("period"), 100, optional=True), "parameter": label(item.get("parameter"), 100, optional=True),
                   "source_market_id": label(item.get("source_market_id"), 100, optional=True)}
+        variant_id=item.get('variant_id')
+        if variant_id is not None:
+            if not isinstance(variant_id,str) or not re.fullmatch(r'[a-f0-9]{32}',variant_id):
+                raise ValueError('Некорректный идентификатор набора исходов.')
+            market['variant_id']=variant_id
         market["key"] = identity(market)
         selections = item.get("outcomes")
         if not isinstance(selections, list) or not 1 <= len(selections) <= 2000:

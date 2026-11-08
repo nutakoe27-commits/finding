@@ -637,6 +637,15 @@ function selectAI(market = null, outcome = null) {
   state.selection = market ? {marketKey:market.key,outcomeKey:outcome?.key || null} : null;
   clearAIOutput(); renderAISelection(); renderMarketGroups();
 }
+function marketVariantLabel(market) {
+  if (!market.variant_id) return null;
+  const siblings=(state.marketDocument?.markets || []).filter(item => item.variant_id &&
+    item.name===market.name && item.group===market.group && item.period===market.period && item.parameter===market.parameter);
+  const others=new Set(siblings.filter(item=>item.key!==market.key).flatMap(item=>item.outcomes.map(outcome=>outcome.name)));
+  const distinct=market.outcomes.map(outcome=>outcome.name).filter(name=>!others.has(name));
+  const labels=distinct.length ? distinct : market.outcomes.map(outcome=>outcome.name);
+  return `Вариант ${Math.max(1,siblings.findIndex(item=>item.key===market.key)+1)} · исходы: ${labels.slice(0,4).join(", ")}${labels.length>4 ? ", …" : ""}`;
+}
 function renderAISelection() {
   const document = state.marketDocument;
   if (!document) { syncAIButton(); return; }
@@ -644,7 +653,7 @@ function renderAISelection() {
   $("ai-match-label").textContent = eventTitle(document);
   const market = document.markets.find(item => item.key === state.selection?.marketKey);
   const outcome = market?.outcomes.find(item => item.key === state.selection?.outcomeKey);
-  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter].filter(Boolean).join(" · ") : "Событие целиком · основные рынки";
+  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ") : "Событие целиком · основные рынки";
   $("ai-outcome-label").hidden = !outcome;
   $("ai-outcome-label").textContent = outcome ? `${outcome.name} · ${outcome.odds ?? "недоступен"}` : "";
   $("ai-clear-selection").hidden = !market;
@@ -747,8 +756,9 @@ function renderMarketGroups() {
   $("market-groups").replaceChildren(...markets.map(market => {
     const details = el("details", "market-group"); details.dataset.key = market.key;
     const summary = el("summary", "", market.name);
-    const caption = [market.group,market.period,market.parameter].filter(Boolean).join(" · ");
+    const caption = [market.group,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ");
     summary.append(el("small", "", `${caption ? caption + " · " : ""}${market.outcomes.length} исходов`)); details.append(summary);
+    if (market.variant_id) details.append(el("p","small muted","У источника есть несколько блоков с этим названием. Условия каждого варианта уточняйте на странице события."));
     let rendered = false;
     const render = () => {
       if (rendered || !details.open) return;
