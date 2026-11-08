@@ -11,6 +11,22 @@ LINE_URL = "https://winline.ru/stavki"
 FOOTBALL_PATH = "/stavki/sport/futbol"
 
 
+def statistics_id_from_url(value: str) -> str | None:
+    parsed = urlsplit(value)
+    if parsed.scheme != 'https' or parsed.hostname not in ('winline.ru', 'www.winline.ru') or parsed.username or parsed.password:
+        return None
+    match = re.fullmatch(r'/stats/match/(\d{1,20})/?', parsed.path)
+    return match[1] if match else None
+
+
+def event_statistics_link(links: list[str]) -> tuple[str | None, str]:
+    """Use only an observed unambiguous link; stats IDs are a separate space."""
+    ids = {value for link in links if isinstance(link, str) and (value := statistics_id_from_url(link))}
+    if len(ids) == 1:
+        return 'https://winline.ru/stats/match/' + ids.pop(), 'found'
+    return None, 'ambiguous' if ids else 'missing'
+
+
 def event_id_from_url(value: str) -> str | None:
     parsed = urlsplit(value)
     if parsed.scheme != "https" or parsed.hostname not in ("winline.ru", "www.winline.ru"):

@@ -58,6 +58,10 @@ async def browser_test(executable):
             assert full['outcomes'][0]['odds'] == 3.9 and half['outcomes'][0]['odds'] == 4.3
             assert primary_quote(document)['snapshots'][0]['odds']['home'] == 3.9
             assert await page.evaluate('window.betClicks') == 0
+            await page.locator('.marketbook-header--prematch').evaluate("node=>node.insertAdjacentHTML('beforeend','<a href=\"https://winline.ru/stats/match/72334410\">Статистика</a>')")
+            await page.locator('body').evaluate("node=>node.insertAdjacentHTML('beforeend','<a href=\"https://winline.ru/stats/match/999\">Чужая статистика вне события</a>')")
+            linked=market_document(await read_marketbook(page,maximum_passes=10),PROJECTION['url'],datetime.now(timezone.utc).isoformat())
+            assert linked['statistics_url']=='https://winline.ru/stats/match/72334410'
             await page.locator('ww-feature-marketbook-dsk').evaluate('''root => root.insertAdjacentHTML('beforeend', `<h2>Исход</h2><section class="market"><button class="market-header">Победит (осн.время)</button><div class="market__table"><h4>Сандерленд</h4><button class="market__row-btn"><span>Да</span><span>3.55</span></button><button class="market__row-btn"><span>Нет</span><span>1.25</span></button><h4>Челси</h4><button class="market__row-btn"><span>Да</span><span>1.83</span></button><button class="market__row-btn"><span>Нет</span><span>1.88</span></button></div></section>`)''')
             teams = market_document(await read_marketbook(page, maximum_passes=10), PROJECTION['url'], datetime.now(timezone.utc).isoformat())
             variants = [market for market in teams['markets'] if market['name'] == 'Победит (осн.время)']

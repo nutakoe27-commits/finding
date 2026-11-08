@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 
 from .bookmakers import instant, iso
 from .capture import safe_url
-from .winline_browser import event_id_from_url
+from .winline_browser import event_id_from_url, statistics_id_from_url
 from .sports import ordinary_sport, sport_from_url, sport_label
 
 FORMAT = "matchlab.event-markets.v1"
@@ -109,6 +109,15 @@ def validate_event_markets(value: dict) -> dict:
               "phase": phase, "kickoff_at": iso(start) if start else None, "observed_at": iso(observed),
               "capture_started_at": iso(capture_started),
               "parser_version": label(value.get("parser_version"), 80)}
+    stats_url = value.get('statistics_url')
+    stats_status = value.get('statistics_link_status', 'found' if stats_url else 'missing')
+    if stats_status not in ('found', 'missing', 'ambiguous') or (bool(stats_url) != (stats_status == 'found')):
+        raise ValueError('Некорректная связь со статистикой события.')
+    stats_id = statistics_id_from_url(stats_url) if isinstance(stats_url, str) else None
+    if stats_url and not stats_id:
+        raise ValueError('Некорректный адрес статистики события.')
+    result.update(statistics_url='https://winline.ru/stats/match/' + stats_id if stats_id else None,
+                  statistics_link_status=stats_status)
     if kind == "match" and result["home"] == result["away"]:
         raise ValueError("Нужны разные участники события.")
     incoming = value.get("markets")

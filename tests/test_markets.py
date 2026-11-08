@@ -13,6 +13,7 @@ from matchlab.config import Settings
 from matchlab.markets import FORMAT, validate_event_markets
 from matchlab.storage import Repository
 from matchlab.winline_markets import primary_quote
+from matchlab.winline_browser import event_statistics_link
 
 FROZEN = datetime(2026, 11, 8, 9, 30, tzinfo=timezone.utc)
 KEY = 'test-market-receiver-only-1234567890'
@@ -40,6 +41,18 @@ def example():
 
 
 class MarketValidationTests(unittest.TestCase):
+    def test_statistics_ids_are_observed_separately_from_market_ids(self):
+        value=example()
+        value['statistics_url']='https://winline.ru/stats/match/72334410'
+        normalized=validate_event_markets(value)
+        self.assertNotEqual(normalized['source_event_id'],'72334410')
+        self.assertEqual(normalized['statistics_link_status'],'found')
+        self.assertEqual(event_statistics_link(['https://winline.ru/stats/match/72334410?tab=h2h','https://www.winline.ru/stats/match/72334410']),('https://winline.ru/stats/match/72334410','found'))
+        self.assertEqual(event_statistics_link(['https://winline.ru/stats/match/1','https://winline.ru/stats/match/2']),(None,'ambiguous'))
+        self.assertEqual(event_statistics_link(['https://example.com/stats/match/72334410']),(None,'missing'))
+        value['statistics_url']='https://example.com/stats/match/72334410'
+        with self.assertRaises(ValueError): validate_event_markets(value)
+
     def test_periods_lines_and_prices_remain_separate(self):
         document = validate_event_markets(example())
         self.assertTrue(document['coverage']['complete'])

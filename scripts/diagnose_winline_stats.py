@@ -7,7 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
-from urllib.parse import urlsplit
+import sys
+from urllib.parse import urlsplit, urljoin
 
 SCRIPT=r'''() => {
     const safeText = element => {
@@ -36,7 +37,9 @@ def public_url(value):
 async def run(args):
     from playwright.async_api import async_playwright
     async with async_playwright() as playwright:
-        browser=await playwright.chromium.launch(headless=True,args=['--disable-gpu'],env={key:value for key,value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN','QWEN_API_KEY')})
+        launch={'headless':not args.headed,'args':['--disable-gpu'],'env':{key:value for key,value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN','QWEN_API_KEY')}}
+        if args.channel: launch['channel']=args.channel
+        browser=await playwright.chromium.launch(**launch)
         try:
             context=await browser.new_context(locale='ru-RU',timezone_id='Europe/Moscow')
             async def resources(route):
@@ -68,6 +71,32 @@ async def run(args):
                                'nodes':frame.get('nodes',[])[:8],'links':frame.get('links',[])[:8],
                                'text_sample':frame.get('text','')[:4500]} for frame in result['frames'][:4]]
             summary['saved_to']=str(path)
+            if args.probe_line:
+                sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
+                from matchlab.winline_browser import select_football_line, open_event_link
+                try:
+                    market_page=await context.new_page()
+                    await market_page.goto('https://winline.ru/stavki',wait_until='domcontentloaded',timeout=45000)
+                    await select_football_line(market_page)
+                    anchor=market_page.locator('.block-tournament a[href*="/event/"]').first
+                    target=await anchor.get_attribute('href')
+                    event_id=int(urlsplit(target).path.rstrip('/').split('/')[-1])
+                    await open_event_link(market_page,event_id=event_id)
+                    await market_page.wait_for_selector('ww-feature-marketbook-dsk',timeout=30000)
+                    probe=await market_page.evaluate(r'''() => {
+                        const root=document.querySelector('.ww-markets') || document.body;
+                        return {titles:[...document.querySelectorAll('h1')].map(node=>node.innerText),
+                            links:[...root.querySelectorAll('a[href*="/stats/"]')].map(node=>({url:node.href,title:node.title,text:node.innerText})),
+                            controls:[...root.querySelectorAll('.special__btns-wrapper a,.special__btns-wrapper button,button[title],button[aria-label]')].filter(node=>!node.closest('form')).slice(0,25).map(node=>({tag:node.tagName.toLowerCase(),class:node.className,title:node.title,aria:node.getAttribute('aria-label'),href:node.getAttribute('href')}))};
+                    }''')
+                    for link in probe['links']: link['url']=public_url(link['url'])
+                    for control in probe['controls']:
+                        if control.get('href'): control['href']=public_url(urljoin(market_page.url,control['href']))
+                    summary['market_probe']={'url':public_url(market_page.url),'source_event_id':str(event_id),**probe}
+                except Exception as error:
+                    summary['market_probe']={'error':type(error).__name__}
+                result['market_probe']=summary['market_probe']
+                path.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
             print(json.dumps(summary,ensure_ascii=False,indent=2),flush=True)
         finally:
             await browser.close()
@@ -78,6 +107,9 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url',default='https://winline.ru/stats/match/72334410')
     parser.add_argument('--seconds',type=int,default=10)
+    parser.add_argument('--headed',action='store_true',help='Open a separate visible browser, without the normal user profile')
+    parser.add_argument('--channel',choices=('chrome','msedge'),help='Use an already installed browser')
+    parser.add_argument('--probe-line',action='store_true',help='Inspect statistics links on one current football event')
     parser.add_argument('--output-dir',type=Path,default=Path('/var/lib/matchlab-crawler/diagnostics'))
     args=parser.parse_args()
     parsed=urlsplit(args.url)
