@@ -3,16 +3,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 dry_run=0
+install_only=0
 meminfo=/proc/meminfo
 api_url=http://127.0.0.1:8080
 sources=winline
 while (($#)); do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
+    --install-only) install_only=1; shift ;;
     --meminfo) meminfo="${2:?Missing file}"; shift 2 ;;
     --api-url) api_url="${2:?Missing URL}"; shift 2 ;;
     --sources) sources="${2:?Missing sources}"; shift 2 ;;
-    *) echo "Использование: $0 [--api-url http://127.0.0.1:PORT] [--sources winline|betboom,winline] [--dry-run]" >&2; exit 1 ;;
+    *) echo "Использование: $0 [--api-url http://127.0.0.1:PORT] [--sources winline|betboom,winline] [--dry-run|--install-only]" >&2; exit 1 ;;
   esac
 done
 if [[ "$meminfo" != /proc/meminfo && "$dry_run" != 1 ]]; then
@@ -88,13 +90,17 @@ install -m 644 matchlab/{__init__,bookmakers,capture,worker_protocol,server_scra
 install -m 644 scripts/diagnose_winline.py "$target/diagnose_winline.py"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt "$target/"
 python3 -m venv "$target/.venv"
-"$target/.venv/bin/python" -m pip install -r "$target/requirements-server-scraper.txt"
+"$target/.venv/bin/python" -m pip install --quiet -r "$target/requirements-server-scraper.txt"
 runuser -u matchlab-scraper -- env PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers "$target/.venv/bin/python" -m playwright install chromium
 
 printf '# Managed by Matchlab server scraper\nBOOKMAKER_API_URL=%s\nBOOKMAKER_SOURCES=%s\n' "$api_url" "$sources" > /etc/matchlab-scraper.conf
 chmod 600 /etc/matchlab-scraper.conf
 install -m 644 deploy/matchlab-scraper{,-check}.service /etc/systemd/system/
 systemctl daemon-reload
+if [[ "$install_only" == 1 ]]; then
+  echo 'Код и диагностика установлены. Проверка и автосбор не запускались.'
+  exit 0
+fi
 check_since="$(date --iso-8601=seconds)"
 if ! systemctl start matchlab-scraper-check.service; then
   journalctl -u matchlab-scraper-check.service --since "$check_since" -n 25 --no-pager || true

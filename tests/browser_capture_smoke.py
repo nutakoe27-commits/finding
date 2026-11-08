@@ -117,7 +117,7 @@ async def run(executable):
             try:
                 page = await browser.new_page()
                 await page.set_content('''<meta charset="utf-8"><h1>Футбол</h1>
-                    <section class="football-row"><a href="https://winline.ru/stavki/event/123?token=private-diagnostic-query"><div>Клуб А</div><div>Клуб Б</div></a>
+                    <section class="football-row market-section"><a href="https://winline.ru/stavki/event/123?token=private-diagnostic-query"><div>Клуб А</div><div>Клуб Б</div></a>
                     <div>2.10</div><div>3.20</div><div>3.40</div><div>Сегодня 21:00</div>
                     <form><span>private-diagnostic-form</span><input value="private-diagnostic-input"></form></section>
                     <script>window.example='private-diagnostic-script';</script>''')

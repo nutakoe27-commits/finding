@@ -56,8 +56,22 @@ DOM = r"""() => {
         return node;
     });
     const bodyText = text(document.body, 250000);
+    const marketElements = [...document.querySelectorAll('[class*="market"], [class*="Market"], [class*="outcome"], [class*="coefficient"]')].filter(visible);
+    const marketNodes = marketElements.filter(el => text(el, 12000).trim().length > 3).slice(0, 50).map(el => {
+        const attrs = {};
+        for (const key of ['class','data-market-id','data-outcome-id','data-id','data-type','data-value','aria-label','title','role']) {
+            if (el.hasAttribute(key)) attrs[key] = el.getAttribute(key).slice(0, 500);
+        }
+        return {tag: el.tagName.toLowerCase(), attrs, text: text(el, 12000),
+            children: [...el.children].filter(visible).slice(0, 16).map(child => ({tag: child.tagName.toLowerCase(), class: (child.className || '').toString().slice(0, 300), text: text(child, 1500)})),
+            parent: el.parentElement ? {class: (el.parentElement.className || '').toString().slice(0, 300), text: text(el.parentElement, 12000)} : null};
+    });
+    const controls = [...document.querySelectorAll('button,[role="tab"],[role="button"],[class*="tab"],a[href]')].filter(visible)
+        .filter(el => /[a-zа-яё]/i.test(text(el, 150)) && text(el, 150).length < 150).slice(0, 80)
+        .map(el => ({tag: el.tagName.toLowerCase(), class: (el.className || '').toString().slice(0, 200), text: text(el, 150), expanded: el.getAttribute('aria-expanded')}));
     return {text: bodyText, nodes, title: document.title.slice(0, 300),
-        headings: [...document.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).slice(0, 30).map(el => text(el, 200)),
+        headings: [...document.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"]')].filter(visible).slice(0, 30).map(el => text(el, 200)),
+        market_nodes: marketNodes, market_node_count: marketElements.length, controls,
         event_links: events.length, total_nodes: elements.length,
         truncated: (document.body ? document.body.innerText.length : 0) > 250000 || elements.length > 500};
 }""".replace("__WINLINE_CARD_CONTEXT__", CARD_CONTEXT)
@@ -88,16 +102,25 @@ def report(document: dict) -> dict:
         parsed = normalize_capture(document)["report"]["sources"]["winline"]
     except (ValueError, TypeError, KeyError):
         parsed = {"error": "unsupported_layout"}
-    return {"url": record["url"], "navigation": document["navigation"],
+    event_page = "/stavki/event/" in record["url"]
+    result = {"url": record["url"], "navigation": document["navigation"],
             "title": payload["title"], "sports_text_filter": sports_text(payload["text"]),
             "headings": payload["headings"], "event_links": payload["event_links"],
             "dated_cards": sum(dated(node) for node in events),
             "total_nodes": payload["total_nodes"], "parsed": parsed,
             "examples": examples,
-            "text_sample": payload["text"][:5000] if not examples else payload["text"][:1500]}
+            "text_sample": payload["text"][:6000] if event_page or not examples else payload["text"][:1500]}
+    if event_page:
+        result["market_node_count"] = payload.get("market_node_count", 0)
+        result["market_examples"] = [{**node, "text": node["text"][:3000],
+                                      "children": [{**child, "text": child["text"][:600]} for child in node["children"][:8]],
+                                      "parent": {**node["parent"], "text": node["parent"]["text"][:1500]} if node["parent"] else None}
+                                     for node in payload.get("market_nodes", [])[:4]]
+        result["controls"] = payload.get("controls", [])[:30]
+    return result
 
 
-async def capture(seconds: int, executable: str | None = None, *, prematch: bool = False) -> dict:
+async def capture(seconds: int, executable: str | None = None, *, prematch: bool = False, event_id: int | None = None) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
     async with async_playwright() as playwright:
         launch = {"headless": True, "args": ["--disable-gpu"],
@@ -118,7 +141,8 @@ async def capture(seconds: int, executable: str | None = None, *, prematch: bool
             page = await context.new_page()
             navigation = {}
             try:
-                response = await page.goto(LINE_URL if prematch else URL, wait_until="domcontentloaded", timeout=45000)
+                target = f"https://winline.ru/stavki/event/{event_id}" if event_id else LINE_URL if prematch else URL
+                response = await page.goto(target, wait_until="domcontentloaded", timeout=45000)
                 navigation["status"] = response.status if response else None
             except PlaywrightError:
                 navigation["error"] = "navigation_failed"
@@ -143,15 +167,19 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--executable")
-    parser.add_argument("--prematch", action="store_true", help="Open the Line route, select Football and load upcoming cards")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prematch", action="store_true", help="Open the Line route, select Football and load upcoming cards")
+    mode.add_argument("--event-id", type=int, help="Inspect all public market containers on one event page")
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60:
         parser.error("--seconds должен быть от 1 до 60")
+    if args.event_id is not None and not 1 <= args.event_id <= 2**63 - 1:
+        parser.error("Некорректный ID события")
     if args.output.exists() or args.output.is_symlink():
         parser.error("Файл уже существует; выберите другое имя.")
     os.umask(0o077)
     try:
-        document = asyncio.run(capture(args.seconds, args.executable, prematch=args.prematch))
+        document = asyncio.run(capture(args.seconds, args.executable, prematch=args.prematch, event_id=args.event_id))
         with args.output.open("x", encoding="utf-8") as output:
             json.dump(document, output, ensure_ascii=False, allow_nan=False)
         print(json.dumps(report(document), ensure_ascii=False, indent=2))
