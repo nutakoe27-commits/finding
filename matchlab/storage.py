@@ -52,6 +52,13 @@ class Repository:
                     generated_at TEXT NOT NULL,
                     payload TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS event_analyses (
+                    id TEXT PRIMARY KEY,
+                    request_key TEXT NOT NULL,
+                    generated_at TEXT NOT NULL,
+                    payload TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS event_analysis_request ON event_analyses(request_key, generated_at DESC);
                 CREATE TABLE IF NOT EXISTS bookmaker_quotes (
                     id TEXT PRIMARY KEY,
                     event_key TEXT NOT NULL,
@@ -62,6 +69,7 @@ class Repository:
                     payload TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS bookmaker_quote_event ON bookmaker_quotes(event_key, observed_at DESC);
+                CREATE INDEX IF NOT EXISTS bookmaker_quote_source_event ON bookmaker_quotes(source, json_extract(payload, '$.source_event_id'), observed_at DESC);
                 CREATE TABLE IF NOT EXISTS bookmaker_imports (
                     id TEXT PRIMARY KEY,
                     imported_at TEXT NOT NULL,
@@ -169,6 +177,26 @@ class Repository:
             rows = db.execute("SELECT payload FROM forecasts ORDER BY generated_at DESC LIMIT ?", (limit,))
             return [json.loads(row[0]) for row in rows]
 
+    def save_event_analysis(self, payload: dict, request_key: str) -> None:
+        with self.connection() as db:
+            db.execute("INSERT INTO event_analyses VALUES (?, ?, ?, ?)",
+                       (payload["id"], request_key, payload["generated_at"], json.dumps(payload, ensure_ascii=False)))
+
+    def event_analysis(self, *, analysis_id=None, request_key=None) -> dict | None:
+        with self.connection() as db:
+            if analysis_id:
+                row = db.execute("SELECT payload FROM event_analyses WHERE id = ?", (analysis_id,)).fetchone()
+            else:
+                row = db.execute("SELECT payload FROM event_analyses WHERE request_key = ? ORDER BY generated_at DESC LIMIT 1", (request_key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def recent_event_analyses(self, limit=20) -> list[dict]:
+        with self.connection() as db:
+            rows = db.execute("SELECT payload FROM event_analyses ORDER BY generated_at DESC LIMIT ?", (limit,))
+            # Send summaries without the audited prompt context; the detail
+            # endpoint returns the full saved snapshot of the request.
+            return [{key: value for key, value in json.loads(row[0]).items() if key != "context"} for row in rows]
+
     def import_bookmakers(self, document: dict) -> dict:
         from .bookmakers import instant, load_snapshots
 
@@ -198,6 +226,13 @@ class Repository:
     def bookmaker_quote(self, quote_id: str) -> dict | None:
         with self.connection() as db:
             row = db.execute("SELECT payload FROM bookmaker_quotes WHERE id = ?", (quote_id,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def event_quote(self, event_id: str) -> dict | None:
+        with self.connection() as db:
+            row = db.execute("""SELECT payload FROM bookmaker_quotes
+                WHERE source = 'winline' AND json_extract(payload, '$.source_event_id') = ?
+                ORDER BY observed_at DESC LIMIT 1""", (event_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
     def bookmaker_quotes(self, *, include_started: bool = False, source: str | None = None) -> list[dict]:
@@ -241,12 +276,13 @@ class Repository:
         return status
 
     def import_event_markets(self, value: dict) -> dict:
-        from .markets import validate_event_markets
+        from .markets import main_odds, validate_event_markets
         document = validate_event_markets(value)
         if datetime.fromisoformat(document["observed_at"]) > datetime.now(timezone.utc) + timedelta(minutes=2):
             raise ValueError("Время наблюдения находится в будущем.")
         event_id, observed = document["source_event_id"], document["observed_at"]
         metadata = {key: item for key, item in document.items() if key != "markets"}
+        metadata["primary_odds"] = main_odds(document)
         content = {key: item for key, item in document.items() if key not in ("observed_at", "capture_started_at")}
         encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(encoded).hexdigest()
@@ -280,13 +316,53 @@ class Repository:
         return {**json.loads(zlib.decompress(row["payload"])), **json.loads(row["metadata"]),
                 "observed_at": row["observed_at"], "changed_at": row["changed_at"]}
 
-    def market_events(self, *, include_started=False, limit=100, offset=0) -> dict:
-        query, params = "FROM bookmaker_event_markets", []
+    def market_events(self, *, include_started=False, limit=100, offset=0,
+                      search="", competition="", phase="", day=None, event_ids=None, sort="kickoff") -> dict:
+        query, params, clauses = "FROM bookmaker_event_markets", [], []
+        current = datetime.now(timezone.utc)
+        now = current.isoformat(timespec='microseconds')
         if not include_started:
-            query += " WHERE phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)"
-            params.append(datetime.now(timezone.utc).isoformat(timespec='microseconds'))
+            clauses.append("phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)")
+            params.append(now)
+        if phase == "upcoming":
+            clauses.append("phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)")
+            params.append(now)
+        elif phase == "live":
+            clauses.append("phase = 'live'")
+        if search:
+            clauses.append("instr(casefold(json_extract(metadata, '$.home') || ' ' || json_extract(metadata, '$.away') || ' ' || json_extract(metadata, '$.competition')), ?) > 0")
+            params.append(search.casefold())
+        if competition:
+            clauses.append("json_extract(metadata, '$.competition') = ?")
+            params.append(competition)
+        if day:
+            clauses.append("date(kickoff_at, '+3 hours') = ?")
+            params.append(day)
+        if event_ids is not None:
+            clauses.append("event_id IN (" + ",".join("?" for _ in event_ids) + ")" if event_ids else "0")
+            params.extend(event_ids)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        order = {"kickoff": "COALESCE(kickoff_at, '9999'), event_id", "freshness": "observed_at DESC, event_id"}[sort]
         with self.connection() as db:
+            db.create_function("casefold", 1, lambda value: value.casefold() if value else "", deterministic=True)
             total = db.execute("SELECT COUNT(*) " + query, params).fetchone()[0]
-            rows = db.execute("SELECT metadata, observed_at, changed_at " + query + " ORDER BY COALESCE(kickoff_at, '9999'), event_id LIMIT ? OFFSET ?", [*params, limit, offset])
+            rows = db.execute("SELECT metadata, observed_at, changed_at " + query + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*params, limit, offset])
             events = [{**json.loads(row["metadata"]), "observed_at": row["observed_at"], "changed_at": row["changed_at"]} for row in rows]
-        return {"events": events, "total": total, "offset": offset, "limit": limit}
+            # Older snapshots predate the compact headline field. Read only
+            # those visible on this page, rather than rebuilding the database
+            # or waiting for the crawler to revisit the entire catalogue.
+            for event in events:
+                if "primary_odds" not in event:
+                    from .markets import main_odds
+                    row = db.execute("SELECT payload FROM bookmaker_event_markets WHERE event_id = ?", (event["source_event_id"],)).fetchone()
+                    event["primary_odds"] = main_odds(json.loads(zlib.decompress(row[0])))
+            competitions = [row[0] for row in db.execute("SELECT DISTINCT json_extract(metadata, '$.competition') FROM bookmaker_event_markets ORDER BY 1")]
+            summary = dict(db.execute("""SELECT COUNT(*) AS total,
+                COALESCE(SUM(phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)), 0) AS upcoming,
+                COALESCE(SUM(phase = 'live'), 0) AS live,
+                COALESCE(SUM(json_extract(metadata, '$.capture_started_at') >= ?), 0) AS fresh,
+                MAX(json_extract(metadata, '$.capture_started_at')) AS last_observed_at
+                FROM bookmaker_event_markets""", (now, (current - timedelta(seconds=180)).isoformat(timespec='microseconds'))).fetchone())
+        return {"events": events, "total": total, "offset": offset, "limit": limit,
+                "competitions": competitions, "summary": summary}

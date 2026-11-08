@@ -1,0 +1,143 @@
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+from matchlab.api import create_app
+from matchlab.config import Settings
+from matchlab.event_analysis import analysis_context, request_key
+from matchlab.markets import FORMAT, validate_event_markets
+from matchlab.storage import Repository
+
+
+def event(event_id="123", *, competition="Россия. Премьер-лига", home="Спартак", phase="prematch"):
+    now = datetime.now(timezone.utc)
+    return {"format": FORMAT, "source": "winline", "sport": "football", "source_event_id": event_id,
+            "url": f"https://winline.ru/stavki/sport/futbol/rossiya/rpl/{event_id}",
+            "home": home, "away": "Зенит", "competition": competition, "phase": phase,
+            "kickoff_at": (now + timedelta(days=2)).isoformat(), "observed_at": now.isoformat(),
+            "parser_version": "product-test", "markets": [{"name": "Исход 1X2", "period": "осн.время",
+                "outcomes": [{"name": "П1", "odds": 2.5}, {"name": "X", "odds": 3.4}, {"name": "П2", "odds": 2.8}]}],
+            "coverage": {"expected_outcomes": 3, "all_tab_selected": True, "stable_passes": 2, "scroll_exhausted": True}}
+
+
+class ProductTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.directory.name)
+        self.client = TestClient(create_app(Settings(self.path, "http://127.0.0.1:9/v1", "isolated-model")))
+        self.client.__enter__()
+        self.repo = Repository(self.path / "matchlab.sqlite3")
+        self.repo.import_event_markets(event())
+
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+        self.directory.cleanup()
+
+    def test_catalogue_searches_all_pages_with_cyrillic_and_filters(self):
+        self.repo.import_event_markets(event("124", home="Динамо", competition="Беларусь. Высшая лига"))
+        self.repo.import_event_markets(event("125", home="Крылья Советов", phase="live"))
+        listing = self.client.get("/api/bookmakers/events?include_started=true&search=СПАРТАК&limit=1").json()
+        self.assertEqual(listing["total"], 1)
+        self.assertEqual(listing["events"][0]["source_event_id"], "123")
+        self.assertEqual(listing["events"][0]["primary_odds"], {"home": 2.5, "draw": 3.4, "away": 2.8})
+        self.assertNotIn("markets", listing["events"][0])
+        self.assertEqual(listing["summary"]["live"], 1)
+        upcoming = self.client.get("/api/bookmakers/events?include_started=true&phase=upcoming").json()
+        self.assertEqual(upcoming["total"], 2)
+        favorites = self.client.get("/api/bookmakers/events?include_started=true&ids=124,125").json()
+        self.assertEqual(favorites["total"], 2)
+        day = (datetime.now(timezone.utc) + timedelta(days=2, hours=3)).date().isoformat()
+        self.assertEqual(self.client.get(f"/api/bookmakers/events?include_started=true&day={day}").json()["total"], 3)
+        self.assertEqual(self.client.get("/api/bookmakers/events", params={"competition":"Беларусь. Высшая лига"}).json()["total"], 1)
+        for query in ("phase=unknown", "sort=DROP", "ids=123,'bad'", "search=" + "a" * 201, "day=yesterday"):
+            self.assertEqual(self.client.get("/api/bookmakers/events?" + query).status_code, 422)
+
+    def test_non_epl_match_gets_ai_context_without_inventing_a_statistical_model(self):
+        with patch("matchlab.api.qwen.explain_event", return_value="Разбор рынка.") as completion:
+            response = self.client.post("/api/bookmakers/events/123/explain", json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        context = completion.call_args.args[1]
+        self.assertIsNone(context["statistical_model"])
+        self.assertEqual(context["event"]["home"], "Спартак")
+        self.assertFalse(context["request_time"]["kickoff_passed"])
+        self.assertAlmostEqual(sum(context["market_implied"]["probabilities"].values()), 1)
+        self.assertIn("current_lineups", context["missing_data"])
+        self.assertFalse(self.client.get("/api/bookmakers/events/123/analysis").json()["prediction_available"])
+
+    def test_existing_snapshots_show_prices_after_upgrade_without_waiting_for_recrawl(self):
+        with self.repo.connection() as db:
+            db.execute("UPDATE bookmaker_event_markets SET metadata = json_remove(metadata, '$.primary_odds')")
+        listing = self.client.get("/api/bookmakers/events").json()
+        self.assertEqual(listing["events"][0]["primary_odds"], {"home":2.5,"draw":3.4,"away":2.8})
+        self.assertNotIn("markets", listing["events"][0])
+
+    def test_selected_outcome_reaches_ai_and_saved_history_uses_exact_snapshot(self):
+        document = self.repo.event_markets("123")
+        market = document["markets"][0]
+        body = {"observed_at":document["observed_at"], "market_key":market["key"], "outcome_key":market["outcomes"][2]["key"], "notes":"Непроверенная заметка"}
+        with patch("matchlab.api.qwen.explain_event", return_value="Оценка исхода П2.") as completion:
+            result = self.client.post("/api/bookmakers/events/123/explain", json=body).json()
+            repeated = self.client.post("/api/bookmakers/events/123/explain", json=body).json()
+        self.assertEqual(completion.call_count, 1)
+        self.assertTrue(repeated["cached"])
+        self.assertEqual(result["context"]["selection"]["outcome_key"], body["outcome_key"])
+        self.assertEqual(result["context"]["unverified_user_notes"], body["notes"])
+        listing = self.client.get("/api/analyses").json()["analyses"]
+        self.assertEqual(len(listing), 1)
+        self.assertNotIn("context", listing[0])
+        saved = self.client.get("/api/analyses/" + result["id"]).json()
+        self.assertEqual(saved["observed_at"], document["observed_at"])
+        self.assertEqual(saved["context"]["markets"][0]["outcomes"][2]["odds"], 2.8)
+
+    def test_changed_snapshot_and_invalid_selection_do_not_call_ai(self):
+        with patch("matchlab.api.qwen.explain_event") as completion:
+            for body, code in (({"observed_at":"2000-01-01"},409), ({"market_key":"a"*32},422), ({"outcome_key":"a"*32},422)):
+                response = self.client.post("/api/bookmakers/events/123/explain", json=body)
+                self.assertEqual(response.status_code, code, response.text)
+        completion.assert_not_called()
+
+    def test_suspended_selection_is_not_sent_to_ai(self):
+        value = event()
+        value["markets"][0]["outcomes"][0].update(odds=None, state="suspended")
+        self.repo.import_event_markets(value)
+        document = self.repo.event_markets("123")
+        market = document["markets"][0]
+        with patch("matchlab.api.qwen.explain_event") as completion:
+            response = self.client.post("/api/bookmakers/events/123/explain", json={"market_key":market["key"], "outcome_key":market["outcomes"][0]["key"]})
+        self.assertEqual(response.status_code, 422)
+        completion.assert_not_called()
+
+    def test_public_errors_do_not_expose_model_name_or_connection_configuration(self):
+        with patch("matchlab.api.qwen.explain_event", side_effect=ValueError("Qwen QWEN_BASE_URL private-test-key")):
+            response = self.client.post("/api/bookmakers/events/123/explain", json={})
+        self.assertEqual(response.status_code, 502)
+        self.assertNotIn("qwen", response.text.lower())
+        self.assertNotIn("private-test-key", response.text)
+        self.assertEqual(self.client.get("/api/analyses").json()["analyses"], [])
+
+    def test_bounded_context_keeps_selected_outcome_and_labels_truncation(self):
+        value = event()
+        value["markets"][0]["outcomes"] = [{"name":str(index), "odds":2.0} for index in range(150)]
+        value["coverage"]["expected_outcomes"] = 150
+        document = validate_event_markets(value)
+        market = document["markets"][0]
+        selected = market["outcomes"][-1]
+        context = analysis_context(document, market_key=market["key"], outcome_key=selected["key"])
+        self.assertEqual(context["coverage"]["analyzed_outcomes"], 80)
+        self.assertEqual(context["coverage"]["stored_outcomes"], 150)
+        self.assertIn(selected["key"], [item["key"] for item in context["markets"][0]["outcomes"]])
+
+    def test_freshness_boundary_changes_analysis_cache_key(self):
+        document = self.repo.event_markets("123")
+        key = request_key(document, None, None, "")
+        with patch("matchlab.event_analysis.datetime", wraps=datetime) as clock:
+            clock.now.return_value = datetime.now(timezone.utc) + timedelta(minutes=5)
+            self.assertNotEqual(key, request_key(document, None, None, ""))
+
+
+if __name__ == "__main__":
+    unittest.main()

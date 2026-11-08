@@ -17,7 +17,7 @@ async def check(base_url: str, chromium: str | None, screenshots: Path | None):
             page = await browser.new_page(viewport={"width": 1440, "height": 1100}, locale="ru-RU")
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
-            await page.goto(base_url, wait_until="networkidle")
+            await page.goto(base_url + "/#calculator", wait_until="networkidle")
             await page.wait_for_function("!document.getElementById('predict-button').disabled")
             assert await page.locator("#home-team option").count() >= 2
             await page.locator("#predict-button").click()

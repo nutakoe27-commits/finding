@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from collections import OrderedDict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import math
 import secrets
@@ -50,6 +50,27 @@ class ExplainRequest(BaseModel):
     notes: str = Field(default="", max_length=6000)
 
 
+class EventExplainRequest(BaseModel):
+    market_key: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    outcome_key: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    observed_at: str | None = Field(default=None, max_length=50)
+    notes: str = Field(default="", max_length=2000)
+
+    @model_validator(mode="after")
+    def selection_requires_market(self):
+        if self.outcome_key and not self.market_key:
+            raise ValueError("Сначала выберите рынок.")
+        return self
+
+
+def public_ai_error(error: ValueError) -> str:
+    if "вовремя" in str(error):
+        return "Разбор не успел завершиться. Попробуйте ещё раз немного позже."
+    if "лимита токенов" in str(error):
+        return "Разбор не удалось завершить. Выберите конкретный рынок и повторите запрос."
+    return "Не удалось получить разбор ИИ. Попробуйте позже или проверьте подключение в состоянии сервиса."
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     repo = Repository(settings.database)
@@ -65,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     models = OrderedDict()
     model_lock = RLock()
+    analysis_lock = RLock()
 
     def model_for(before: date) -> tuple[GoalModel, str]:
         rows, revision = repo.snapshot(before)
@@ -89,7 +111,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/status")
     def status():
-        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured},
+        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured},
                 "bookmakers": repo.bookmaker_status(),
                 "live_fixtures": False, "live_odds": False}
 
@@ -225,10 +247,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Некорректный документ рынков события.") from exc
 
     @app.get("/api/bookmakers/events")
-    def market_events(include_started: bool = False, limit: int = 100, offset: int = 0):
-        if not 1 <= limit <= 200 or offset < 0:
+    def market_events(include_started: bool = False, limit: int = 100, offset: int = 0,
+                      search: str = "", competition: str = "", phase: str = "", day: date | None = None,
+                      ids: str | None = None, sort: str = "kickoff"):
+        event_ids = ids.split(",") if ids is not None else None
+        if (not 1 <= limit <= 200 or offset < 0 or len(search) > 200 or len(competition) > 200
+                or phase not in ("", "upcoming", "live") or sort not in ("kickoff", "freshness")
+                or (event_ids is not None and (len(event_ids) > 100 or any(not item.isdigit() or len(item) > 20 for item in event_ids)))):
             raise HTTPException(422, "Некорректная страница списка событий.")
-        result = repo.market_events(include_started=include_started, limit=limit, offset=offset)
+        result = repo.market_events(include_started=include_started, limit=limit, offset=offset,
+                                   search=search.strip(), competition=competition, phase=phase,
+                                   day=day.isoformat() if day else None, event_ids=event_ids, sort=sort)
         current = datetime.now(timezone.utc)
         for event in result["events"]:
             event["age_seconds"] = max(0, int((current - instant(event["capture_started_at"])).total_seconds()))
@@ -245,9 +274,95 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         age = max(0, int((datetime.now(timezone.utc) - instant(document["capture_started_at"])).total_seconds()))
         return {**document, "age_seconds": age, "is_stale": age > 180}
 
+    @app.get("/api/bookmakers/events/{event_id}/analysis")
+    def event_analysis(event_id: str):
+        from .markets import main_odds
+        if not event_id.isdigit() or len(event_id) > 20:
+            raise HTTPException(422, "Некорректный ID события.")
+        document = repo.event_markets(event_id)
+        if not document:
+            raise HTTPException(404, "Матч ещё не собран.")
+        quote = repo.event_quote(event_id)
+        reason = "Модель пока поддерживает основной исход АПЛ. Рынки этой встречи доступны для просмотра."
+        eligible, canonical = False, model_teams(document)
+        if document["phase"] in ("live", "finished") or (document["kickoff_at"] and instant(document["kickoff_at"]) <= datetime.now(timezone.utc)):
+            reason = "Предматчевый прогноз для начавшейся встречи недоступен."
+        elif document["phase"] != "prematch":
+            reason = "В снимке не подтверждён предматчевый статус. Доступен ИИ-разбор сохранённых рынков."
+        elif canonical:
+            if not quote or quote["odds"] != main_odds(document) or (quote["home"], quote["away"]) != (document["home"], document["away"]):
+                reason = "Ожидаем доступный основной исход 1X2 и его сохранённый снимок."
+            else:
+                try:
+                    model, _ = model_for(instant(quote["observed_at"]).date())
+                    eligible = model.eligible(*canonical)
+                    reason = "" if eligible else "Пока недостаточно истории этих команд в АПЛ."
+                except ValueError as exc:
+                    reason = str(exc)
+        return {"prediction_available": eligible, "unavailable_reason": reason,
+                "quote": {**quote, "model_teams": list(canonical)} if eligible else None}
+
     @app.get("/api/forecasts")
     def forecasts():
         return {"forecasts": repo.recent_forecasts()}
+
+    @app.post("/api/bookmakers/events/{event_id}/explain")
+    def explain_event(event_id: str, request: EventExplainRequest):
+        from .event_analysis import analysis_context, request_key
+        if not settings.qwen_configured:
+            raise HTTPException(503, "Сервис ИИ ещё не подключён.")
+        if not event_id.isdigit() or len(event_id) > 20:
+            raise HTTPException(422, "Некорректный ID события.")
+        document = repo.event_markets(event_id)
+        if not document:
+            raise HTTPException(404, "Матч ещё не собран.")
+        if request.observed_at and request.observed_at != document["observed_at"]:
+            raise HTTPException(409, "Снимок матча обновился. Обновите рынки и повторите запрос.")
+        key = request_key(document, request.market_key, request.outcome_key, request.notes)
+        cached = repo.event_analysis(request_key=key)
+        if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(minutes=10):
+            return {**cached, "cached": True}
+        if not analysis_lock.acquire(blocking=False):
+            raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
+        try:
+            statistics = None
+            canonical = model_teams(document)
+            if (canonical and document["phase"] == "prematch" and document["kickoff_at"]
+                    and instant(document["kickoff_at"]) > datetime.now(timezone.utc)):
+                try:
+                    model, _ = model_for(min(instant(document["capture_started_at"]).date(), date.today()))
+                    if model.eligible(*canonical):
+                        statistics = model.predict(*canonical)
+                except ValueError:
+                    pass
+            try:
+                context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
+                                           notes=request.notes, statistics=statistics)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            try:
+                text = qwen.explain_event(settings, context)
+            except ValueError as exc:
+                raise HTTPException(502, public_ai_error(exc)) from exc
+            selected = next((market for market in context["markets"] if market["key"] == request.market_key), None)
+            payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
+                       "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Матч целиком",
+                       "text": text, "context": context}
+            repo.save_event_analysis(payload, key)
+            return {**payload, "cached": False}
+        finally:
+            analysis_lock.release()
+
+    @app.get("/api/analyses")
+    def analyses():
+        return {"analyses": repo.recent_event_analyses()}
+
+    @app.get("/api/analyses/{analysis_id}")
+    def analysis_detail(analysis_id: str):
+        result = repo.event_analysis(analysis_id=analysis_id)
+        if not result:
+            raise HTTPException(404, "Разбор не найден.")
+        return result
 
     @app.get("/api/backtest")
     def backtest():
@@ -264,14 +379,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/explain")
     def explain(request: ExplainRequest):
         if not settings.qwen_configured:
-            raise HTTPException(503, "Сервер Qwen ещё не подключён.")
+            raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         saved = repo.forecast(request.forecast_id)
         if saved is None:
             raise HTTPException(404, "Прогноз не найден.")
         try:
             text = qwen.explain(settings, saved, request.notes)
         except ValueError as exc:
-            raise HTTPException(502, str(exc)) from exc
+            raise HTTPException(502, public_ai_error(exc)) from exc
         return {"forecast_id": saved["id"], "text": text, "notes_verified": False}
 
     return app

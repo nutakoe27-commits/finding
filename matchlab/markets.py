@@ -27,6 +27,23 @@ def identity(value) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:32]
 
 
+def main_odds(document: dict) -> dict | None:
+    """A compact display of explicit regular-time 1X2; never infer a market."""
+    candidates = []
+    names = {"П1": "home", "1": "home", "X": "draw", "Х": "draw", "П2": "away", "2": "away"}
+    for market in document.get("markets", []):
+        if not re.fullmatch(r"Исход\s+1[XХ]2", market["name"], re.I) or market.get("parameter"):
+            continue
+        period = re.sub(r"[.\s]", "", market.get("period") or "").casefold()
+        if period not in ("оснвремя", "основноевремя"):
+            continue
+        prices = {names[outcome["name"].upper()]: outcome["odds"]
+                  for outcome in market["outcomes"] if outcome["name"].upper() in names and outcome["state"] == "open"}
+        if len(market["outcomes"]) == 3 and set(prices) == {"home", "draw", "away"}:
+            candidates.append(prices)
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def validate_event_markets(value: dict) -> dict:
     if not isinstance(value, dict) or value.get("format") != FORMAT or value.get("source") != "winline" or value.get("sport") != "football":
         raise ValueError("Нужен документ футбольных рынков Winline.")

@@ -1,195 +1,70 @@
 <!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#111411" />
-    <title>Matchlab — футбольная аналитика</title>
-    <link rel="stylesheet" href="/static/style.css" />
-    <script src="/static/app.js" defer></script>
-  </head>
-  <body>
-    <aside class="sidebar">
-      <a class="brand" href="#forecast" aria-label="Matchlab, главная"
-        ><span class="brand-mark"
-          >m<span
-            ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 13 13 3M3 3h10v10" /></svg></span></span
-        >matchlab<span class="brand-dot">.</span></a
-      >
-      <div class="workspace-label">ИССЛЕДОВАТЕЛЬСКАЯ СРЕДА</div>
-      <nav aria-label="Разделы">
-        <a href="#forecast" class="nav-link active"
-          ><span>◉</span> Прогноз матча
-          <span class="nav-arrow"
-            ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 13 13 3M3 3h10v10" /></svg></span
-        ></a>
-        <a href="#validation" class="nav-link"
-          ><span>▥</span> Проверка модели</a
-        >
-        <a href="#data" class="nav-link"><span>▦</span> Источники данных</a>
-        <a href="#bookmakers" class="nav-link"
-          ><span>≋</span> Линия букмекеров</a
-        >
-        <a href="#markets" class="nav-link"><span>▤</span> Рынки Winline</a>
-      </nav>
-      <div class="sidebar-note">
-        <span class="tiny-label">НАША ЗАДАЧА</span>
-        <p>Сначала проверить.<br />Потом доверять.</p>
-        <div class="mini-pitch"><i></i><b></b><span></span></div>
-      </div>
-      <div class="qwen-status">
-        <span id="qwen-dot" class="status-dot"></span>
-        <div>
-          <strong>Qwen</strong
-          ><small id="qwen-state">Проверяем подключение</small>
-        </div>
-        <span class="qwen-icon">✳</span>
-      </div>
-      <div class="sidebar-footer">Версия 0.1 <span>PRE-MATCH ONLY</span></div>
-    </aside>
-
-    <main>
-      <header class="topbar">
-        <div>
-          <span class="live-dot"></span> Лаборатория прогнозов
-          <span class="slash">/</span> Футбол
-        </div>
-        <span class="prototype-badge">ИСТОРИЧЕСКИЙ ПРОТОТИП</span>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101411" />
+  <title>Matchlab — матчи и аналитика</title>
+  <link rel="stylesheet" href="/static/style.css?v=20261108-ui2" />
+  <script src="/static/app.js?v=20261108-ui2" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">К содержимому</a>
+  <aside class="sidebar">
+    <a class="brand" href="#matches" aria-label="Matchlab, матчи"><span class="brand-mark">m<svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span>matchlab<span class="brand-dot">.</span></a>
+    <div class="workspace-label">ФУТБОЛЬНАЯ АНАЛИТИКА</div>
+    <nav aria-label="Основные разделы">
+      <a href="#matches" class="nav-link active"><span aria-hidden="true">◉</span> Линия <span class="nav-count" id="nav-matches">—</span></a>
+      <a href="#favorites" class="nav-link"><span aria-hidden="true">☆</span> Избранное <span class="nav-count" id="nav-favorites">0</span></a>
+      <a href="#history" class="nav-link"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span> История разборов</a>
+    </nav>
+    <div id="league-nav" class="league-nav" aria-label="Турниры"></div><div class="sidebar-bottom">
+      <a href="#calculator" class="nav-link utility-link"><span aria-hidden="true">＋</span> Ручной расчёт</a>
+      <a href="#status" class="nav-link utility-link"><span aria-hidden="true">◎</span> Состояние сервиса</a>
+      <div class="sidebar-source"><span id="feed-dot" class="status-dot"></span><div><strong>Winline</strong><small id="feed-state">Проверяем обновления</small></div></div>
+      <p class="sidebar-footnote">Данные и вероятности.<br />Решение — за вами.</p>
+    </div>
+  </aside>
+  <main id="main-content" tabindex="-1">
+    <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><span class="timezone-label">Время матчей · МСК</span></header>
+    <div id="global-error" class="notice error" role="alert" hidden></div>
+    <section id="view-matches" data-view>
+      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">ФУТБОЛ · WINLINE</p><h1 id="catalog-title">Футбол<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Выберите матч или коэффициент — получите разбор ИИ.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button"><span aria-hidden="true">↻</span> Обновить</button></div>
+      <div id="catalog-stats" class="catalog-stats" aria-label="Состояние линии"><div><strong id="count-upcoming">—</strong><span>Предстоящих</span></div><div><strong id="count-live">—</strong><span>Live в снимках</span></div><div><strong id="count-fresh">—</strong><span>Свежих снимков</span></div><p id="catalog-updated">Ожидаем данные</p></div>
+      <div class="catalog-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск команды или турнира</span><input id="match-search" type="search" placeholder="Команда или турнир" autocomplete="off" maxlength="200" /></label><label class="sr-only" for="competition-filter">Турнир</label><select id="competition-filter" class="competition-filter"><option value="">Все турниры</option></select><label class="sr-only" for="day-filter">День матча</label><select id="day-filter"><option value="">Любая дата</option><option value="today">Сегодня</option><option value="tomorrow">Завтра</option></select></div>
+      <div class="catalog-toolbar"><div class="segmented" role="group" aria-label="Статус матчей"><button type="button" class="active" data-phase="upcoming" aria-pressed="true">Предстоящие</button><button type="button" data-phase="live" aria-pressed="false">Live</button><button type="button" data-phase="" aria-pressed="false">Все снимки</button></div><label class="sort-label">Сортировка <select id="sort-filter"><option value="kickoff">По времени матча</option><option value="freshness">По свежести данных</option></select></label></div>
+      <p id="market-list-summary" class="list-caption" aria-live="polite">Загружаем матчи…</p>
+      <div id="market-list-error" class="notice error" role="alert" hidden></div>
+      <div id="market-event-rows" class="match-list" aria-busy="true"><div class="loading-card">Загружаем линию Winline…</div></div>
+      <div id="market-list-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true">◎</span><h2 id="catalog-empty-title">Матчи пока не найдены</h2><p id="catalog-empty-text">Попробуйте другой турнир или сбросьте фильтры.</p><button id="reset-filters" class="secondary-button" type="button">Сбросить фильтры</button></div>
+      <div class="pagination"><button id="market-prev" class="secondary-button" type="button" disabled>← Назад</button><span id="catalog-page" class="muted small"></span><button id="market-next" class="secondary-button" type="button" disabled>Дальше →</button></div>
+      <p class="catalog-footnote">Коэффициенты показаны на момент сбора. Время и полнота данных — у каждой встречи.</p>
+    </section>
+    <section id="view-analysis" data-view hidden>
+      <a id="match-back" class="back-link" href="#matches">← К матчам</a>
+      <header id="event-header" class="event-header" hidden>
+        <div class="event-topline"><p id="event-competition" class="eyebrow"></p><button id="event-favorite" class="secondary-button" type="button" aria-pressed="false">☆ В избранное</button></div>
+        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p></div><a id="event-source" class="source-link" target="_blank" rel="noopener noreferrer">Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></div>
+        <div id="event-primary" class="event-primary" hidden></div>
+        <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Загрузить последний сохранённый снимок">Обновить данные</button><details class="snapshot-info"><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
       </header>
-      <section class="page-heading">
-        <div>
-          <p class="eyebrow">ДАННЫЕ. ВЕРОЯТНОСТИ. ПРОВЕРКА.</p>
-          <h1>У матча есть <em>цифры.</em></h1>
-          <p class="subtitle">Исследуем футбол с помощью статистики и ИИ.</p>
-        </div>
-        <div class="league-badge">
-          <span class="league-symbol">♜</span>
-          <div>Premier League<small>АНГЛИЯ · ИСХОД 1X2</small></div>
-        </div>
-      </section>
-
-      <div id="global-error" class="notice error" role="alert" hidden></div>
-      <div id="data-warning" class="notice" hidden></div>
-
-      <section class="summary-grid" aria-label="Состояние исследования">
-        <article class="summary-card">
-          <span class="tiny-label">МАТЧЕЙ В ИСТОРИИ</span
-          ><strong id="stat-matches">—</strong
-          ><span id="stat-period" class="muted">Загружаем данные</span>
-        </article>
-        <article class="summary-card">
-          <span class="tiny-label">ПОСЛЕДНИЙ РЕЗУЛЬТАТ</span
-          ><strong id="stat-latest">—</strong
-          ><span class="muted">Дата в загруженной выборке</span>
-        </article>
-        <article class="summary-card">
-          <span class="tiny-label">ПРОВЕРЕНО НА МАТЧАХ</span
-          ><strong id="stat-tested">—</strong
-          ><span id="stat-tested-note" class="muted">Проверяем отчёт</span>
-        </article>
-        <article class="summary-card">
-          <span class="tiny-label">ИСТОЧНИК КОЭФФИЦИЕНТОВ</span
-          ><strong class="text-stat" id="stat-odds-source"
-            >Ручной ввод
-            <span
-              ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M3 13 13 3M3 3h10v10" /></svg></span></strong
-          ><span class="muted" id="stat-odds-note">Ожидаем снимки линии</span>
-        </article>
-      </section>
-
-      <section id="markets" class="panel bookmakers-panel">
-        <div class="panel-heading"><div><p class="eyebrow">КОЭФФИЦИЕНТЫ ПО РЫНКАМ</p><h2>Рынки Winline</h2></div><span class="subtle-badge">ФУТБОЛ</span></div>
-        <p class="panel-description">Последние наблюдения каждой встречи: исходы, таймы, тоталы, форы и другие рынки. Полнота и время снимка указаны отдельно.</p>
-        <div class="bookmaker-controls"><label class="archive-toggle"><input id="market-include-started" type="checkbox" checked /> Включить live и начавшиеся матчи</label><button id="market-refresh" class="secondary-button" type="button">Обновить рынки</button></div>
-        <p id="market-list-summary" class="small muted">Загружаем события…</p>
-        <div id="market-list-error" class="notice error" role="alert" hidden></div>
-        <div class="data-table-wrap bookmakers-scroll all-markets-scroll"><table><thead><tr><th>Матч / турнир</th><th>Статус</th><th>Рынков / исходов</th><th>Наблюдение, МСК</th><th>Полнота</th><th></th></tr></thead><tbody id="market-event-rows"></tbody></table></div>
-        <p id="market-list-empty" class="small muted" hidden>Снимков рынков пока нет. Они появятся после сбора страниц матчей.</p>
-        <div class="bookmaker-controls"><button id="market-prev" class="quote-button" type="button" disabled>Назад</button><button id="market-next" class="quote-button" type="button" disabled>Дальше</button></div>
-        <article id="market-detail" class="market-detail" hidden>
-          <h3 id="market-detail-title"></h3><p id="market-detail-meta" class="small muted"></p>
-          <label for="market-search" class="sr-only">Поиск по рынкам</label><input id="market-search" type="search" placeholder="Найти рынок, период или параметр…" />
-          <div id="market-groups"></div>
-        </article>
-        <p class="small muted">Прогноз статистической модели относится к П1/Х/П2 за основное время. Остальные рынки доступны для просмотра и анализа.</p>
-      </section>
-
-      <section id="bookmakers" class="panel bookmakers-panel">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">ПРЕДМАТЧЕВАЯ ЛИНИЯ · 1X2</p>
-            <h2>Матчи букмекеров</h2>
-          </div>
-          <span class="subtle-badge">BETBOOM / WINLINE</span>
-        </div>
-        <p class="panel-description">
-          Коэффициенты из сохранённых снимков публичных страниц. Каждый источник
-          и время получения указаны отдельно. Прогнозная модель поддерживает
-          АПЛ.
-        </p>
-        <div class="bookmaker-controls">
-          <label for="bookmaker-source" class="sr-only">Букмекер</label
-          ><select id="bookmaker-source">
-            <option value="">Все источники</option>
-            <option value="betboom">BetBoom</option>
-            <option value="winline">Winline</option></select
-          ><label class="archive-toggle"
-            ><input type="checkbox" id="bookmaker-archive" /> Показать
-            начавшиеся матчи</label
-          ><button
-            id="bookmaker-refresh"
-            type="button"
-            class="secondary-button"
-          >
-            Обновить список
-          </button>
-        </div>
-        <p id="bookmaker-summary" class="small muted">Загружаем снимки…</p>
-        <div
-          id="bookmaker-error"
-          class="notice error"
-          role="alert"
-          hidden
-        ></div>
-        <div class="data-table-wrap bookmakers-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Матч / турнир</th>
-                <th>Начало, МСК</th>
-                <th>Источник</th>
-                <th>П1</th>
-                <th>Х</th>
-                <th>П2</th>
-                <th>Снимок</th>
-                <th>Расчёт</th>
-              </tr>
-            </thead>
-            <tbody id="bookmaker-rows"></tbody>
-          </table>
-        </div>
-        <p id="bookmaker-empty" class="small muted" hidden>
-          Подходящих снимков пока нет. Линия появится после первого сбора.
-        </p>
-        <p class="small muted">
-          Снимки старше пяти минут отмечены как устаревшие. Расчёт по такому
-          снимку показывает исследовательский сценарий, а не доступную сейчас
-          цену.
-        </p>
-      </section>
-
+      <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
+      <div id="ai-mobile-host"></div><div id="detail-error" class="notice error" role="alert" hidden></div>
+      <div id="event-tabs" class="detail-tabs" role="tablist" aria-label="Информация о матче"><button type="button" id="tab-markets" role="tab" aria-selected="true" aria-controls="market-detail" tabindex="0">Все рынки <span id="market-count"></span></button><button type="button" id="tab-analysis" role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Статистика</button></div>
+      <article id="market-detail" class="panel market-detail" role="tabpanel" aria-labelledby="tab-markets">
+        <div class="market-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск по рынкам</span><input id="market-search" type="search" placeholder="Рынок, период или параметр" /></label><label class="sr-only" for="market-group-filter">Группа рынков</label><select id="market-group-filter"><option value="">Все группы</option></select></div>
+        <p id="market-search-count" class="small muted" aria-live="polite"></p><div id="market-groups"></div><p id="market-search-empty" class="empty-text" hidden>Такой рынок не найден. Измените запрос или группу.</p>
+      </article>
+      <div id="analysis-panel" role="tabpanel" aria-labelledby="tab-analysis" hidden>
+        <div id="event-analysis-controls" class="panel analysis-start"><div><p class="eyebrow">ОСНОВНОЕ ВРЕМЯ · П1 / Х / П2</p><h2>Статистическая оценка</h2><p id="analysis-availability" class="muted">Проверяем доступность модели…</p></div><button id="event-predict" class="primary-button" type="button" disabled>Рассчитать вероятности <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></button></div>
       <section id="forecast" class="forecast-grid">
-        <article class="panel selection-panel">
+        <article id="manual-selection" class="panel selection-panel" hidden>
           <div class="panel-heading">
             <h2>Сценарий матча</h2>
             <span class="step-label">01 / ВЫБОР</span>
           </div>
           <p class="panel-description">
-            Выберите соперников вручную или нажмите «Рассчитать» в линии
-            букмекера.
+            Ручной расчёт по истории АПЛ. Выбранная пара не подтверждает наличие матча в расписании.
           </p>
           <form id="forecast-form">
             <div id="quote-selection" class="selected-quote" hidden>
@@ -290,10 +165,9 @@
           </div>
           <div id="result-empty" class="empty-state">
             <div class="empty-ball">◉</div>
-            <h3>Начнём с соперников</h3>
+            <h3>Прогноз ещё не рассчитан</h3>
             <p>
-              Рассчитайте вероятности на основе<br />реальной истории матчей
-              АПЛ.
+              Рассчитайте вероятности по сохранённому снимку матча.
             </p>
           </div>
           <div id="result-content" hidden>
@@ -349,46 +223,21 @@
         </article>
       </section>
 
-      <section class="panel ai-panel">
-        <div class="ai-intro">
-          <div class="ai-symbol">✳</div>
-          <div>
-            <h2>Второй взгляд — от Qwen</h2>
-            <p>
-              Объяснение статистики. Ваши заметки будут отмечены как
-              непроверенные.
-            </p>
-          </div>
-          <span id="ai-badge" class="subtle-badge">ОЖИДАЕТ ПОДКЛЮЧЕНИЯ</span>
-        </div>
-        <div class="ai-controls">
-          <label class="sr-only" for="notes"
-            >Дополнительные сведения о матче</label
-          ><textarea
-            id="notes"
-            maxlength="6000"
-            rows="2"
-            placeholder="Необязательно: добавьте сведения о составе или новость со ссылкой…"
-          ></textarea
-          ><button
-            type="button"
-            id="explain-button"
-            class="secondary-button"
-            disabled
-          >
-            Объяснить прогноз
-            <span
-              ><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M3 13 13 3M3 3h10v10" /></svg
-            ></span>
-          </button>
-        </div>
-        <p id="ai-hint" class="small muted">
-          Статистическая модель работает независимо от подключения ИИ.
-        </p>
-        <div id="explanation" class="explanation" hidden></div>
-      </section>
 
+      </div>
+      <article id="saved-analysis" class="panel" hidden><h2 id="saved-analysis-title"></h2><div id="saved-analysis-text" class="explanation"></div><p id="saved-analysis-coverage" class="small muted"></p><a id="saved-analysis-open" class="secondary-button" href="#matches">Открыть актуальные рынки <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></article>
+    </section>
+    <section id="view-history" data-view hidden>
+      <div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЕ РАЗБОРЫ</p><h1>История разборов<span class="lime">.</span></h1><p class="subtitle">Последние 20 разборов матчей и выбранных рынков.</p></div><button id="history-refresh" class="secondary-button" type="button">Обновить</button></div>
+      <div id="history-error" class="notice error" role="alert" hidden></div><div id="history-list" class="history-list"></div>
+      <div id="history-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h2>Здесь появятся ваши разборы</h2><p>Выберите матч и нажмите «Получить разбор ИИ». Ответ сохранится автоматически.</p><a class="secondary-button" href="#matches">Выбрать матч</a></div>
+    </section>
+    <section id="view-status" data-view hidden>
+      <div class="page-heading"><div><p class="eyebrow">ИСТОЧНИКИ И КАЧЕСТВО</p><h1>Состояние сервиса<span class="lime">.</span></h1><p class="subtitle">Обновления линии, подключение ИИ и проверка модели.</p></div><button id="status-refresh" class="secondary-button" type="button">Проверить</button></div>
+      <div class="service-grid"><article class="panel service-card"><span class="eyebrow">ЛИНИЯ WINLINE</span><h2 id="worker-title">Проверяем</h2><p id="worker-description" class="muted"></p><p id="worker-progress" class="small muted"></p></article><article class="panel service-card"><span class="eyebrow">РАЗБОР С ИИ</span><h2 id="ai-state">Проверяем настройки</h2><p class="muted">Подключение проверяется при запросе разбора. ИИ получает сохранённые рынки встречи и ваши заметки.</p></article></div>
+      <p class="small muted">Для проверки собственного сценария доступен <a href="#calculator" class="text-link">ручной расчёт по истории АПЛ <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a>.</p>
+      <div id="data-warning" class="notice" hidden></div>
+      <section class="summary-grid"><article class="summary-card"><span class="tiny-label">МАТЧЕЙ В ИСТОРИИ</span><strong id="stat-matches">—</strong><span id="stat-period" class="muted"></span></article><article class="summary-card"><span class="tiny-label">ПОСЛЕДНИЙ РЕЗУЛЬТАТ</span><strong id="stat-latest">—</strong><span class="muted">В обучающей выборке</span></article><article class="summary-card"><span class="tiny-label">ПРОВЕРЕНО НА МАТЧАХ</span><strong id="stat-tested">—</strong><span id="stat-tested-note" class="muted"></span></article></section>
       <section id="validation" class="panel validation-panel">
         <div class="panel-heading">
           <div>
@@ -471,22 +320,26 @@
         <div class="data-disclaimer">
           Источник исходных результатов — Football-Data.co.uk. Доступное зеркало
           — datasets/football-datasets. Лицензия зеркала для данных лиг: PDDL
-          1.0. Линия BetBoom/Winline берётся из наблюдаемых публичных
-          DOM-снимков. Бинарный протокол не декодируется; доступность всей линии
-          букмекера не подтверждена. Новости и составы пока не подключены.
+          1.0. Рынки Winline собираются с публичных страниц. Полнота отражает сохранённую страницу; полный каталог букмекера не гарантирован. Новости и составы пока не подключены.
         </div>
       </section>
-      <footer class="page-footer">
-        <span class="footer-brand">matchlab.</span
-        ><span
-          >Вероятности — инструмент исследования. Качество модели проверяем на
-          новых матчах.</span
-        ><a href="/docs"
-          >API
-          <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3 13 13 3M3 3h10v10" /></svg
-        ></a>
-      </footer>
-    </main>
-  </body>
+
+    </section>
+    <footer class="page-footer"><span class="footer-brand">matchlab.</span><span>Вероятность — оценка модели, а не гарантия результата.</span><a href="#status">Источники и качество <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></footer>
+  </main>
+
+  <div id="ai-desktop-host">
+    <aside id="ai-desk" class="ai-desk" aria-label="Разбор матча с ИИ">
+      <div class="ai-desk-heading"><span class="ai-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4 18.4 5.6"/></svg></span><div><span class="eyebrow">ВАШ АНАЛИТИК</span><h2>Разбор с ИИ</h2></div></div>
+      <div id="ai-empty" class="ai-empty"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h3>Выберите матч</h3><p>Выберите встречу или коэффициент. ИИ разберёт рынок и объяснит, на что обратить внимание.</p></div>
+      <div id="ai-selection" hidden><p id="ai-match-label" class="ai-match-label"></p><p id="ai-market-label" class="muted small"></p><p id="ai-outcome-label" class="ai-outcome-label" hidden></p><button type="button" id="ai-clear-selection" class="text-button" hidden>Разобрать весь матч</button><p id="ai-snapshot-label" class="small muted"></p></div>
+      <details id="ai-notes-details" class="ai-notes"><summary>Добавить сведения о матче</summary><label class="sr-only" for="notes">Ваши сведения о матче</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Например, новость о составе. Эти сведения будут отмечены как непроверенные."></textarea></details>
+      <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
+      <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
+      <div id="ai-request-error" class="notice error" role="alert" hidden></div>
+      <div id="explanation" class="explanation" aria-live="polite" hidden></div><p id="ai-analysis-meta" class="small muted" hidden></p>
+    </aside>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
 </html>
