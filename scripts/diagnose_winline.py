@@ -15,11 +15,13 @@ if ROOT.name == "scripts":
     ROOT = ROOT.parent
 sys.path.insert(0, str(ROOT))
 
-from matchlab.bookmakers import normalize_capture
+from matchlab.bookmakers import DATE_RE, lines, normalize_capture
 from matchlab.capture import FORMAT, redact, safe_url, sports_text
+from matchlab.winline_browser import CARD_CONTEXT, LINE_URL, select_football_line
 
 URL = "https://winline.ru/stavki/sport/futbol/"
 DOM = r"""() => {
+    const winlineCard = __WINLINE_CARD_CONTEXT__;
     const visible = el => el.getClientRects().length && !el.closest('form') &&
         !['INPUT', 'TEXTAREA', 'SELECT', 'SCRIPT', 'STYLE'].includes(el.tagName);
     const text = (el, limit) => {
@@ -41,6 +43,8 @@ DOM = r"""() => {
         }
         if (el.tagName === 'A') attrs.href = el.href;
         const node = {tag: el.tagName.toLowerCase(), attrs, text: text(el, 1200)};
+        const card = winlineCard(el);
+        if (card) node.winline_card = card;
         if (events.includes(el)) {
             node.parents = [];
             let parent = el.parentElement;
@@ -56,13 +60,17 @@ DOM = r"""() => {
         headings: [...document.querySelectorAll('h1,h2,h3,[role="heading"]')].filter(visible).slice(0, 30).map(el => text(el, 200)),
         event_links: events.length, total_nodes: elements.length,
         truncated: (document.body ? document.body.innerText.length : 0) > 250000 || elements.length > 500};
-}"""
+}""".replace("__WINLINE_CARD_CONTEXT__", CARD_CONTEXT)
 
 
 def report(document: dict) -> dict:
     record = document["records"][0]
     payload = record["payload"]
     events = [node for node in payload["nodes"] if "/event/" in node.get("attrs", {}).get("href", "") or "/match/" in node.get("attrs", {}).get("href", "")]
+    def dated(node):
+        card = node.get("winline_card", {})
+        return bool(card.get("datetimes")) or any(DATE_RE.fullmatch(value) for value in lines(card.get("text", "")))
+    events.sort(key=lambda node: not dated(node))
     examples = []
     for node in events[:2]:
         parents, seen = [], {" ".join(node["text"].split())}
@@ -72,7 +80,9 @@ def report(document: dict) -> dict:
                 parents.append(parent)
                 seen.add(key)
         contexts = parents[:1] + parents[-1:] if len(parents) > 1 else parents
+        card = node.get("winline_card")
         examples.append({"text": node["text"], "url": node["attrs"]["href"],
+                         "card": {**card, "text": card["text"][:3000]} if card else None,
                          "parents": [{**parent, "text": parent["text"][:2000]} for parent in contexts]})
     try:
         parsed = normalize_capture(document)["report"]["sources"]["winline"]
@@ -81,12 +91,13 @@ def report(document: dict) -> dict:
     return {"url": record["url"], "navigation": document["navigation"],
             "title": payload["title"], "sports_text_filter": sports_text(payload["text"]),
             "headings": payload["headings"], "event_links": payload["event_links"],
+            "dated_cards": sum(dated(node) for node in events),
             "total_nodes": payload["total_nodes"], "parsed": parsed,
             "examples": examples,
             "text_sample": payload["text"][:5000] if not examples else payload["text"][:1500]}
 
 
-async def capture(seconds: int, executable: str | None = None) -> dict:
+async def capture(seconds: int, executable: str | None = None, *, prematch: bool = False) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
     async with async_playwright() as playwright:
         launch = {"headless": True, "args": ["--disable-gpu"],
@@ -107,10 +118,15 @@ async def capture(seconds: int, executable: str | None = None) -> dict:
             page = await context.new_page()
             navigation = {}
             try:
-                response = await page.goto(URL, wait_until="domcontentloaded", timeout=45000)
+                response = await page.goto(LINE_URL if prematch else URL, wait_until="domcontentloaded", timeout=45000)
                 navigation["status"] = response.status if response else None
             except PlaywrightError:
                 navigation["error"] = "navigation_failed"
+            if prematch:
+                try:
+                    navigation.update(await select_football_line(page))
+                except (PlaywrightError, ValueError):
+                    navigation["preparation_error"] = "prematch_navigation_failed"
             await asyncio.sleep(seconds)
             # Deliberately independent of the production sports-text filter.
             payload = redact(await page.evaluate(DOM))
@@ -127,6 +143,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--executable")
+    parser.add_argument("--prematch", action="store_true", help="Open the Line route, select Football and load upcoming cards")
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60:
         parser.error("--seconds должен быть от 1 до 60")
@@ -134,7 +151,7 @@ def main():
         parser.error("Файл уже существует; выберите другое имя.")
     os.umask(0o077)
     try:
-        document = asyncio.run(capture(args.seconds, args.executable))
+        document = asyncio.run(capture(args.seconds, args.executable, prematch=args.prematch))
         with args.output.open("x", encoding="utf-8") as output:
             json.dump(document, output, ensure_ascii=False, allow_nan=False)
         print(json.dumps(report(document), ensure_ascii=False, indent=2))

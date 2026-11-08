@@ -10,3 +10,11 @@ are not included. Footers and unrelated sidebar content were removed.
 These are recorded observations, not generated matches or current odds. Tests
 use a fixed clock. They verify decoding this captured layout, not continued
 accessibility or complete coverage of the live bookmaker sites.
+
+`winline_live_report.json` retains the two public card examples printed by
+the user's server diagnostic on 2026-11-08. Both are rejected by pre-match
+parsing: the first explicitly shows an in-play clock; the second has no
+kickoff timestamp. The printed report did not include an observation time,
+so none is invented here. Tests supply their own clock and mark constructed
+future-card variants as synthetic; these prices are not claimed as recorded
+pre-match prices.

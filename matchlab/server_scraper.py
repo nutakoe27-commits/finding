@@ -15,8 +15,9 @@ import httpx
 from .bookmakers import FORMAT, instant, normalize_capture, validate_snapshot
 from .capture import collect
 from .worker_protocol import SOURCES, parse_sources, source_state, utc_now
+from .winline_browser import LINE_URL
 
-ENTRYPOINTS = {"betboom": "https://betboom.ru/sport/football/128/216", "winline": "https://winline.ru/stavki/sport/futbol/"}
+ENTRYPOINTS = {"betboom": "https://betboom.ru/sport/football/128/216", "winline": LINE_URL}
 
 
 def local_api(value: str) -> str:
@@ -147,7 +148,7 @@ async def run(args):
                       executable=args.executable, quiet=True, on_batch=batch,
                       batch_seconds=args.interval, stop_event=stopped,
                       block_heavy_resources=True, browser_env=browser_env,
-                      entrypoints=ENTRYPOINTS, reconnect_seconds=180)
+                      entrypoints=ENTRYPOINTS, reconnect_seconds=180, winline_prematch=True)
     except ValueError:
         await worker.announce({"state": "error", "interval_seconds": args.interval, "sources": {}})
         raise

@@ -40,7 +40,9 @@ def football_page():
             "url": "https://winline.ru/stavki/sport/futbol/", "observed_at": FROZEN.isoformat(),
             "payload": {"text": "Футбол\nП1\nX\nП2\nТест Хозяева\nТест Гости\n2.10\n3.20\n3.40\nСегодня 21:00\n+100",
                         "nodes": [{"tag": "a", "attrs": {"href": "https://winline.ru/stavki/event/12345678"},
-                                   "text": "Тест Хозяева\nТест Гости"}]}}
+                                   "text": "Тест Хозяева\nТест Гости",
+                                   "winline_card": {"text": "Тест Хозяева\nТест Гости\nСегодня 21:00\nМатч\n2.10\n3.20\n3.40",
+                                                    "tournament": "", "datetimes": []}}]}}
 
 
 class LocalPublisher:
@@ -160,7 +162,8 @@ class ServerCollectorTests(unittest.TestCase):
     def test_winline_only_preflight_opens_only_the_selected_source(self):
         async def fake_browser(sources, seconds, **kwargs):
             self.assertEqual(sources, ["winline"])
-            self.assertEqual(kwargs["entrypoints"]["winline"], "https://winline.ru/stavki/sport/futbol/")
+            self.assertEqual(kwargs["entrypoints"]["winline"], "https://winline.ru/stavki")
+            self.assertTrue(kwargs["winline_prematch"])
             document = connected_sample()
             document["records"] = [football_page()]
             await kwargs["on_batch"](document)

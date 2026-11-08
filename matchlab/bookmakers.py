@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from .capture import FORMAT as CAPTURE_FORMAT, safe_url
 
 FORMAT = "matchlab.bookmaker-snapshots.v1"
-VERSION = "public-dom-1x2-v2"
+VERSION = "public-dom-1x2-v3"
 EPL = "Англия. Премьер-лига"
 KEYS = ("home", "draw", "away")
 ALIASES = {
@@ -203,6 +203,49 @@ def parse_betboom(record: dict) -> list[dict]:
     return result
 
 
+def _winline_table_card(record: dict, node: dict, teams: list[str], href: str, event_id: str) -> dict | None:
+    context = node["winline_card"]
+    if (not isinstance(context, dict) or not isinstance(context.get("text"), str)
+            or not isinstance(context.get("tournament", ""), str)
+            or not isinstance(context.get("datetimes", []), list)
+            or any(not isinstance(value, str) for value in context.get("datetimes", []))):
+        raise ValueError("Повреждён контекст карточки Winline.")
+    tokens = lines(context["text"])
+    if not any(tokens[index:index + 2] == teams for index in range(len(tokens) - 1)):
+        return None
+    if any(re.fullmatch(r"[12][ТT](?:\s*\d{1,3}(?:\+\d+)?['’]?)?", token, re.I)
+           or token.casefold() in {"перерыв", "окончен", "завершён", "live"} for token in tokens):
+        return None
+    dates = {token for token in tokens if DATE_RE.fullmatch(token)}
+    try:
+        if len(dates) == 1:
+            start = kickoff(dates.pop(), record["observed_at"])
+        elif not dates and len(set(context.get("datetimes", []))) == 1:
+            start = iso(instant(context["datetimes"][0]))
+        else:
+            return None
+        # Other columns are handicap/total. A half never substitutes for Match.
+        numbers = r"(\d+(?:[.,]\d+)?)"
+        markets = re.findall(r"(?m)^Матч\n" + "\n".join([numbers] * 3) + r"$", "\n".join(tokens))
+        if len(markets) != 1:
+            return None
+        competition = "Турнир не указан"
+        parts = [value.strip() for value in context.get("tournament", "").split("|")]
+        if len(parts) == 2 and all(parts) and all(len(value) <= 90 for value in parts):
+            country, league = parts
+            if country.casefold() == "англия" and league.casefold() in ("премьер-лига", "апл"):
+                competition = EPL
+            elif country.casefold() == "россия" and league.casefold() == "рпл":
+                competition = "Россия. Премьер-лига"
+            else:
+                competition = country + ". " + league
+        return make_snapshot("winline", competition, *teams, start, record["observed_at"],
+                             [float(value.replace(",", ".")) for value in markets[0]], href,
+                             external_id=event_id, competition_origin="winline_football_page" if competition == "Турнир не указан" else "winline_tournament_heading")
+    except ValueError:
+        return None
+
+
 def parse_winline(record: dict, references: dict) -> list[dict]:
     text = record["payload"].get("text", "")
     page = urlsplit(record["url"])
@@ -214,9 +257,22 @@ def parse_winline(record: dict, references: dict) -> list[dict]:
     result = []
     for node in record["payload"].get("nodes", []):
         href = node.get("attrs", {}).get("href", "")
-        match = re.fullmatch(r"https://(?:www\.)?winline\.ru/stavki/event/(\d+)/?", href)
+        link = urlsplit(href)
+        match = re.fullmatch(r"/stavki/event/(\d+)/?", link.path) if link.scheme == "https" and link.hostname in ("winline.ru", "www.winline.ru") else None
         teams = lines(node.get("text", ""))
         if not match or len(teams) != 2:
+            continue
+        if "winline_card" in node:
+            if football_page:
+                row = _winline_table_card(record, node, teams, href, match[1])
+                if row:
+                    result.append(row)
+            # A malformed/paused/in-play table must not fall through to a
+            # coincidental triplet elsewhere in the whole-page text.
+            continue
+        if football_page:
+            # The page's featured carousel includes other sports. Only events
+            # scoped to its tournament table can prove football here.
             continue
         expression = r"(?m)^" + re.escape(teams[0]) + r"\s*\n" + re.escape(teams[1]) + r"\s*\n(\d+(?:[.,]\d+)?)\n(\d+(?:[.,]\d+)?)\n(\d+(?:[.,]\d+)?)\n([^\n]+)$"
         hits = list(re.finditer(expression, text))
@@ -226,12 +282,10 @@ def parse_winline(record: dict, references: dict) -> list[dict]:
         try:
             start = kickoff(hits[0][4], record["observed_at"])
             reference = references.get((team_key(teams[0]), team_key(teams[1]), start))
-            if not reference and not football_page:
+            if not reference:
                 continue
-            # The dedicated sport page proves football without another source.
-            # It does not prove a league: never guess EPL from club names.
-            competition = reference["competition"] if reference else "Турнир не указан"
-            origin = "corroborated_football_fixture" if reference else "winline_football_page"
+            competition = reference["competition"]
+            origin = "corroborated_football_fixture"
             result.append(make_snapshot("winline", competition, teams[0], teams[1], start,
                                         record["observed_at"], prices, href,
                                         external_id=match[1], competition_origin=origin))

@@ -84,7 +84,8 @@ fi
 install -d -m 755 "$target" "$target/matchlab"
 install -d -m 700 -o matchlab-scraper -g matchlab-scraper /var/lib/matchlab-scraper
 touch "$target/.matchlab-managed"
-install -m 644 matchlab/{__init__,bookmakers,capture,worker_protocol,server_scraper}.py "$target/matchlab/"
+install -m 644 matchlab/{__init__,bookmakers,capture,worker_protocol,server_scraper,winline_browser}.py "$target/matchlab/"
+install -m 644 scripts/diagnose_winline.py "$target/diagnose_winline.py"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt "$target/"
 python3 -m venv "$target/.venv"
 "$target/.venv/bin/python" -m pip install -r "$target/requirements-server-scraper.txt"
@@ -94,8 +95,10 @@ printf '# Managed by Matchlab server scraper\nBOOKMAKER_API_URL=%s\nBOOKMAKER_SO
 chmod 600 /etc/matchlab-scraper.conf
 install -m 644 deploy/matchlab-scraper{,-check}.service /etc/systemd/system/
 systemctl daemon-reload
+check_since="$(date --iso-8601=seconds)"
 if ! systemctl start matchlab-scraper-check.service; then
-  echo 'Проверка не пройдена: автосбор не включён. Посмотрите journalctl -u matchlab-scraper-check -n 40 --no-pager и docs/server-scraper.md.' >&2
+  journalctl -u matchlab-scraper-check.service --since "$check_since" -n 25 --no-pager || true
+  echo 'Проверка не пройдена: автосбор не включён. Журнал проверки выведен выше. Для снимка предматчевой страницы используйте /opt/matchlab-scraper/diagnose_winline.py --prematch (docs/server-scraper.md).' >&2
   exit 2
 fi
 systemctl enable --now matchlab-scraper.service

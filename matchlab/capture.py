@@ -16,6 +16,8 @@ import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .winline_browser import CARD_CONTEXT, select_football_line
+
 FORMAT = "matchlab.bookmaker-capture.v1"
 SOURCES = {
     "betboom": "https://betboom.ru/",
@@ -195,27 +197,43 @@ class Capture:
 
 
 DOM_SCRIPT = r"""() => {
-    const text = document.body ? document.body.innerText : '';
+    const winlineCard = __WINLINE_CARD_CONTEXT__;
+    const publicText = el => {
+        let value = el ? el.innerText || '' : '';
+        for (const form of el ? el.querySelectorAll('form') : []) {
+            if (form.innerText) value = value.split(form.innerText).join('[form omitted]');
+        }
+        return value;
+    };
+    const text = publicText(document.body);
     const selector = '[data-at-el], [data-testid], [data-test], a[href*="/sport/"], a[href*="/event/"], a[href*="/match/"]';
     const elements = [...document.querySelectorAll(selector)].filter(el =>
         el.getClientRects().length && !el.closest('form') && !['INPUT','TEXTAREA'].includes(el.tagName));
-    const nodes = elements.slice(0, 500).map(el => {
+    const eventLinks = elements.filter(el => el.matches('a[href*="/event/"]'));
+    const ordered = [...new Set([...eventLinks, ...elements])];
+    const nodes = ordered.slice(0, 500).map(el => {
         const attrs = {};
         for (const name of ['data-at-el','data-at-id','data-at-name','data-testid','data-test','class']) {
             if (el.hasAttribute(name)) attrs[name] = el.getAttribute(name).slice(0, 500);
         }
         if (el.tagName === 'A') attrs.href = el.href;
-        return {tag: el.tagName.toLowerCase(), attrs, text: (el.innerText || '').slice(0, 1200)};
+        const node = {tag: el.tagName.toLowerCase(), attrs, text: publicText(el).slice(0, 1200)};
+        if (location.hostname === 'winline.ru' || location.hostname === 'www.winline.ru') {
+            const card = winlineCard(el);
+            if (card) node.winline_card = card;
+        }
+        return node;
     });
     return {text: text.slice(0, 200000), nodes, truncated: text.length > 200000 || elements.length > 500};
-}"""
+}""".replace("__WINLINE_CARD_CONTEXT__", CARD_CONTEXT)
 
 
 async def collect(sources: list[str], seconds: float | None, *, headless: bool = False,
                   executable: str | None = None, entrypoints: dict[str, str] | None = None,
                   quiet: bool = False, on_batch=None, batch_seconds: float = 30,
                   stop_event: asyncio.Event | None = None, block_heavy_resources: bool = False,
-                  browser_env: dict | None = None, reconnect_seconds: float | None = None) -> dict:
+                  browser_env: dict | None = None, reconnect_seconds: float | None = None,
+                  winline_prematch: bool = False) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
 
     capture = Capture(sources)
@@ -324,6 +342,12 @@ async def collect(sources: list[str], seconds: float | None, *, headless: bool =
                     capture.navigation[source] = {"url": safe_url(page.url), "status": response.status if response else None}
                 except Exception:
                     capture.navigation[source] = {"url": safe_url(entrypoints[source]), "error": "navigation_failed"}
+                if source == "winline" and winline_prematch:
+                    try:
+                        prepared = await select_football_line(page)
+                        capture.navigation[source].update(url=safe_url(page.url), **prepared)
+                    except Exception as exc:
+                        raise ValueError("Не удалось открыть предматчевую футбольную линию Winline. Запустите диагностику --prematch.") from exc
 
             await asyncio.gather(*(open_page(source) for source in sources))
             if not quiet:
@@ -347,6 +371,9 @@ async def collect(sources: list[str], seconds: float | None, *, headless: bool =
                             try:
                                 response = await page.goto(entrypoints[source], wait_until="domcontentloaded", timeout=30000)
                                 capture.navigation[source] = {"status": response.status if response else None}
+                                if source == "winline" and winline_prematch:
+                                    prepared = await select_football_line(page)
+                                    capture.navigation[source].update(url=safe_url(page.url), **prepared)
                             except PlaywrightError:
                                 capture.navigation[source] = {"error": "navigation_failed"}
                     for frame in page.frames:
