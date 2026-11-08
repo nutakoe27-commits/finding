@@ -17,7 +17,7 @@ from threading import Thread
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from matchlab.winline_markets import MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook
+from matchlab.winline_markets import MARKETS_SCRIPT, MARKET_CONTEXT_SCRIPT, ensure_event_page, market_document, primary_quote, read_marketbook
 from scripts.diagnose_winline_header import HEADER_SCRIPT
 
 PROJECTION = json.loads((Path(__file__).parent / 'fixtures/winline_market_projection.json').read_text())
@@ -44,6 +44,24 @@ def fixture_html(*, collapsed=False, unsupported=False, virtual=False):
     return ''.join(chunks)
 
 
+def live_fixture_html():
+    # Header structure and team order observed on the public live match page.
+    source = fixture_html()
+    start = source.index('<div class="marketbook-header--prematch">')
+    end = source.index('<ww-feature-marketbook-dsk>', start)
+    live_header = '''<div class="ww-markets"><div class="ww-markets__stickybar">
+      <ww-feature-marketbook-stickybar-dsk><div class="marketbook-header marketbook-header--live">
+      <div class="marketbook-header__top"><div class="competitors__wrapper"><div class="competitors__info">
+      <div class="competitors__logos"><div class="logo-wrapper"></div><div class="logo-wrapper"></div></div>
+      <div class="competitors__names competitors-desc"><div class="competitors-desc__block"></div>
+      <div class="competitors-desc__name">Витория Гимарайнш</div><div class="competitors-desc__block"></div>
+      <div class="competitors-desc__block"></div><div class="competitors-desc__name">Порту</div>
+      <div class="competitors-desc__block"></div></div></div></div>
+      <div class="score-block__wrapper">1Т 20'<br>0<br>1</div></div></div></ww-feature-marketbook-stickybar-dsk>
+      </div></div>'''
+    return source[:start] + live_header + source[end:]
+
+
 async def browser_test(executable):
     from playwright.async_api import async_playwright
     async with async_playwright() as playwright:
@@ -54,6 +72,19 @@ async def browser_test(executable):
             header=await page.evaluate(HEADER_SCRIPT)
             assert header['found'] and any('Команда А' in item['text'] for item in header['candidates'])
             assert 'PRIVATE_FORM' not in json.dumps(header,ensure_ascii=False) and 'Рынок скрыт' not in json.dumps(header,ensure_ascii=False)
+            await page.set_content(live_fixture_html())
+            live_url='https://winline.ru/stavki/sport/futbol/portugaliya/premijer_liga/17068673'
+            live_snapshot=await read_marketbook(page,maximum_passes=10)
+            live=market_document(live_snapshot,live_url,datetime.now(timezone.utc).isoformat())
+            assert (live['home'],live['away'],live['phase'],live['event_kind']) == ('Витория Гимарайнш','Порту','live','match'),live
+            assert live['coverage']['complete'] and live['coverage']['captured_outcomes']==13
+            assert live['kickoff_at'] is None and primary_quote(live) is None
+            await page.locator('.ww-markets').evaluate("el=>el.insertAdjacentHTML('beforeend','<div class=marketbook-header--prematch><div class=prematch__competitor-left>Устаревшие</div><div class=prematch__competitor-right>Данные</div></div>')")
+            mixed=await page.evaluate(MARKETS_SCRIPT)
+            assert (mixed['home'],mixed['away'],mixed['phase']) == ('Витория Гимарайнш','Порту','live')
+            await page.locator('.competitors__names').evaluate("el=>el.insertAdjacentHTML('beforeend','<div class=competitors-desc__name>Третья команда</div>')")
+            ambiguous_live=await page.evaluate(MARKETS_SCRIPT)
+            assert not ambiguous_live['home'] and not ambiguous_live['away'] and ambiguous_live['phase']=='live'
             async def event_fixture(route):
                 await route.fulfill(status=200,content_type='text/html',body=fixture_html())
             await page.route('https://winline.ru/**',event_fixture)

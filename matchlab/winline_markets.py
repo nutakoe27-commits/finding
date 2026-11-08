@@ -12,7 +12,7 @@ from .markets import FORMAT, identity, label, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
 from .sports import sport_from_url, sport_label
 
-PARSER_VERSION = "winline-marketbook-dom-v3"
+PARSER_VERSION = "winline-marketbook-dom-v4"
 
 # Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
 # form content or browser state are collected.
@@ -55,18 +55,23 @@ MARKETS_SCRIPT = r"""() => {
     const all = [...root.querySelectorAll('.marketbook__filter .ww-tabs__item')].find(el => text(el) === 'Все');
     const allSelected = !!all && all.classList.contains('ww-tabs__item--active');
     const attribute = (node, key) => (node.getAttribute(key) || '').trim() || null;
-    const top = document.querySelector('.marketbook-header--prematch');
-    const home = top && top.querySelector('.prematch__competitor-left');
-    const away = top && top.querySelector('.prematch__competitor-right');
+    const eventRoot = document.querySelector('.ww-markets');
+    const headerRoot = eventRoot || document;
+    const liveHeaders = [...headerRoot.querySelectorAll('.marketbook-header--live')].filter(visible);
+    const live = liveHeaders.length === 1 ? liveHeaders[0] : null;
+    const prematchHeaders = [...headerRoot.querySelectorAll('.marketbook-header--prematch')].filter(visible);
+    const top = !liveHeaders.length && prematchHeaders.length === 1 ? prematchHeaders[0] : null;
+    const liveNames = live ? [...live.querySelectorAll('.competitors__names .competitors-desc__name')].filter(visible) : [];
+    const home = liveNames.length === 2 ? liveNames[0] : top && top.querySelector('.prematch__competitor-left');
+    const away = liveNames.length === 2 ? liveNames[1] : top && top.querySelector('.prematch__competitor-right');
     const names = el => el && (el.querySelector('h1,h2') || el);
     const titleText = el => text(names(el)).split('\n')[0].trim();
     const dateText = text(top && top.querySelector('.prematch-info'));
     const groups = [...root.querySelectorAll('h2,h3')].filter(el => !el.closest('.market-header'));
     const isPeriod = value => /^(?:осн\.?\s*время|основное\s*время|матч|бой|гонка|заезд|встреча|с\s*(?:уч[её]том\s*)?(?:ОТ|овертайм|буллит|тайбрейк).*|\d+(?:-?й)?\s*(?:тайм|период|четверть|сет|партия|гейм|раунд|иннинг)|(?:сет|гейм|раунд|период|четверть|иннинг)\s*\d+|\d+[-–]\d+\s*мин\.?)$/i.test(value);
     const inTitle = value => (value.match(/осн\.?\s*время|\d+(?:-?й)?\s*(?:тайм|период|четверть|сет|партия|гейм|раунд|иннинг)|с\s*(?:уч[её]том\s*)?ОТ(?:\s*и\s*Б)?/i) || [null])[0];
-    const titleRoot = document.querySelector('.ww-markets__stickybar,.marketbook-header--prematch,.marketbook-header--live');
-    const eventTitle = !home && !away && titleRoot && titleRoot.querySelector('h1,h2');
-    const eventRoot = document.querySelector('.ww-markets');
+    const titleRoot = headerRoot.querySelector('.ww-markets__stickybar,.marketbook-header--prematch,.marketbook-header--live');
+    const eventTitle = !liveHeaders.length && !home && !away && titleRoot && titleRoot.querySelector('h1,h2');
     const statisticRoots = eventRoot ? [eventRoot] : [...document.querySelectorAll('.marketbook-header--prematch,.marketbook-header--live')];
     const statisticsLinks = [...new Set(statisticRoots.flatMap(root=>[...root.querySelectorAll('a[href*="/stats/match/"]')].map(link=>link.href)))].slice(0,20);
     const variants = new Map();
@@ -140,7 +145,7 @@ MARKETS_SCRIPT = r"""() => {
     }
     const allButtons = [...root.querySelectorAll('button.market__row-btn')].filter(visible);
     return {ready: true, home: titleText(home), away: titleText(away), title: text(eventTitle), date_text: dateText,
-        phase: top ? 'prematch' : document.querySelector('.marketbook-header--live') ? 'live' : 'unknown', markets: [...variants.values()], statistics_links: statisticsLinks,
+        phase: liveHeaders.length ? 'live' : top ? 'prematch' : 'unknown', markets: [...variants.values()], statistics_links: statisticsLinks,
         market_sections: headers.length, expected_outcomes: allButtons.length,
         unparsed_outcomes: allButtons.length - [...variants.values()].reduce((total, item) => total + item.outcomes.length, 0),
         hidden_groups: hidden, all_tab_selected: allSelected, unsupported: unsupported.slice(0, 20),

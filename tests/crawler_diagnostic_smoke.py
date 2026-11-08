@@ -14,6 +14,7 @@ import urllib.request
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 from crawler_multisport_smoke import PROJECTIONS,event_html
+from browser_market_smoke import live_fixture_html
 from matchlab.scrapy_worker import WinlineSpider,settings
 
 
@@ -21,6 +22,7 @@ def main():
     from scrapy.crawler import CrawlerProcess
     no_publish='--no-publish' in sys.argv[1:]
     invalid_label='--invalid-label' in sys.argv[1:]
+    live='--live' in sys.argv[1:]
     variants='--variants' in sys.argv[1:] or invalid_label
     item=next(item for item in PROJECTIONS if item['sport']=='football')
     extra='''<section><button class="market-header">Неоднозначный рынок</button><div class="market__table"><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>2.0</span></button><button class="market__row-btn"><span>Нет</span><span>3.0</span></button></div><div><span>осн.время</span><button class="market__row-btn"><span>Да</span><span>4.0</span></button><button class="market__row-btn"><span>Нет</span><span>5.0</span></button></div></div><form>PRIVATE_FORM_CONTENT<input value="secret"></form></section>'''
@@ -34,7 +36,7 @@ def main():
             extra+='</div></div></div></ww-marketbook-market-dsk>'
         if invalid_label:
             extra=extra.replace('<button class="market__row-btn"><span>4-6</span>','<button class="market__row-btn" data-id="'+('x'*101)+'"><span>4-6</span>')
-    html=event_html(item).replace('</ww-feature-marketbook-dsk>',extra+'</ww-feature-marketbook-dsk>')
+    html=(live_fixture_html() if live else event_html(item)).replace('</ww-feature-marketbook-dsk>',extra+'</ww-feature-marketbook-dsk>')
     url=f'https://winline.ru/stavki/sport/{item["slug"]}/test/league/{item["id"]}'
     with tempfile.TemporaryDirectory(prefix='crawler-diagnostic-') as folder:
         with socket.socket() as probe:
@@ -81,6 +83,9 @@ def main():
             else:
                 with opener.open(api_url+'/api/bookmakers/events/'+item['id']+'/markets') as response:
                     document=json.load(response)
+                if live:
+                    assert (document['home'],document['away'],document['phase'],document['event_kind']) == ('Витория Гимарайнш','Порту','live','match'),document
+                    assert document['kickoff_at'] is None
                 if variants and not invalid_label:
                     found=[market for market in document['markets'] if market['name']==real['market']]
                     assert document['coverage']['complete'] and len(found)==2,document['coverage']
