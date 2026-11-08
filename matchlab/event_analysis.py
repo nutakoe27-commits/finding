@@ -7,7 +7,7 @@ from .bookmakers import instant
 from .markets import headline_market
 
 
-def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None) -> dict:
+def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
     if market_key and not selected:
         raise ValueError("Выбранный рынок отсутствует в текущем снимке. Обновите матч.")
@@ -21,10 +21,12 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
         0 if selected and market["key"] == selected["key"] else 1,
         priority.index(market["name"]) if market["name"] in priority else len(priority)))
     markets, count = [], 0
+    maximum_outcomes=50 if team_statistics else 80
+    maximum_markets=10 if team_statistics else 12
     for market in ordered:
-        if len(markets) >= 12 or count >= 80:
+        if len(markets) >= maximum_markets or count >= maximum_outcomes:
             break
-        outcomes = market["outcomes"][:80 - count]
+        outcomes = market["outcomes"][:maximum_outcomes - count]
         # Always retain an explicitly selected outcome even in a large table.
         if outcome and selected["key"] == market["key"] and outcome not in outcomes:
             outcomes = [outcome, *outcomes[:-1]]
@@ -48,15 +50,17 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
             "market_implied": {"probabilities": {key: (1 / value) / total for key, value in prices.items()},
                                "overround": total - 1, "basis": "bookmaker_market_prices",
                                "market":headline['name'], "period":headline.get('period')} if prices else None,
-            "statistical_model": statistics, "unverified_user_notes": notes,
+            "statistical_model": statistics if not team_statistics or team_statistics.get('match_phase')!='finished' else None,
+            "team_statistics":team_statistics, "unverified_user_notes": notes,
             "missing_data": ["current_lineups" if document.get('sport','football') == 'football' else "participants_status", "injuries", "news", "current_score_and_match_clock"]}
 
 
-def request_key(document: dict, market_key, outcome_key, notes: str) -> str:
+def request_key(document: dict, market_key, outcome_key, notes: str, team_statistics=None) -> str:
     current = datetime.now(timezone.utc)
     stale = (current - instant(document["capture_started_at"])).total_seconds() > 180
     started = bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)
     value = [document["source_event_id"], document.get('sport','football'), document["observed_at"], document["capture_started_at"],
              {key:document.get(key) for key in ('home','away','title','event_kind','competition','kickoff_at','coverage')},
-             document["markets"], market_key, outcome_key, notes, stale, started]
+             document["markets"], market_key, outcome_key, notes, stale, started,
+             {key:team_statistics.get(key) for key in ('statistics_id','observed_at','match_phase','is_stale')} if team_statistics else None]
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

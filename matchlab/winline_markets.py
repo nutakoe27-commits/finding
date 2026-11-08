@@ -255,7 +255,7 @@ async def discover_statistics_link(page, snapshot: dict) -> list[str]:
     matches=await controls.evaluate_all(r'''nodes=>nodes.flatMap((node,index)=>{
         if (!node.getClientRects().length || node.closest('form') || node.matches('.market__row-btn')) return [];
         if (node.querySelectorAll('a,button,[role="button"]').length>1) return [];
-        const marker=[node.tagName,node.className,node.title,node.getAttribute('aria-label'),node.getAttribute('data-testid'),...[...node.querySelectorAll('svg,use,img')].map(icon=>[icon.tagName,icon.getAttribute('class'),icon.getAttribute('alt'),icon.getAttribute('src'),icon.getAttribute('href') || icon.getAttribute('xlink:href')].join(' '))].join(' ');
+        const marker=[node.tagName,node.className,node.title,(node.innerText || '').slice(0,120),node.getAttribute('aria-label'),node.getAttribute('data-testid'),...[...node.querySelectorAll('svg,use,img')].map(icon=>[icon.tagName,icon.getAttribute('class'),icon.getAttribute('alt'),icon.getAttribute('src'),icon.getAttribute('href') || icon.getAttribute('xlink:href')].join(' '))].join(' ');
         return /statistic|статист|stats(?:[._\-#]|$)/i.test(marker)?[index]:[];
     })''')
     if not matches: return []
@@ -269,9 +269,8 @@ async def discover_statistics_link(page, snapshot: dict) -> list[str]:
         for _ in range(10):
             candidates=[page.url]+[popup.url for popup in popups]
             ids={value for candidate in candidates if (value:=statistics_id_from_url(candidate))}
-            for frame in page.frames:
-                if frame.url in original_frames: continue
-                parsed=urlsplit(frame.url)
+            for candidate in [frame.url for frame in page.frames if frame.url not in original_frames]+candidates:
+                parsed=urlsplit(candidate)
                 if parsed.hostname in ('statshub.yunai.tech','statshub.sportradar.com'):
                     match=re.fullmatch(r'/winline/(?:ru|en)/match/(\d{1,20})/?',parsed.path)
                     if match: ids.add(match[1])

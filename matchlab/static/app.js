@@ -625,6 +625,7 @@ function renderAIAnalysisMeta() {
   const outcome = market?.outcomes.find(item => item.key === context.selection.outcome_key);
   const changed = state.marketDocument && state.marketDocument.observed_at !== analysis.observed_at;
   $("ai-analysis-meta").textContent = `${analysis.cached ? "Сохранённый разбор" : "Разбор готов"} · ${moscowTime(analysis.generated_at)} МСК. По снимку ${moscowTime(context.snapshot.capture_started_at)} МСК${outcome ? ` · ${outcome.name}: ${outcome.odds}` : ""}. Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} рынков.${changed ? " После начала разбора появились новые данные. Этот ответ относится к прежнему снимку." : ""}`;
+  $("ai-analysis-meta").textContent+=context.team_statistics ? ` Статистика участников: ${moscowTime(context.team_statistics.observed_at)} МСК.${context.team_statistics.match_phase === "finished" ? " Источник содержит итог матча." : ""}` : " Статистика участников в этом разборе не использовалась.";
   $("ai-analysis-meta").hidden = false;
 }
 function openSelection(id, side = null, auto = false) {
@@ -645,13 +646,14 @@ function applyPendingSelection() {
 }
 async function loadEvent(refresh = false) {
   const id = state.eventId, request = ++state.marketDetailRequest;
-  const [detail, context] = await Promise.allSettled([api(`/api/bookmakers/events/${id}/markets`), api(`/api/bookmakers/events/${id}/analysis`)]);
+  const [detail, context, teamStatistics] = await Promise.allSettled([api(`/api/bookmakers/events/${id}/markets`), api(`/api/bookmakers/events/${id}/analysis`),api(`/api/bookmakers/events/${id}/statistics`)]);
   if (request !== state.marketDetailRequest || state.eventId !== id || !state.route.startsWith("#match/")) return;
   if (detail.status === "rejected") { showError("detail-error", detail.reason.message); return; }
   showError("detail-error", "");
   state.marketDocument = detail.value;
   const document = detail.value;
   state.analysisContext = context.status === "fulfilled" ? context.value : null;
+  renderTeamStatistics(teamStatistics.status === "fulfilled" ? teamStatistics.value : null);
   $("event-header").hidden = false;
   $("market-detail-title").textContent = eventTitle(document);
   $("event-competition").textContent = `${document.sport_label || sportLabel(document.sport)} · ${document.competition}`;
@@ -675,6 +677,18 @@ async function loadEvent(refresh = false) {
   $("analysis-availability").textContent = state.analysisContext?.prediction_available ? "Расчёт по истории голов АПЛ и сохранённому основному исходу. ИИ-разбор доступен справа для любого рынка." : state.analysisContext?.unavailable_reason || "Статистическая модель пока недоступна. ИИ-разбор рынков доступен в панели аналитика.";
   $("event-predict").disabled = state.predicting || !state.analysisContext?.prediction_available;
   if (!refresh) applyPendingSelection();
+}
+function renderTeamStatistics(data) {
+  const snapshot=data?.statistics;
+  const stale=snapshot?.observed_at && Date.now()-Date.parse(snapshot.observed_at)>3600000;
+  $("team-statistics-status").textContent=snapshot?.state === "ok" ? stale ? "· устарела" : "· получена" : snapshot?.state === "blocked" ? "· недоступна" : "· пока нет данных";
+  $("team-statistics-note").textContent=snapshot?.state === "ok" ? `Источник: StatsHub / Sportradar. Наблюдение ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Источник уже содержит итог этой встречи: данные подходят для разбора завершённого матча." : ""}${snapshot.latest_attempt?.state !== "ok" ? " Повторное обновление не удалось, показан сохранённый снимок." : ""}` : snapshot?.state === "blocked" ? "Источник ограничил доступ к статистике. ИИ использует доступные рынки и не выдумывает форму или личные встречи." : data?.link_status === "found" ? "Статистика по ссылке этой встречи ещё не получена." : "Связь этой встречи со статистикой источника пока не определена.";
+  if (stale) $("team-statistics-note").textContent+=" Снимок старше часа; данные могли измениться.";
+  $("team-statistics-source").hidden=!data?.statistics_url;
+  if (data?.statistics_url) $("team-statistics-source").href=data.statistics_url;
+  $("team-statistics-sections").replaceChildren(...(snapshot?.state === "ok" ? snapshot.sections.map(section=>{
+    const details=el("details","statistics-section"); details.append(el("summary","",section.title),el("p","statistics-text",section.text)); return details;
+  }) : []));
 }
 function renderMarketGroups() {
   if (!state.marketDocument) return;
@@ -820,8 +834,9 @@ async function route() {
   if (!["#matches","#favorites","#history","#status","#calculator"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
   state.route = hash; state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
   document.body.classList.toggle("without-ai-desk", ["#history","#status"].includes(hash) || Boolean(saved));
-  if (previous !== hash) { invalidateForecast(); state.marketDocument = null; state.analysisContext = null; state.eventId = null; state.selection = null; clearAIOutput(); $("notes").value = ""; $("ai-empty").hidden = false; $("ai-selection").hidden = true; }
+  if (previous !== hash) { invalidateForecast(); state.marketDocument = null; state.analysisContext = null; state.eventId = null; state.selection = null; clearAIOutput(); renderTeamStatistics(null); $("notes").value = ""; $("ai-empty").hidden = false; $("ai-selection").hidden = true; }
   $("saved-analysis").hidden = true;
+  $("team-statistics").hidden = !match;
   document.querySelectorAll(".nav-link").forEach(link => { const active = link.getAttribute("href") === hash; link.classList.toggle("active",active); active ? link.setAttribute("aria-current","page") : link.removeAttribute("aria-current"); });
   $("nav-favorites").textContent = state.favorites.size;
   $("forecast").hidden = true; $("event-header").hidden = true; $("manual-heading").hidden = true; $("manual-selection").hidden = true;

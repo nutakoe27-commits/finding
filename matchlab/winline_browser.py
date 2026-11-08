@@ -100,21 +100,20 @@ async def select_football_line(page) -> dict:
             raise ValueError("Неожиданный адрес ссылки «Линия» Winline.")
         await line.click(timeout=15000)
         await page.wait_for_load_state("domcontentloaded")
-    # Read the existing anchor instead of guessing a query parameter or route.
-    football = page.locator('a[href]').filter(has_text=re.compile(r"^\s*Футбол(?:\s*\d+)?\s*$")).filter(visible=True)
-    await football.first.wait_for(state="visible", timeout=15000)
-    chosen = None
-    for index in range(await football.count()):
-        candidate = football.nth(index)
-        target = await candidate.get_attribute("href")
-        parsed = urlsplit(urljoin(page.url, target or ""))
-        if parsed.scheme == "https" and parsed.hostname in ("winline.ru", "www.winline.ru") and parsed.path.rstrip("/") == FOOTBALL_PATH:
-            chosen = candidate
-            break
-    if chosen is None:
-        raise ValueError("Не найдена ссылка футбола в предматчевой линии Winline.")
-    await chosen.click(timeout=15000)
-    await page.wait_for_load_state("domcontentloaded")
+    # The visible menu can use buttons, counters and overlays. Read the real
+    # football href (also present in the footer) and navigate it directly.
+    # This is an observed public route, not a constructed query or event ID.
+    await page.wait_for_function(r"""path => [...document.querySelectorAll('a[href]')].some(link => {
+        const url = new URL(link.href);
+        return ['winline.ru','www.winline.ru'].includes(url.hostname) && url.pathname.replace(/\/$/,'') === path;
+    })""", arg=FOOTBALL_PATH, timeout=15000)
+    target = await page.locator('a[href]').evaluate_all(r"""(links,path) => links.map(link=>link.href).find(href=>{
+        const url=new URL(href);
+        return url.protocol==='https:' && ['winline.ru','www.winline.ru'].includes(url.hostname) && url.pathname.replace(/\/$/,'')===path;
+    })""",FOOTBALL_PATH)
+    if not target:
+        raise ValueError('Не найдена публичная ссылка футбольной линии.')
+    await page.goto(target, wait_until='domcontentloaded', timeout=30000)
     await page.wait_for_function("() => !!document.querySelector('.block-tournament a[href*=\"/event/\"]')", timeout=15000)
     # The football page may put in-play competitions first and lazy-load the
     # remainder. Bring the last loaded card into view a bounded number of times.

@@ -813,3 +813,10 @@ body.without-ai-desk #ai-desktop-host { display:none; }
 @media(max-width:1150px) { .match-card .headline-box { grid-column:2; margin-top:5px; } }
 @media(max-width:1050px) { .match-card .headline-box { grid-column:auto; margin:0; } }
 @media(max-width:650px) { .sport-navigation { flex-direction:column; align-items:stretch; gap:9px; margin-bottom:20px; } .sport-tabs { flex:auto; width:100%; } #sport-filter { max-width:none; width:100%; } .sport-tab { font-size:11px; min-height:37px; } .match-card .headline-box { grid-column:2; margin-top:4px; } .match-card .headline-box .odds-strip { margin:0; } .match-card .odds-tile { flex-direction:column; gap:6px; } .headline-caption { font-size:9px; } }
+.team-statistics { margin:0 0 24px; padding:17px 20px; font-size:13px; }
+.team-statistics>summary { cursor:pointer; line-height:1.7; }
+.team-statistics>summary span { font-size:11px; margin-left:7px; }
+.team-statistics .source-link { display:inline-block; margin:0 0 15px; }
+.statistics-section { border-top:1px solid var(--line); padding:13px 0; margin-top:5px; }
+.statistics-section summary { cursor:pointer; font-size:12px; }
+.statistics-text { white-space:pre-wrap; font-size:12px; line-height:1.8; color:var(--muted); overflow-wrap:anywhere; }

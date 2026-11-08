@@ -59,6 +59,13 @@ class Repository:
                     payload TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS event_analysis_request ON event_analyses(request_key, generated_at DESC);
+                CREATE TABLE IF NOT EXISTS event_statistics (
+                    event_id TEXT PRIMARY KEY,
+                    statistics_id TEXT NOT NULL,
+                    last_state TEXT NOT NULL,
+                    last_attempt_at TEXT NOT NULL,
+                    payload TEXT
+                );
                 CREATE TABLE IF NOT EXISTS bookmaker_quotes (
                     id TEXT PRIMARY KEY,
                     event_key TEXT NOT NULL,
@@ -319,6 +326,48 @@ class Repository:
             return None
         return {**json.loads(zlib.decompress(row["payload"])), **json.loads(row["metadata"]),
                 "observed_at": row["observed_at"], "changed_at": row["changed_at"]}
+
+    def import_statistics(self, value: dict) -> dict:
+        from .statistics import validate_statistics
+        event=self.event_markets(str(value.get('source_event_id','')))
+        if not event: raise ValueError('Событие статистики не найдено.')
+        result=validate_statistics(value,event)
+        event_id=result['source_event_id']
+        with self.connection() as db:
+            previous=db.execute('SELECT * FROM event_statistics WHERE event_id=?',(event_id,)).fetchone()
+            if previous and result['attempted_at']<previous['last_attempt_at']:
+                return {'updated':False,'reason':'older_observation'}
+            payload=json.dumps(result,ensure_ascii=False) if result['state']=='ok' else None
+            if previous and previous['statistics_id']==result['statistics_id'] and not payload:
+                payload=previous['payload']
+            db.execute('INSERT OR REPLACE INTO event_statistics VALUES (?,?,?,?,?)',
+                       (event_id,result['statistics_id'],result['state'],result['attempted_at'],payload))
+        return {'updated':True,'state':result['state'],'source_event_id':event_id}
+
+    def statistics(self,event_id: str) -> dict | None:
+        with self.connection() as db:
+            row=db.execute('SELECT * FROM event_statistics WHERE event_id=?',(event_id,)).fetchone()
+        if not row: return None
+        payload=json.loads(row['payload']) if row['payload'] else {'state':row['last_state'],'source_event_id':event_id,'statistics_id':row['statistics_id']}
+        return {**payload,'latest_attempt':{'state':row['last_state'],'at':row['last_attempt_at']}}
+
+    def statistics_queue(self,limit=10) -> dict:
+        now=datetime.now(timezone.utc)
+        cutoff=lambda seconds:(now-timedelta(seconds=seconds)).isoformat(timespec='microseconds')
+        with self.connection() as db:
+            rows=db.execute("""SELECT b.metadata FROM bookmaker_event_markets b
+                LEFT JOIN event_statistics s ON s.event_id=b.event_id
+                WHERE json_extract(b.metadata,'$.statistics_link_status')='found'
+                  AND json_extract(b.metadata,'$.statistics_url') IS NOT NULL
+                  AND b.observed_at>=?
+                  AND (s.event_id IS NULL OR s.statistics_id != substr(json_extract(b.metadata,'$.statistics_url'),length('https://winline.ru/stats/match/')+1)
+                    OR s.last_attempt_at < CASE s.last_state WHEN 'ok' THEN ? WHEN 'blocked' THEN ? WHEN 'empty' THEN ? ELSE ? END)
+                ORDER BY COALESCE(s.last_attempt_at,''),COALESCE(b.kickoff_at,'9999'),b.event_id LIMIT ?""",
+                (cutoff(86400),cutoff(900),cutoff(3600),cutoff(1800),cutoff(600),limit))
+            jobs=[{key:document.get(key) for key in ('source_event_id','url','sport','sport_label','title','home','away','statistics_url')}
+                  for document in (json.loads(row['metadata']) for row in rows)]
+            linked=db.execute("SELECT COUNT(*) FROM bookmaker_event_markets WHERE json_extract(metadata,'$.statistics_link_status')='found'").fetchone()[0]
+        return {'jobs':jobs,'linked_events':linked}
 
     def market_events(self, *, include_started=False, limit=100, offset=0,
                       search="", competition="", phase="", day=None, event_ids=None, sort="kickoff", sport="") -> dict:

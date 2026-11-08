@@ -18,6 +18,7 @@ from .model import GoalModel
 from . import qwen
 from .bookmakers import FORMAT as BOOKMAKER_FORMAT, instant, model_teams
 from .storage import Repository, utc_now
+from .winline_browser import statistics_id_from_url
 
 STATIC = Path(__file__).parent / "static"
 
@@ -246,6 +247,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise HTTPException(422, "Некорректный документ рынков события.") from exc
 
+    @app.get('/api/bookmakers/statistics/queue')
+    def statistics_queue(request: Request,limit: int=10):
+        require_worker(request)
+        if not 1<=limit<=50: raise HTTPException(422,'Некорректный размер очереди.')
+        return repo.statistics_queue(limit)
+
+    @app.post('/api/bookmakers/statistics/ingest')
+    async def statistics_ingest(request: Request):
+        body=await worker_body(request,512*1024)
+        try: return repo.import_statistics(body)
+        except (ValueError,TypeError,KeyError,AttributeError) as error:
+            raise HTTPException(422,'Некорректный снимок статистики события.') from error
+
+    @app.get('/api/bookmakers/events/{event_id}/statistics')
+    def statistics_detail(event_id: str):
+        event=repo.event_markets(event_id)
+        if not event: raise HTTPException(404,'Событие не найдено.')
+        result=repo.statistics(event_id)
+        if result and result['statistics_id']!=statistics_id_from_url(event.get('statistics_url') or ''):
+            result=None
+        return {'statistics':result,'link_status':event.get('statistics_link_status','missing'),'statistics_url':event.get('statistics_url')}
+
     @app.get("/api/bookmakers/events")
     def market_events(include_started: bool = False, limit: int = 100, offset: int = 0,
                       search: str = "", competition: str = "", phase: str = "", day: date | None = None,
@@ -311,6 +334,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/bookmakers/events/{event_id}/explain")
     def explain_event(event_id: str, request: EventExplainRequest):
         from .event_analysis import analysis_context, request_key
+        from .statistics import analysis_statistics
         if not settings.qwen_configured:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if not event_id.isdigit() or len(event_id) > 20:
@@ -320,7 +344,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Матч ещё не собран.")
         if request.observed_at and request.observed_at != document["observed_at"]:
             raise HTTPException(409, "Снимок матча обновился. Обновите рынки и повторите запрос.")
-        key = request_key(document, request.market_key, request.outcome_key, request.notes)
+        saved_statistics=repo.statistics(event_id)
+        if saved_statistics and saved_statistics['statistics_id']!=statistics_id_from_url(document.get('statistics_url') or ''):
+            saved_statistics=None
+        team_statistics=analysis_statistics(saved_statistics)
+        key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics)
         cached = repo.event_analysis(request_key=key)
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(minutes=10):
             return {**cached, "cached": True}
@@ -339,7 +367,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     pass
             try:
                 context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
-                                           notes=request.notes, statistics=statistics)
+                                           notes=request.notes, statistics=statistics,team_statistics=team_statistics)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             try:

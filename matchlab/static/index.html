@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#101411" />
   <title>Matchlab — спорт и аналитика</title>
-  <link rel="stylesheet" href="/static/style.css?v=20261108-ui3" />
-  <script src="/static/app.js?v=20261108-ui3" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=20261108-ui4" />
+  <script src="/static/app.js?v=20261108-ui4" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -50,6 +50,7 @@
         <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Загрузить последний сохранённый снимок">Обновить данные</button><details class="snapshot-info"><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
       </header>
       <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
+      <details id="team-statistics" class="panel team-statistics"><summary>Статистика участников <span id="team-statistics-status" class="muted"></span></summary><p id="team-statistics-note" class="small muted"></p><a id="team-statistics-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>Статистика Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a><div id="team-statistics-sections"></div></details>
       <div id="ai-mobile-host"></div><div id="detail-error" class="notice error" role="alert" hidden></div>
       <div id="event-tabs" class="detail-tabs" role="tablist" aria-label="Информация о матче"><button type="button" id="tab-markets" role="tab" aria-selected="true" aria-controls="market-detail" tabindex="0">Все рынки <span id="market-count"></span></button><button type="button" id="tab-analysis" role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Статистика</button></div>
       <article id="market-detail" class="panel market-detail" role="tabpanel" aria-labelledby="tab-markets">
