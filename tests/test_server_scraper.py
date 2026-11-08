@@ -20,7 +20,7 @@ from matchlab.bookmakers import FORMAT, normalize_capture
 from matchlab.config import Settings
 from matchlab.server_scraper import MinuteCollector, Publisher, local_api, run
 from matchlab.storage import Repository
-from matchlab.worker_protocol import source_state, validate_status
+from matchlab.worker_protocol import parse_sources, source_state, validate_status
 from tests.test_bookmakers import FROZEN, sample
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +32,15 @@ def connected_sample():
     document = sample()
     document["transport"] = {source: [{"url": url, "connected": True, "last_frame_at": FROZEN.isoformat()}] for source, url in FEEDS.items()}
     return document
+
+
+def football_page():
+    # Synthetic layout contract, not a recording of the live football route.
+    return {"source": "winline", "kind": "public_dom",
+            "url": "https://winline.ru/stavki/sport/futbol/", "observed_at": FROZEN.isoformat(),
+            "payload": {"text": "Футбол\nП1\nX\nП2\nТест Хозяева\nТест Гости\n2.10\n3.20\n3.40\nСегодня 21:00\n+100",
+                        "nodes": [{"tag": "a", "attrs": {"href": "https://winline.ru/stavki/event/12345678"},
+                                   "text": "Тест Хозяева\nТест Гости"}]}}
 
 
 class LocalPublisher:
@@ -116,6 +125,58 @@ class ServerCollectorTests(unittest.TestCase):
             self.assertEqual(restarted.last_status["sources"]["winline"]["events"], 7)
             self.assertEqual(restarted.complete_batches, 0)
         asyncio.run(run())
+
+    def test_winline_only_works_without_betboom_quotes_and_keeps_unknown_league_explicit(self):
+        async def check():
+            worker = MinuteCollector(self.publisher, 60, self.path / "winline", sources=("winline",))
+            await worker.bootstrap()
+            document = connected_sample()
+            document["records"] = [football_page()]
+            document["transport"].pop("betboom")
+            await worker.process(document)
+            self.assertEqual(worker.last_status["state"], "ok")
+            self.assertEqual(set(worker.last_status["sources"]), {"winline"})
+            self.assertEqual(worker.complete_batches, 1)
+            quotes = self.repo.bookmaker_quotes()
+            self.assertEqual(len(quotes), 1)
+            self.assertEqual(quotes[0]["competition"], "Турнир не указан")
+            self.assertEqual(quotes[0]["competition_origin"], "winline_football_page")
+            self.assertFalse(self.client.get("/api/bookmakers").json()["quotes"][0]["prediction_available"])
+            # Losing the selected source still fails; the skip is not a bypass.
+            document["transport"] = {}
+            document["navigation"] = {"winline": {"status": 403}}
+            await worker.process(document)
+            self.assertEqual(worker.last_status["state"], "blocked")
+            self.assertEqual(len(self.repo.bookmaker_quotes()), 1)
+        asyncio.run(check())
+
+    def test_football_page_scope_never_transfers_to_homepage_or_other_sports(self):
+        record = football_page()
+        for url in ("https://winline.ru/", "https://winline.ru/stavki/sport/hokkey/",
+                    "https://example.test/stavki/sport/futbol/"):
+            record["url"] = url
+            self.assertEqual(normalize_capture({"format": "matchlab.bookmaker-capture.v1", "records": [record]})["snapshots"], [])
+
+    def test_winline_only_preflight_opens_only_the_selected_source(self):
+        async def fake_browser(sources, seconds, **kwargs):
+            self.assertEqual(sources, ["winline"])
+            self.assertEqual(kwargs["entrypoints"]["winline"], "https://winline.ru/stavki/sport/futbol/")
+            document = connected_sample()
+            document["records"] = [football_page()]
+            await kwargs["on_batch"](document)
+        args = SimpleNamespace(api_url="http://127.0.0.1:8080", interval=60, sources=("winline",),
+                               state_dir=self.path / "preflight-winline", once=True, sample_seconds=30, executable=None)
+        with patch("matchlab.server_scraper.Publisher", return_value=self.publisher), \
+                patch("matchlab.server_scraper.collect", side_effect=fake_browser), \
+                patch.dict("os.environ", {"BOOKMAKER_INGEST_TOKEN": KEY}):
+            self.assertEqual(asyncio.run(run(args)), 0)
+
+    def test_source_selection_rejects_empty_duplicate_and_unknown_sources(self):
+        self.assertEqual(parse_sources("winline"), ("winline",))
+        self.assertEqual(parse_sources("winline,betboom"), ("betboom", "winline"))
+        for value in ("", "winline,winline", "other", "winline,", "winline\nBOOKMAKER_API_URL=other"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                parse_sources(value)
 
     def test_empty_or_failed_upload_does_not_claim_success(self):
         async def run():

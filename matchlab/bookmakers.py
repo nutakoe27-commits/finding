@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from .capture import FORMAT as CAPTURE_FORMAT, safe_url
 
 FORMAT = "matchlab.bookmaker-snapshots.v1"
-VERSION = "public-dom-1x2-v1"
+VERSION = "public-dom-1x2-v2"
 EPL = "Англия. Премьер-лига"
 KEYS = ("home", "draw", "away")
 ALIASES = {
@@ -205,6 +205,9 @@ def parse_betboom(record: dict) -> list[dict]:
 
 def parse_winline(record: dict, references: dict) -> list[dict]:
     text = record["payload"].get("text", "")
+    page = urlsplit(record["url"])
+    football_page = (page.scheme == "https" and page.hostname in ("winline.ru", "www.winline.ru")
+                     and page.path.rstrip("/") == "/stavki/sport/futbol" and "Футбол" in lines(text))
     # The observed homepage mixes hockey, basketball and football. Restrict to
     # pre-match team links corroborated by an explicit football source, or a
     # football-specific page. Never infer sport from three prices alone.
@@ -223,10 +226,12 @@ def parse_winline(record: dict, references: dict) -> list[dict]:
         try:
             start = kickoff(hits[0][4], record["observed_at"])
             reference = references.get((team_key(teams[0]), team_key(teams[1]), start))
-            if not reference:
+            if not reference and not football_page:
                 continue
-            competition = reference["competition"]
-            origin = "corroborated_football_fixture"
+            # The dedicated sport page proves football without another source.
+            # It does not prove a league: never guess EPL from club names.
+            competition = reference["competition"] if reference else "Турнир не указан"
+            origin = "corroborated_football_fixture" if reference else "winline_football_page"
             result.append(make_snapshot("winline", competition, teams[0], teams[1], start,
                                         record["observed_at"], prices, href,
                                         external_id=match[1], competition_origin=origin))

@@ -543,7 +543,7 @@ async function loadBookmakers() {
         ` · Автосбор ${worker.interval_seconds} с: ${status}. ` +
         Object.entries(worker.sources).map(([source, item]) =>
           `${bookmakerName(source)}: ${labels[item.state]}`).join(" · ") +
-        (worker.last_success_at ? ` · Оба источника получены: ${moscowTime(worker.last_success_at)} МСК` : "");
+        (worker.last_success_at ? ` · Успешное обновление: ${moscowTime(worker.last_success_at)} МСК` : "");
     }
     if (all.length) {
       $("stat-odds-source").textContent = all

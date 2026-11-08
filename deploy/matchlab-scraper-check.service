@@ -1,6 +1,6 @@
 # Managed by Matchlab server scraper
 [Unit]
-Description=Verify both Matchlab bookmaker sources before enabling collection
+Description=Verify selected Matchlab bookmaker sources before enabling collection
 After=network-online.target
 
 [Service]

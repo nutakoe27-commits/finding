@@ -8,6 +8,13 @@ SOURCES = ("betboom", "winline")
 STATES = {"starting", "ok", "partial", "blocked", "disconnected", "unavailable", "empty", "error", "stopped"}
 
 
+def parse_sources(value: str) -> tuple[str, ...]:
+    selected = value.split(",")
+    if not selected or any(source not in SOURCES for source in selected) or len(set(selected)) != len(selected):
+        raise ValueError("Укажите winline, betboom или betboom,winline.")
+    return tuple(source for source in SOURCES if source in selected)
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

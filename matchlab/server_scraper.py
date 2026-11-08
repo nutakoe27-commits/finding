@@ -14,9 +14,9 @@ import httpx
 
 from .bookmakers import FORMAT, instant, normalize_capture, validate_snapshot
 from .capture import collect
-from .worker_protocol import SOURCES, source_state, utc_now
+from .worker_protocol import SOURCES, parse_sources, source_state, utc_now
 
-ENTRYPOINTS = {"betboom": "https://betboom.ru/sport/football/128/216", "winline": "https://winline.ru/"}
+ENTRYPOINTS = {"betboom": "https://betboom.ru/sport/football/128/216", "winline": "https://winline.ru/stavki/sport/futbol/"}
 
 
 def local_api(value: str) -> str:
@@ -52,10 +52,11 @@ class Publisher:
 
 
 class MinuteCollector:
-    def __init__(self, publisher: Publisher, interval: int, state_dir: Path):
+    def __init__(self, publisher: Publisher, interval: int, state_dir: Path, sources: tuple[str, ...] = SOURCES):
         self.publisher = publisher
         self.interval = interval
         self.state_dir = state_dir
+        self.sources = parse_sources(",".join(sources))
         self.references: dict[str, dict] = {}
         self.last_status = {"state": "starting", "interval_seconds": interval, "sources": {}}
         self.complete_batches = 0
@@ -85,7 +86,7 @@ class MinuteCollector:
             self.references = {}
 
     async def process(self, document: dict):
-        states = {source: source_state(document, source) for source in SOURCES}
+        states = {source: source_state(document, source) for source in self.sources}
         accepted = dict(document)
         # A frozen DOM after WebSocket loss is never re-stamped as fresh odds.
         accepted["records"] = [record for record in document.get("records", []) if states.get(record.get("source")) == "ok"]
@@ -105,9 +106,9 @@ class MinuteCollector:
                 self.references[row["event_key"]] = row
         counts = normalized["report"]["sources"]
         source_status = {source: {"state": states[source] if states[source] != "ok" else "ok" if counts[source]["events"] else "empty",
-                                   "events": counts[source]["events"]} for source in SOURCES}
+                                   "events": counts[source]["events"]} for source in self.sources}
         good = sum(item["state"] == "ok" for item in source_status.values())
-        state = "ok" if good == 2 else "partial" if good else "blocked" if any(item["state"] == "blocked" for item in source_status.values()) else "error"
+        state = "ok" if good == len(self.sources) else "partial" if good else "blocked" if any(item["state"] == "blocked" for item in source_status.values()) else "error"
         status = {"state": state, "interval_seconds": self.interval, "sources": source_status}
         if normalized["snapshots"]:
             try:
@@ -125,7 +126,8 @@ class MinuteCollector:
 
 async def run(args):
     publisher = Publisher(args.api_url, os.getenv("BOOKMAKER_INGEST_TOKEN", ""))
-    worker = MinuteCollector(publisher, args.interval, args.state_dir)
+    sources = getattr(args, "sources", SOURCES)
+    worker = MinuteCollector(publisher, args.interval, args.state_dir, sources)
     await worker.bootstrap()
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -141,7 +143,7 @@ async def run(args):
             print("Не удалось опубликовать пакет. Старые данные сохранены; повторная попытка будет в следующем интервале.", flush=True)
 
     try:
-        await collect(list(SOURCES), args.sample_seconds if args.once else None, headless=True,
+        await collect(list(worker.sources), args.sample_seconds if args.once else None, headless=True,
                       executable=args.executable, quiet=True, on_batch=batch,
                       batch_seconds=args.interval, stop_event=stopped,
                       block_heavy_resources=True, browser_env=browser_env,
@@ -161,7 +163,8 @@ def main():
     parser.add_argument("--api-url", default=os.getenv("BOOKMAKER_API_URL", "http://127.0.0.1:8080"))
     parser.add_argument("--interval", type=int, default=60)
     parser.add_argument("--state-dir", type=Path, default=Path(".local/server-scraper"))
-    parser.add_argument("--once", action="store_true", help="Verify both real sources before enabling the daemon")
+    parser.add_argument("--once", action="store_true", help="Verify every selected source before enabling the daemon")
+    parser.add_argument("--sources", type=parse_sources, default=os.getenv("BOOKMAKER_SOURCES", "winline"), metavar="winline|betboom,winline")
     parser.add_argument("--sample-seconds", type=int, default=30)
     parser.add_argument("--executable")
     args = parser.parse_args()

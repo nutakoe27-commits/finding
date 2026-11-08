@@ -5,12 +5,14 @@ cd "$(dirname "$0")/.."
 dry_run=0
 meminfo=/proc/meminfo
 api_url=http://127.0.0.1:8080
+sources=winline
 while (($#)); do
   case "$1" in
     --dry-run) dry_run=1; shift ;;
     --meminfo) meminfo="${2:?Missing file}"; shift 2 ;;
     --api-url) api_url="${2:?Missing URL}"; shift 2 ;;
-    *) echo "Использование: $0 [--api-url http://127.0.0.1:PORT] [--dry-run]" >&2; exit 1 ;;
+    --sources) sources="${2:?Missing sources}"; shift 2 ;;
+    *) echo "Использование: $0 [--api-url http://127.0.0.1:PORT] [--sources winline|betboom,winline] [--dry-run]" >&2; exit 1 ;;
   esac
 done
 if [[ "$meminfo" != /proc/meminfo && "$dry_run" != 1 ]]; then
@@ -19,7 +21,7 @@ if [[ "$meminfo" != /proc/meminfo && "$dry_run" != 1 ]]; then
 fi
 
 # Check before creating users, installing anything or touching services.
-python3 - "$meminfo" "$api_url" <<'PY'
+python3 - "$meminfo" "$api_url" "$sources" <<'PY'
 from pathlib import Path
 import sys
 from urllib.parse import urlsplit
@@ -32,6 +34,8 @@ if url.scheme != 'http' or url.hostname not in ('127.0.0.1', 'localhost', '::1')
     sys.exit('API должен быть локальным HTTP-адресом. Для другого сервера используйте SSH-туннель.')
 if sys.version_info < (3, 10):
     sys.exit('Нужен Python 3.10+.')
+from matchlab.worker_protocol import parse_sources
+parse_sources(sys.argv[3])
 print(f'Проверка памяти: доступно {available} МиБ; требование выполнено.')
 PY
 if [[ "$dry_run" == 1 ]]; then
@@ -86,7 +90,7 @@ python3 -m venv "$target/.venv"
 "$target/.venv/bin/python" -m pip install -r "$target/requirements-server-scraper.txt"
 runuser -u matchlab-scraper -- env PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers "$target/.venv/bin/python" -m playwright install chromium
 
-printf '# Managed by Matchlab server scraper\nBOOKMAKER_API_URL=%s\n' "$api_url" > /etc/matchlab-scraper.conf
+printf '# Managed by Matchlab server scraper\nBOOKMAKER_API_URL=%s\nBOOKMAKER_SOURCES=%s\n' "$api_url" "$sources" > /etc/matchlab-scraper.conf
 chmod 600 /etc/matchlab-scraper.conf
 install -m 644 deploy/matchlab-scraper{,-check}.service /etc/systemd/system/
 systemctl daemon-reload
@@ -95,4 +99,4 @@ if ! systemctl start matchlab-scraper-check.service; then
   exit 2
 fi
 systemctl enable --now matchlab-scraper.service
-echo 'Оба источника прошли проверку; автосбор включён, интервал 60 секунд. Проверяйте свежесть и состояние в интерфейсе.'
+echo "Выбранные источники ($sources) прошли проверку; автосбор включён, интервал 60 секунд. Проверяйте свежесть и состояние в интерфейсе."
