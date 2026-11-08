@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 from matchlab.bookmakers import DATE_RE, lines, normalize_capture
 from matchlab.capture import FORMAT, redact, safe_url, sports_text
-from matchlab.winline_browser import CARD_CONTEXT, LINE_URL, select_football_line
+from matchlab.winline_browser import CARD_CONTEXT, LINE_URL, open_event_link, select_football_line
 
 URL = "https://winline.ru/stavki/sport/futbol/"
 DOM = r"""() => {
@@ -102,7 +102,7 @@ def report(document: dict) -> dict:
         parsed = normalize_capture(document)["report"]["sources"]["winline"]
     except (ValueError, TypeError, KeyError):
         parsed = {"error": "unsupported_layout"}
-    event_page = "/stavki/event/" in record["url"]
+    event_page = document.get("event_requested", False) or "/stavki/event/" in record["url"]
     result = {"url": record["url"], "navigation": document["navigation"],
             "title": payload["title"], "sports_text_filter": sports_text(payload["text"]),
             "headings": payload["headings"], "event_links": payload["event_links"],
@@ -120,7 +120,7 @@ def report(document: dict) -> dict:
     return result
 
 
-async def capture(seconds: int, executable: str | None = None, *, prematch: bool = False, event_id: int | None = None) -> dict:
+async def capture(seconds: int, executable: str | None = None, *, prematch: bool = False, event_id: int | None = None, event_teams: list[str] | None = None) -> dict:
     from playwright.async_api import Error as PlaywrightError, async_playwright
     async with async_playwright() as playwright:
         launch = {"headless": True, "args": ["--disable-gpu"],
@@ -141,7 +141,7 @@ async def capture(seconds: int, executable: str | None = None, *, prematch: bool
             page = await context.new_page()
             navigation = {}
             try:
-                target = f"https://winline.ru/stavki/event/{event_id}" if event_id else LINE_URL if prematch else URL
+                target = "https://winline.ru/" if event_id or event_teams else LINE_URL if prematch else URL
                 response = await page.goto(target, wait_until="domcontentloaded", timeout=45000)
                 navigation["status"] = response.status if response else None
             except PlaywrightError:
@@ -151,10 +151,15 @@ async def capture(seconds: int, executable: str | None = None, *, prematch: bool
                     navigation.update(await select_football_line(page))
                 except (PlaywrightError, ValueError):
                     navigation["preparation_error"] = "prematch_navigation_failed"
+            if event_id or event_teams:
+                try:
+                    navigation.update(await open_event_link(page, event_id=event_id, teams=event_teams))
+                except (PlaywrightError, ValueError):
+                    navigation["preparation_error"] = "event_link_not_opened"
             await asyncio.sleep(seconds)
             # Deliberately independent of the production sports-text filter.
             payload = redact(await page.evaluate(DOM))
-            document = {"format": FORMAT, "sources": ["winline"], "navigation": {"winline": navigation},
+            document = {"format": FORMAT, "sources": ["winline"], "navigation": {"winline": navigation}, "event_requested": bool(event_id or event_teams),
                         "records": [{"source": "winline", "kind": "public_dom", "url": safe_url(page.url),
                                      "observed_at": datetime.now(timezone.utc).isoformat(), "payload": payload}]}
             return document
@@ -170,6 +175,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prematch", action="store_true", help="Open the Line route, select Football and load upcoming cards")
     mode.add_argument("--event-id", type=int, help="Inspect all public market containers on one event page")
+    mode.add_argument("--event-teams", nargs=2, metavar=("HOME", "AWAY"), help="Follow the current homepage link instead of reusing an old event ID")
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60:
         parser.error("--seconds должен быть от 1 до 60")
@@ -179,7 +185,7 @@ def main():
         parser.error("Файл уже существует; выберите другое имя.")
     os.umask(0o077)
     try:
-        document = asyncio.run(capture(args.seconds, args.executable, prematch=args.prematch, event_id=args.event_id))
+        document = asyncio.run(capture(args.seconds, args.executable, prematch=args.prematch, event_id=args.event_id, event_teams=args.event_teams))
         with args.output.open("x", encoding="utf-8") as output:
             json.dump(document, output, ensure_ascii=False, allow_nan=False)
         print(json.dumps(report(document), ensure_ascii=False, indent=2))

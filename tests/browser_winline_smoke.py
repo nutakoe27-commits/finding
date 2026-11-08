@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from matchlab.bookmakers import normalize_capture
 from matchlab.capture import DOM_SCRIPT, redact
-from matchlab.winline_browser import select_football_line
+from matchlab.winline_browser import open_event_link, select_football_line
 
 
 NAV = '<nav><a href="/stavki">Линия</a><a href="/live">Live сейчас</a><a href="/stavki/sport/futbol/">Футбол</a></nav>'
@@ -79,9 +79,27 @@ async def run(executable):
             assert prices['101'] == {'home': 1.9, 'draw': 3.85, 'away': 3.75}
             assert prices['102'] == {'home': 2.16, 'draw': 3.75, 'away': 3.1}
             assert await page.evaluate('window.betClicks') == 0
+            await context.unroute('**/*', fulfill)
+
+            async def current_event(route):
+                path = urlsplit(route.request.url).path
+                if path == '/':
+                    body = '<a href="/stavki/event/900001"><div>Сандерленд</div><div>Челси</div></a>'
+                elif path == '/stavki/event/900001':
+                    body = '<h1>Сандерленд — Челси</h1><div class="market">Исход 2.10 3.20 3.40</div>'
+                else:
+                    raise AssertionError(path)
+                await route.fulfill(status=200, content_type='text/html', body='<meta charset="utf-8">' + body)
+
+            await context.route('**/*', current_event)
+            await page.goto('https://winline.ru/')
+            selected_event = await open_event_link(page, teams=['Сандерленд', 'Челси'])
+            assert selected_event['source_event_id'] == '900001'
+            assert page.url.endswith('/stavki/event/900001')
         finally:
             await browser.close()
     print('PASS: public Line → Football navigation, bounded lazy loading, separate event/league context, full-match prices and live rejection; all network responses mocked')
+    print('PASS: current event link is selected by teams after homepage initialization; no reused event ID')
 
 
 if __name__ == '__main__':

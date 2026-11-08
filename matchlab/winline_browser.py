@@ -92,3 +92,21 @@ async def select_football_line(page) -> dict:
     if final.hostname not in ("winline.ru", "www.winline.ru") or final.path.rstrip("/") != FOOTBALL_PATH:
         raise ValueError("Не удалось выбрать футбольную страницу Winline.")
     return {"line_selected": True, "football_selected": True, "scroll_steps": steps}
+
+
+async def open_event_link(page, *, event_id: int | None = None, teams: list[str] | None = None) -> dict:
+    """Open a current public event anchor after the homepage has initialized."""
+    if teams:
+        expression = re.compile(r"^\s*" + re.escape(teams[0]) + r"\s+" + re.escape(teams[1]) + r"\s*$")
+        target = page.locator('a[href*="/stavki/event/"]').filter(has_text=expression).filter(visible=True).first
+    elif event_id:
+        target = page.locator(f'a[href$="/stavki/event/{event_id}"],a[href$="/stavki/event/{event_id}/"]').filter(visible=True).first
+    else:
+        raise ValueError("Нужны ID или обе команды для выбора текущей ссылки.")
+    address = urlsplit(urljoin(page.url, await target.get_attribute("href", timeout=15000) or ""))
+    match = re.fullmatch(r"/stavki/event/(\d+)/?", address.path)
+    if address.scheme != "https" or address.hostname not in ("winline.ru", "www.winline.ru") or not match:
+        raise ValueError("Неожиданный адрес страницы матча.")
+    await target.click(timeout=15000)
+    await page.wait_for_url(re.compile(r"https://(?:www\.)?winline\.ru/stavki/event/" + match[1] + r"/?(?:\?.*)?$"), timeout=15000)
+    return {"event_selected": True, "source_event_id": match[1]}
