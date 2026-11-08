@@ -6,6 +6,7 @@ import json
 from .bookmakers import instant
 from .markets import headline_market
 
+ANALYSIS_VERSION = 'grouped-reasoning-v2'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -59,7 +60,7 @@ def request_key(document: dict, market_key, outcome_key, notes: str, team_statis
     current = datetime.now(timezone.utc)
     stale = (current - instant(document["capture_started_at"])).total_seconds() > 180
     started = bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)
-    value = [document["source_event_id"], document.get('sport','football'), document["observed_at"], document["capture_started_at"],
+    value = [ANALYSIS_VERSION, document["source_event_id"], document.get('sport','football'), document["observed_at"], document["capture_started_at"],
              {key:document.get(key) for key in ('home','away','title','event_kind','competition','kickoff_at','coverage')},
              document["markets"], market_key, outcome_key, notes, stale, started,
              {key:team_statistics.get(key) for key in ('statistics_id','observed_at','match_phase','is_stale')} if team_statistics else None]

@@ -148,6 +148,19 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(snapshot['state'],'blocked')
         self.assertIsNone(analysis_statistics(snapshot))
 
+    def test_ai_context_includes_all_source_sections_with_explicit_truncation(self):
+        self.post(stats())
+        snapshot=self.repo.statistics('123')
+        snapshot['header']='А'*3000
+        snapshot['sections']=[{'title':f'Раздел {index}', 'text':f'Команда {index}\n'+('данные '*400)} for index in range(20)]
+        context=analysis_statistics(snapshot)
+        self.assertEqual(context['total_sections'],20)
+        self.assertEqual(len(context['sections']),20)
+        self.assertEqual(context['truncated_sections'],20)
+        self.assertTrue(context['header_truncated'])
+        self.assertLessEqual(sum(len(item['text']) for item in context['sections']),16000)
+        self.assertTrue(all(item['truncated'] and item['text'] for item in context['sections']))
+
     def test_client_setup_copies_only_collector_key_without_printing_it(self):
         output=self.path/'client.json'
         result=subprocess.CompletedProcess([],0,json.dumps({'collector_key':KEY}).encode())

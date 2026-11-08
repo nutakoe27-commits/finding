@@ -138,6 +138,12 @@ class ProductTests(unittest.TestCase):
             clock.now.return_value = datetime.now(timezone.utc) + timedelta(minutes=5)
             self.assertNotEqual(key, request_key(document, None, None, ""))
 
+    def test_new_analysis_instructions_do_not_reuse_old_cached_response(self):
+        document = self.repo.event_markets("123")
+        key = request_key(document, None, None, "")
+        with patch("matchlab.event_analysis.ANALYSIS_VERSION", "future-instructions"):
+            self.assertNotEqual(key, request_key(document, None, None, ""))
+
 
 if __name__ == "__main__":
     unittest.main()

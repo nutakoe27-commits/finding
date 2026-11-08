@@ -359,6 +359,34 @@ function el(tag, className, text) {
   if (text !== undefined) element.textContent = text;
   return element;
 }
+// Render a small formatting subset using DOM nodes; source and AI text never become HTML.
+function analysisInline(parent, text) {
+  const pattern = /\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g;
+  let position = 0, match;
+  while ((match = pattern.exec(text))) {
+    parent.append(document.createTextNode(text.slice(position, match.index)));
+    const element = document.createElement(match[3] ? "em" : "strong");
+    element.textContent = match[1] || match[2] || match[3];
+    parent.append(element); position = pattern.lastIndex;
+  }
+  parent.append(document.createTextNode(text.slice(position)));
+}
+function renderAnalysis(target, text) {
+  const nodes = []; let paragraph = [], list = null;
+  const flush = () => { if (paragraph.length) { const p=el("p"); analysisInline(p,paragraph.join("\n")); nodes.push(p); paragraph=[]; } };
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.trim()) { flush(); list=null; continue; }
+    const heading=line.match(/^\s*#{1,6}\s+(.+?)\s*#*\s*$/);
+    const bullet=line.match(/^\s*[-*•]\s+(.+)$/);
+    if (heading) { flush(); list=null; const h=el("h3"); analysisInline(h,heading[1]); nodes.push(h); }
+    else if (bullet) { flush(); if (!list) { list=el("ul"); nodes.push(list); } const item=el("li"); analysisInline(item,bullet[1]); list.append(item); }
+    else { list=null; paragraph.push(line); }
+  }
+  flush(); target.replaceChildren(...nodes);
+}
+function analysisPreview(text) {
+  return String(text || "").replace(/^\s*#{1,6}\s+/gm, "").replace(/^\s*[-*•]\s+/gm, "• ").replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g, (_,a,b,c) => a || b || c);
+}
 function toast(message) {
   $("toast").textContent = message;
   $("toast").hidden = false;
@@ -633,6 +661,8 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && state.marketDocument.observed_at !== analysis.observed_at;
   $("ai-analysis-meta").textContent = `${analysis.cached ? "Сохранённый разбор" : "Разбор готов"} · ${moscowTime(analysis.generated_at)} МСК. По снимку ${moscowTime(context.snapshot.capture_started_at)} МСК${outcome ? ` · ${outcome.name}: ${outcome.odds}` : ""}. Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} рынков.${changed ? " После начала разбора появились новые данные. Этот ответ относится к прежнему снимку." : ""}`;
   $("ai-analysis-meta").textContent+=context.team_statistics ? ` Статистика участников: ${moscowTime(context.team_statistics.observed_at)} МСК.${context.team_statistics.match_phase === "finished" ? " Источник содержит итог матча." : ""}` : " Статистика участников в этом разборе не использовалась.";
+  if (context.team_statistics?.truncated_sections) $("ai-analysis-meta").textContent+=` Часть разделов статистики передана ИИ сокращённо (${context.team_statistics.truncated_sections} из ${context.team_statistics.total_sections}).`;
+  if (context.team_statistics?.header_truncated) $("ai-analysis-meta").textContent+=" Заголовок статистики передан сокращённо.";
   $("ai-analysis-meta").hidden = false;
 }
 function openSelection(id, side = null, auto = false) {
@@ -694,9 +724,17 @@ function renderTeamStatistics(data) {
   if (stale) $("team-statistics-note").textContent+=" Снимок старше часа; данные могли измениться.";
   $("team-statistics-source").hidden=!data?.statistics_url;
   if (data?.statistics_url) $("team-statistics-source").href=data.statistics_url;
-  $("team-statistics-sections").replaceChildren(...(snapshot?.state === "ok" ? snapshot.sections.map(section=>{
-    const details=el("details","statistics-section"); details.append(el("summary","",section.title),el("p","statistics-text",section.text)); return details;
-  }) : []));
+  const groups=new Map();
+  for (const section of snapshot?.state === "ok" ? snapshot.sections : []) {
+    const title=section.title;
+    const category=/последние матчи|последние игры|последние бои|last matches|recent/i.test(title) ? "Форма и последние матчи" :
+      /последние встречи|сыгранные матчи|личные встречи|очные встречи|head.to.head/i.test(title) ? "Личные встречи" :
+      /статистика сезона|таблица|season|standings/i.test(title) ? "Сезон и турнирная таблица" :
+      /обзор матча|overall/i.test(title) ? "Обзор встречи" : "Другие показатели";
+    if (!groups.has(category)) { const group=el("section","statistics-category"); group.append(el("h3","",category)); groups.set(category,group); }
+    const details=el("details","statistics-section"); details.append(el("summary","",title),el("p","statistics-text",section.text)); groups.get(category).append(details);
+  }
+  $("team-statistics-sections").replaceChildren(...groups.values());
 }
 function renderMarketGroups() {
   if (!state.marketDocument) return;
@@ -756,7 +794,7 @@ async function requestAI() {
     const body = document ? {observed_at:document.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value} : {forecast_id:forecastId,notes:$("notes").value};
     const result = await api(endpoint, {method:"POST",body:JSON.stringify(body)});
     if (request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
-    $("explanation").textContent = result.text; $("explanation").hidden = false;
+    renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
     if (result.context) {
       state.aiAnalysis = result; renderAIAnalysisMeta();
     }
@@ -789,7 +827,8 @@ async function loadHistory() {
     $("history-list").replaceChildren(...result.analyses.map(analysis => {
       const card = el("article", "panel history-card"), info = el("div");
       info.append(el("h2", "", eventTitle(analysis.event)), el("p", "small muted", `${analysis.event.sport_label || "Футбол"} · ${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
-      const excerpt = el("p", "history-excerpt", analysis.text.length > 200 ? analysis.text.slice(0,200) + "…" : analysis.text); info.append(excerpt);
+      const preview=analysisPreview(analysis.text);
+      const excerpt = el("p", "history-excerpt", preview.length > 200 ? preview.slice(0,200) + "…" : preview); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
     return true;
@@ -806,7 +845,7 @@ async function loadSavedAnalysis(id) {
     $("manual-heading").querySelector(".subtitle").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
-    $("saved-analysis-text").textContent = analysis.text;
+    renderAnalysis($("saved-analysis-text"),analysis.text);
     $("saved-analysis-coverage").textContent = `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков. Данные и текст относятся ко времени этого разбора.`;
     $("saved-analysis-open").href = `#match/${analysis.event.source_event_id}`;
   } catch (error) { if (request === state.marketDetailRequest) showError("detail-error", error.message); }

@@ -33,7 +33,7 @@ class AIHandler(BaseHTTPRequestHandler):
         context = json.loads(body['messages'][1]['content'])
         REQUESTS.append(context)
         time.sleep(0.3)
-        text = 'Qwen: разбор выбранного рынка. Это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
+        text = 'Qwen: **Вывод:** разбор выбранного рынка.\n\n* **Рынок:** это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
         encoded = json.dumps({'choices':[{'message':{'content':text},'finish_reason':'stop'}]}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -106,6 +106,8 @@ async def run(url):
                 await page.locator('#explanation').wait_for(state='visible')
                 text = await page.locator('#explanation').inner_text()
                 assert 'оценка рынка' in text and 'qwen' not in text.lower()
+                assert '**' not in text and await page.locator('#explanation strong').count() == 2
+                assert await page.locator('#explanation li').count() == 1
                 assert not await page.evaluate('Boolean(window.analysisInjected || window.marketInjected)')
                 assert REQUESTS[-1]['selection']['outcome_key']
                 assert REQUESTS[-1]['snapshot']['observed_at']
@@ -132,6 +134,7 @@ async def run(url):
                 await page.locator('.history-card').first.wait_for()
                 await page.locator('#history-refresh').click()
                 await page.locator('#toast').filter(has_text='История обновлена').wait_for()
+                assert '**' not in await page.locator('.history-card').first.locator('.history-excerpt').inner_text()
                 await page.evaluate("location.hash = '#status'")
                 await page.locator('#view-status').wait_for()
                 await page.locator('#status-refresh').click()
@@ -141,6 +144,8 @@ async def run(url):
                 await page.locator('.history-card').filter(has_text='Сандерленд').first.locator('a').click()
                 await page.locator('#saved-analysis').wait_for(state='visible')
                 assert 'оценка рынка' in await page.locator('#saved-analysis-text').inner_text()
+                assert '**' not in await page.locator('#saved-analysis-text').inner_text()
+                assert await page.locator('#saved-analysis-text strong').count() == 2
                 assert 'Qwen' not in await page.locator('body').inner_text()
                 await page.locator('#saved-analysis-open').click()
                 await page.locator('#market-detail-title').wait_for(state='visible')

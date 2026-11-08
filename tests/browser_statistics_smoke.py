@@ -76,6 +76,8 @@ async def exercise(base,repo):
                 await page.wait_for_function("document.getElementById('team-statistics-status').textContent.includes('получена')")
                 await page.locator('#team-statistics>summary').click()
                 assert 'итог этой встречи' in await page.locator('#team-statistics-note').inner_text()
+                groups=await page.locator('.statistics-category h3').all_inner_texts()
+                assert 'Сезон и турнирная таблица' in groups and 'Личные встречи' in groups and 'Форма и последние матчи' in groups,groups
                 await page.locator('.statistics-section>summary').first.click()
                 assert '25 Забитые мячи 17' in await page.locator('.statistics-section').first.inner_text()
                 assert not await page.evaluate('document.documentElement.scrollWidth>window.innerWidth')

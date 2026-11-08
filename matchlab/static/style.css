@@ -820,3 +820,8 @@ body.without-ai-desk #ai-desktop-host { display:none; }
 .statistics-section { border-top:1px solid var(--line); padding:13px 0; margin-top:5px; }
 .statistics-section summary { cursor:pointer; font-size:12px; }
 .statistics-text { white-space:pre-wrap; font-size:12px; line-height:1.8; color:var(--muted); overflow-wrap:anywhere; }
+.statistics-category h3 { color:var(--text); font-size:12px; margin:18px 0 8px; }
+.explanation p { margin:0 0 12px; }
+.explanation h3 { font-size:13px; margin:16px 0 8px; color:var(--text); }
+.explanation ul { margin:0 0 12px; padding-left:20px; }
+.explanation li { padding-left:3px; margin-bottom:4px; }
