@@ -475,7 +475,8 @@ def one_cycle(args) -> int:
         state = 'stopped' if summary['finish_reason'] == 'shutdown' else 'ok' if summary['success'] else 'partial' if summary.get('published_events') else 'error'
         asyncio.run(crawler.spider.publish_status(state))
     args.state_dir.mkdir(parents=True, exist_ok=True)
-    (args.state_dir / 'cycle-status.json').write_text(json.dumps(summary, ensure_ascii=False), encoding='utf-8')
+    status_file = 'check-status.json' if args.check else 'cycle-status.json'
+    (args.state_dir / status_file).write_text(json.dumps(summary, ensure_ascii=False), encoding='utf-8')
     print(json.dumps(summary, ensure_ascii=False), flush=True)
     return 0 if summary['success'] else 2
 

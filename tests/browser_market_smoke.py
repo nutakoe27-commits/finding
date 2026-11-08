@@ -17,7 +17,7 @@ from threading import Thread
 import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from matchlab.winline_markets import market_document, primary_quote, read_marketbook
+from matchlab.winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook
 
 PROJECTION = json.loads((Path(__file__).parent / 'fixtures/winline_market_projection.json').read_text())
 
@@ -48,6 +48,15 @@ async def browser_test(executable):
         browser = await playwright.chromium.launch(headless=True, executable_path=executable)
         try:
             page = await browser.new_page(locale='ru-RU', timezone_id='Europe/Moscow')
+            async def event_fixture(route):
+                await route.fulfill(status=200,content_type='text/html',body=fixture_html())
+            await page.route('https://winline.ru/**',event_fixture)
+            alias='https://winline.ru/stavki/event/17006967'
+            await page.goto(alias)
+            await page.evaluate("setTimeout(() => history.replaceState({}, '', '/stavki/sport/futbol/angliya/apl/17006967'), 500)")
+            await ensure_event_page(page,alias)
+            assert '/sport/futbol/' in page.url
+            await page.unroute('https://winline.ru/**',event_fixture)
             await page.set_content(fixture_html(collapsed=True))
             snapshot = await read_marketbook(page, maximum_passes=10)
             document = market_document(snapshot, PROJECTION['url'], datetime.now(timezone.utc).isoformat())

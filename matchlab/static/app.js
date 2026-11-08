@@ -35,11 +35,16 @@ function showError(id, message) {
   $(id).hidden = !message;
 }
 async function api(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-  });
-  const body = await response.json();
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+  } catch { throw new Error("Не удалось связаться с сервером. Проверьте соединение."); }
+  let body;
+  try { body = await response.json(); }
+  catch { throw new Error(response.ok ? "Сервис вернул некорректный ответ." : `Сервис вернул HTTP ${response.status}.`); }
   if (!response.ok) {
     const detail = Array.isArray(body.detail)
       ? body.detail.map((item) => item.msg).join("; ")
@@ -360,6 +365,7 @@ function toast(message) {
   clearTimeout(state.toastTimer);
   state.toastTimer = setTimeout(() => { $("toast").hidden = true; }, 3500);
 }
+function clearToast() { clearTimeout(state.toastTimer); $("toast").hidden = true; }
 function readFavorites() {
   try {
     const values = JSON.parse(localStorage.getItem("matchlab:favorites:v1") || "[]");
@@ -492,7 +498,7 @@ async function loadCatalogue() {
   try {
     if (favorites && !state.favorites.size) {
       renderCatalogue({events:[],total:0,offset:0,limit:30});
-      return;
+      return true;
     }
     const query = new URLSearchParams({offset:String(state.marketOffset),limit:"30",include_started:"true",phase:state.phase,sport:state.sport,search:$("match-search").value.trim(),competition:$("competition-filter").value,sort:$("sort-filter").value});
     const day = $("day-filter").value;
@@ -500,8 +506,9 @@ async function loadCatalogue() {
     if (favorites) query.set("ids", [...state.favorites].join(","));
     const result = await api("/api/bookmakers/events?" + query);
     if (request !== state.marketRequest || !["#matches","#favorites"].includes(state.route)) return;
-    if (state.marketOffset > 0 && state.marketOffset >= result.total) { state.marketOffset = 0; loadCatalogue(); return; }
+    if (state.marketOffset > 0 && state.marketOffset >= result.total) { state.marketOffset = 0; return loadCatalogue(); }
     renderCatalogue(result);
+    return true;
   } catch (error) {
     if (request === state.marketRequest) showError("market-list-error", error.message);
   } finally {
@@ -677,6 +684,7 @@ async function loadEvent(refresh = false) {
   $("analysis-availability").textContent = state.analysisContext?.prediction_available ? "Расчёт по истории голов АПЛ и сохранённому основному исходу. ИИ-разбор доступен справа для любого рынка." : state.analysisContext?.unavailable_reason || "Статистическая модель пока недоступна. ИИ-разбор рынков доступен в панели аналитика.";
   $("event-predict").disabled = state.predicting || !state.analysisContext?.prediction_available;
   if (!refresh) applyPendingSelection();
+  return true;
 }
 function renderTeamStatistics(data) {
   const snapshot=data?.statistics;
@@ -784,6 +792,7 @@ async function loadHistory() {
       const excerpt = el("p", "history-excerpt", analysis.text.length > 200 ? analysis.text.slice(0,200) + "…" : analysis.text); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
+    return true;
   } catch (error) { if (request === state.historyRequest) showError("history-error", error.message); }
 }
 async function loadSavedAnalysis(id) {
@@ -818,6 +827,7 @@ async function loadStatus() {
     $("worker-description").textContent = worker ? `Последний отчёт: ${moscowTime(worker.last_attempt_at)} МСК. Целевой интервал — ${worker.interval_seconds} с. Свежесть каждого матча указана отдельно.` : "Ожидаем первый отчёт серверного сборщика.";
     $("worker-progress").textContent = worker?.progress ? `В текущем цикле: ${worker.progress.discovered} найдено, ${worker.progress.saved} доставлено, ${worker.progress.failed} ошибок.` : "";
     showError("global-error", ""); syncAIButton();
+    return true;
   } catch (error) { if (request === state.statusRequest) { showError("global-error", error.message); $("feed-state").textContent = "Нет ответа сервиса"; $("feed-dot").classList.remove("green"); } }
 }
 function moveAIDesk() {
@@ -912,10 +922,10 @@ $("explain-button").addEventListener("click",requestAI);
 $("ai-clear-selection").addEventListener("click", () => selectAI());
 $("event-predict").addEventListener("click",calculateEvent);
 $("event-favorite").addEventListener("click", () => toggleFavorite(state.eventId));
-$("event-refresh").addEventListener("click", async () => { $("event-refresh").disabled = true; try { await loadEvent(true); } finally { $("event-refresh").disabled = false; } });
-$("market-refresh").addEventListener("click", () => { loadCatalogue(); loadStatus(); });
-$("history-refresh").addEventListener("click",loadHistory);
-$("status-refresh").addEventListener("click", () => { loadStatus(); loadBacktest().catch(error => showError("backtest-empty",error.message)); });
+$("event-refresh").addEventListener("click", async () => { clearToast(); $("event-refresh").disabled = true; try { if (await loadEvent(true)) toast("Загружен последний сохранённый снимок матча."); } finally { $("event-refresh").disabled = false; } });
+$("market-refresh").addEventListener("click", async () => { clearToast(); loadStatus(); if (await loadCatalogue()) toast("Список обновлён из сохранённых данных. Сбор идёт автоматически."); });
+$("history-refresh").addEventListener("click", async () => { clearToast(); $("history-refresh").disabled = true; try { if (await loadHistory()) toast("История обновлена."); } finally { $("history-refresh").disabled = false; } });
+$("status-refresh").addEventListener("click", async () => { clearToast(); $("status-refresh").disabled = true; try { const [ok] = await Promise.all([loadStatus(),loadBacktest().catch(error => showError("backtest-empty",error.message))]); if (ok) toast("Состояние сервиса обновлено."); } finally { $("status-refresh").disabled = false; } });
 $("market-prev").addEventListener("click", () => { state.marketOffset = Math.max(0,state.marketOffset - 30); loadCatalogue(); });
 $("market-next").addEventListener("click", () => { state.marketOffset += 30; loadCatalogue(); });
 $("reset-filters").addEventListener("click",resetFilters);

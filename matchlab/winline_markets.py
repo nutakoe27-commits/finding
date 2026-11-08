@@ -143,7 +143,13 @@ async def ensure_event_page(page, expected_url: str, metadata: dict | None = Non
             await page.evaluate("url => { history.pushState({}, '', url); dispatchEvent(new PopStateEvent('popstate')); }", expected_url)
             await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted, timeout=15000)
     if not sport_from_url(page.url):
-        raise ValueError('Не подтверждён раздел обычного спорта на странице события')
+        # The SPA may briefly retain /stavki/event/ID while it resolves the
+        # actual sport route. Only accept an observed canonical URL for this
+        # same event; never infer the sport from its teams or event number.
+        try:
+            await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted and bool(sport_from_url(str(value))), timeout=15000)
+        except Exception as exc:
+            raise ValueError('Не дождались подтверждённой страницы вида спорта для события') from exc
     await page.wait_for_selector('ww-feature-marketbook-dsk button.market-header', timeout=30000)
 
 

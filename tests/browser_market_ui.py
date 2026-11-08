@@ -53,6 +53,24 @@ async def run(url):
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 await page.goto(url)
                 await page.locator('.match-card').first.wait_for()
+                await page.locator('#market-refresh').click()
+                await page.locator('#toast').filter(has_text='Список обновлён из сохранённых данных').wait_for()
+                async def reject_refresh(route):
+                    await route.fulfill(status=503,json={'detail':'Приёмник временно недоступен'})
+                await page.route('**/api/bookmakers/events?*',reject_refresh)
+                await page.locator('#market-refresh').click()
+                await page.locator('#market-list-error').filter(has_text='Приёмник временно недоступен').wait_for()
+                assert not await page.locator('#toast').is_visible()
+                await page.unroute('**/api/bookmakers/events?*',reject_refresh)
+                async def proxy_failure(route):
+                    await route.fulfill(status=502,content_type='text/html',body='<h1>Bad Gateway</h1>')
+                await page.route('**/api/bookmakers/events?*',proxy_failure)
+                await page.locator('#market-refresh').click()
+                await page.locator('#market-list-error').filter(has_text='HTTP 502').wait_for()
+                assert not await page.locator('#toast').is_visible()
+                await page.unroute('**/api/bookmakers/events?*',proxy_failure)
+                await page.locator('#market-refresh').click()
+                await page.locator('#toast').filter(has_text='Список обновлён').wait_for()
                 assert not await page.locator('#view-status').is_visible()
                 assert not await page.locator('#manual-selection').is_visible()
                 assert not await page.locator('#market-next').is_disabled()
@@ -75,6 +93,8 @@ async def run(url):
                 assert 'П1' in await page.locator('#ai-outcome-label').inner_text()
                 assert '3.9' in await page.locator('#ai-outcome-label').inner_text()
                 assert await page.locator('#market-detail-title').inner_text() == 'Сандерленд — Челси'
+                await page.locator('#event-refresh').click()
+                await page.locator('#toast').filter(has_text='сохранённый снимок матча').wait_for()
                 await page.locator('#market-groups summary').first.click()
                 outcomes = page.locator('.market-outcomes').first
                 assert await outcomes.inner_text() == 'П1\n3.9\nX\n3.75\nП2\n1.89'
@@ -108,6 +128,14 @@ async def run(url):
                 await page.wait_for_function("!document.getElementById('explain-button').disabled")
                 assert not await page.locator('#explanation').is_visible(), 'Old analysis appeared for another match'
                 await page.unroute('**/api/bookmakers/events/17006967/explain', delayed_answer)
+                await page.locator('.nav-link[href="#history"]').click()
+                await page.locator('.history-card').first.wait_for()
+                await page.locator('#history-refresh').click()
+                await page.locator('#toast').filter(has_text='История обновлена').wait_for()
+                await page.evaluate("location.hash = '#status'")
+                await page.locator('#view-status').wait_for()
+                await page.locator('#status-refresh').click()
+                await page.locator('#toast').filter(has_text='Состояние сервиса обновлено').wait_for()
                 await page.locator('.nav-link[href="#history"]').click()
                 await page.locator('.history-card').first.wait_for()
                 await page.locator('.history-card').filter(has_text='Сандерленд').first.locator('a').click()
