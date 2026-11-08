@@ -4,7 +4,7 @@ import hashlib
 import json
 
 from .bookmakers import instant
-from .markets import main_odds
+from .markets import headline_market
 
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None) -> dict:
@@ -33,9 +33,11 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
         count += len(outcomes)
     current = datetime.now(timezone.utc)
     age = max(0, int((current - instant(document["capture_started_at"])).total_seconds()))
-    prices = main_odds(document)
+    headline = headline_market(document)
+    captured_headline = next((market for market in markets if headline and market['key'] == headline['key']), None)
+    prices = {item['name']:item['odds'] for item in headline['outcomes']} if headline and captured_headline and len(captured_headline['outcomes']) == len(headline['outcomes']) and all(item['state'] == 'open' for item in headline['outcomes']) else None
     total = sum(1 / value for value in prices.values()) if prices else None
-    return {"event": {key: document.get(key) for key in ("source_event_id", "home", "away", "competition", "phase", "kickoff_at", "url")},
+    return {"event": {key: document.get(key) for key in ("source_event_id", "sport", "sport_label", "event_kind", "title", "home", "away", "competition", "phase", "kickoff_at", "url")},
             "request_time": {"at": current.isoformat(), "kickoff_passed": bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)},
             "snapshot": {"observed_at": document["observed_at"], "capture_started_at": document["capture_started_at"],
                          "age_seconds": age, "is_stale": age > 180, "complete": document["coverage"]["complete"]},
@@ -44,15 +46,17 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
             "coverage": {"analyzed_markets": len(markets), "analyzed_outcomes": count,
                          "stored_markets": len(document["markets"]), "stored_outcomes": document["coverage"]["captured_outcomes"]},
             "market_implied": {"probabilities": {key: (1 / value) / total for key, value in prices.items()},
-                               "overround": total - 1, "basis": "regular_time_1x2_bookmaker_prices"} if prices else None,
+                               "overround": total - 1, "basis": "bookmaker_market_prices",
+                               "market":headline['name'], "period":headline.get('period')} if prices else None,
             "statistical_model": statistics, "unverified_user_notes": notes,
-            "missing_data": ["current_lineups", "injuries", "news", "current_score_and_match_clock"]}
+            "missing_data": ["current_lineups" if document.get('sport','football') == 'football' else "participants_status", "injuries", "news", "current_score_and_match_clock"]}
 
 
 def request_key(document: dict, market_key, outcome_key, notes: str) -> str:
     current = datetime.now(timezone.utc)
     stale = (current - instant(document["capture_started_at"])).total_seconds() > 180
     started = bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)
-    value = [document["source_event_id"], document["observed_at"], document["capture_started_at"],
+    value = [document["source_event_id"], document.get('sport','football'), document["observed_at"], document["capture_started_at"],
+             {key:document.get(key) for key in ('home','away','title','event_kind','competition','kickoff_at','coverage')},
              document["markets"], market_key, outcome_key, notes, stale, started]
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

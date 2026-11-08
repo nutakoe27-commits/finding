@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 from matchlab.markets import FORMAT
 from matchlab.storage import Repository
 from matchlab.winline_markets import primary_quote
+from sports_fixtures import PROJECTIONS, document as sport_document
 
 REQUESTS = []
 
@@ -32,7 +33,7 @@ class AIHandler(BaseHTTPRequestHandler):
         context = json.loads(body['messages'][1]['content'])
         REQUESTS.append(context)
         time.sleep(0.3)
-        text = 'Qwen: фаворит по коэффициентам — Челси. Это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
+        text = 'Qwen: разбор выбранного рынка. Это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
         encoded = json.dumps({'choices':[{'message':{'content':text},'finish_reason':'stop'}]}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
@@ -109,7 +110,7 @@ async def run(url):
                 await page.unroute('**/api/bookmakers/events/17006967/explain', delayed_answer)
                 await page.locator('.nav-link[href="#history"]').click()
                 await page.locator('.history-card').first.wait_for()
-                await page.locator('.history-card a').first.click()
+                await page.locator('.history-card').filter(has_text='Сандерленд').first.locator('a').click()
                 await page.locator('#saved-analysis').wait_for(state='visible')
                 assert 'оценка рынка' in await page.locator('#saved-analysis-text').inner_text()
                 assert 'Qwen' not in await page.locator('body').inner_text()
@@ -122,6 +123,41 @@ async def run(url):
                 await page.locator('#match-back').click()
                 await page.locator('.match-card').first.wait_for()
                 await page.screenshot(path=f'/tmp/matchlab-ui-line-{width}.png')
+                # Sports share the flow while preserving their own outcomes.
+                await page.locator('.nav-link[href="#matches"]').click()
+                await page.locator('#sport-filter').select_option('tennis')
+                tennis=page.locator('.match-card[data-event-id="91003"]')
+                await tennis.wait_for()
+                assert await tennis.locator('.odds-tile').count()==2
+                assert await tennis.locator('.odds-tile span').all_text_contents()==['П1','П2']
+                await tennis.locator('.odds-tile').last.click()
+                await page.locator('#ai-outcome-label').wait_for(state='visible')
+                assert 'П2' in await page.locator('#ai-outcome-label').inner_text()
+                assert not await page.locator('#tab-analysis').is_visible()
+                await page.locator('#ai-notes-details summary').click()
+                await page.locator('#notes').fill(f'Проверка тенниса {width}')
+                await page.locator('#explain-button').click()
+                await page.locator('#explanation').wait_for(state='visible')
+                assert REQUESTS[-1]['event']['sport']=='tennis'
+                assert REQUESTS[-1]['statistical_model'] is None
+                assert not await page.evaluate('document.documentElement.scrollWidth > window.innerWidth')
+                await page.screenshot(path=f'/tmp/matchlab-sports-tennis-{width}.png')
+                await page.locator('.nav-link[href="#matches"]').click()
+                await page.locator('#sport-filter').select_option('hockey')
+                hockey=page.locator('.match-card[data-event-id="91002"]')
+                await hockey.wait_for()
+                assert await hockey.locator('.odds-tile span').all_text_contents()==['П1','X','П2']
+                assert 'осн.время' in await hockey.locator('.headline-caption').inner_text()
+                await page.locator('#sport-filter').select_option('motorsport')
+                race=page.locator('.match-card[data-event-id="91004"]')
+                await race.wait_for()
+                assert '4 исходов' in await race.locator('.headline-caption').inner_text()
+                await race.locator('.match-card-title').click()
+                await page.wait_for_function("document.getElementById('market-detail-title').textContent === 'Тестовая гонка'")
+                await page.locator('#market-groups summary').first.click()
+                await page.locator('.market-outcome').last.click()
+                assert 'Пилот D' in await page.locator('#ai-outcome-label').inner_text()
+                assert not await page.evaluate('document.documentElement.scrollWidth > window.innerWidth')
                 assert not errors, errors
                 await page.close()
         finally:
@@ -156,6 +192,7 @@ def main():
             for index in range(33):
                 repo.import_event_markets(make_event(17007000+index,'Уникальная Команда' if index == 32 else f'Команда {index}',competition='Россия. Премьер-лига',start=2))
             repo.import_event_markets(make_event(18000000,'Наполи',competition='Италия. Серия А',phase='live',start=-1))
+            for projection in PROJECTIONS[1:]: repo.import_event_markets(sport_document(projection))
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1',0)); port = probe.getsockname()[1]
             env = dict(os.environ,MATCHLAB_DATA_DIR=folder,QWEN_BASE_URL=f'http://127.0.0.1:{ai.server_port}/v1',QWEN_MODEL='local-test-model',QWEN_API_KEY='',BOOKMAKER_INGEST_TOKEN='')

@@ -86,7 +86,7 @@ fi
 install -d -m 755 "$target" "$target/matchlab"
 install -d -m 700 -o matchlab-scraper -g matchlab-scraper /var/lib/matchlab-scraper
 touch "$target/.matchlab-managed"
-install -m 644 matchlab/{__init__,bookmakers,capture,worker_protocol,server_scraper,winline_browser}.py "$target/matchlab/"
+install -m 644 matchlab/{__init__,sports,bookmakers,capture,worker_protocol,server_scraper,winline_browser}.py "$target/matchlab/"
 install -m 644 scripts/diagnose_winline.py "$target/diagnose_winline.py"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt "$target/"
 python3 -m venv "$target/.venv"

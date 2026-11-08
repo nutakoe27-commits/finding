@@ -344,7 +344,7 @@ def load_snapshots(document: dict) -> dict:
 
 
 def model_teams(row: dict) -> tuple[str, str] | None:
-    if row["competition"] != EPL:
+    if row.get("sport", "football") != "football" or row.get("event_kind", "match") != "match" or row["competition"] != EPL:
         return None
     home, away = ALIASES.get(row["home"]), ALIASES.get(row["away"])
     return (home, away) if home and away and home != away else None

@@ -249,15 +249,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/bookmakers/events")
     def market_events(include_started: bool = False, limit: int = 100, offset: int = 0,
                       search: str = "", competition: str = "", phase: str = "", day: date | None = None,
-                      ids: str | None = None, sort: str = "kickoff"):
+                      ids: str | None = None, sort: str = "kickoff", sport: str = ""):
+        from .sports import ordinary_sport
         event_ids = ids.split(",") if ids is not None else None
-        if (not 1 <= limit <= 200 or offset < 0 or len(search) > 200 or len(competition) > 200
+        if (not 1 <= limit <= 200 or offset < 0 or len(search) > 200 or len(competition) > 200 or (sport and not ordinary_sport(sport))
                 or phase not in ("", "upcoming", "live") or sort not in ("kickoff", "freshness")
                 or (event_ids is not None and (len(event_ids) > 100 or any(not item.isdigit() or len(item) > 20 for item in event_ids)))):
             raise HTTPException(422, "Некорректная страница списка событий.")
         result = repo.market_events(include_started=include_started, limit=limit, offset=offset,
                                    search=search.strip(), competition=competition, phase=phase,
-                                   day=day.isoformat() if day else None, event_ids=event_ids, sort=sort)
+                                   day=day.isoformat() if day else None, event_ids=event_ids, sort=sort, sport=sport)
         current = datetime.now(timezone.utc)
         for event in result["events"]:
             event["age_seconds"] = max(0, int((current - instant(event["capture_started_at"])).total_seconds()))
@@ -272,7 +273,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not document:
             raise HTTPException(404, "Рынки этого события ещё не собраны.")
         age = max(0, int((datetime.now(timezone.utc) - instant(document["capture_started_at"])).total_seconds()))
-        return {**document, "age_seconds": age, "is_stale": age > 180}
+        from .markets import headline_preview
+        return {**document, "age_seconds": age, "is_stale": age > 180, "headline": headline_preview(document)}
 
     @app.get("/api/bookmakers/events/{event_id}/analysis")
     def event_analysis(event_id: str):
@@ -346,7 +348,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(502, public_ai_error(exc)) from exc
             selected = next((market for market in context["markets"] if market["key"] == request.market_key), None)
             payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
-                       "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Матч целиком",
+                       "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
                        "text": text, "context": context}
             repo.save_event_analysis(payload, key)
             return {**payload, "cached": False}

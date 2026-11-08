@@ -5,6 +5,8 @@ import asyncio
 import re
 from urllib.parse import urljoin, urlsplit
 
+from .sports import sport_from_url
+
 LINE_URL = "https://winline.ru/stavki"
 FOOTBALL_PATH = "/stavki/sport/futbol"
 
@@ -13,7 +15,9 @@ def event_id_from_url(value: str) -> str | None:
     parsed = urlsplit(value)
     if parsed.scheme != "https" or parsed.hostname not in ("winline.ru", "www.winline.ru"):
         return None
-    match = re.fullmatch(r"(?:/stavki/event|/stavki/sport/futbol(?:/[a-zA-Z0-9_-]+){1,6})/(\d{1,20})/?", parsed.path)
+    match = re.fullmatch(r"(?:/(?:stavki|live)/event|/(?:stavki|live)/sport/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+){0,6})/(\d{1,20})/?", parsed.path)
+    if '/sport/' in parsed.path and not sport_from_url(value):
+        return None
     return match[1] if match else None
 
 
@@ -21,7 +25,7 @@ def public_event_id(value: str) -> str | None:
     parsed = urlsplit(value)
     if parsed.scheme != 'https' or parsed.hostname not in ('winline.ru', 'www.winline.ru'):
         return None
-    match = re.fullmatch(r'(?:/stavki/event|/stavki/sport/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+){1,6})/(\d{1,20})/?', parsed.path)
+    match = re.fullmatch(r'(?:/(?:stavki|live)/event|/(?:stavki|live)/sport/[a-zA-Z0-9_-]+(?:/[a-zA-Z0-9_-]+){0,6})/(\d{1,20})/?', parsed.path)
     return match[1] if match else None
 
 CARD_CONTEXT = r"""el => {
@@ -51,6 +55,21 @@ CARD_CONTEXT = r"""el => {
         tournament: text(tournament).split('\n').map(value => value.trim()).find(Boolean) || '',
         datetimes: [...new Set(times)].slice(0, 4)};
 }"""
+
+
+async def select_public_line(page) -> dict:
+    """Initialize the normal public line without selecting a particular sport."""
+    parsed = urlsplit(page.url)
+    if parsed.hostname not in ("winline.ru", "www.winline.ru"):
+        raise ValueError("Ожидалась публичная страница Winline.")
+    if parsed.path.rstrip('/') != '/stavki':
+        link = page.get_by_role('link', name='Линия', exact=True).filter(visible=True).first
+        target = urlsplit(urljoin(page.url, await link.get_attribute('href', timeout=15000) or ''))
+        if target.scheme != 'https' or target.hostname not in ('winline.ru', 'www.winline.ru') or target.path.rstrip('/') != '/stavki':
+            raise ValueError('Неожиданная ссылка линии')
+        await link.click(timeout=15000)
+    await page.wait_for_selector('a[href*="/sport/"]', timeout=20000)
+    return {'line_selected': True}
 
 
 async def select_football_line(page) -> dict:
@@ -114,9 +133,9 @@ async def open_event_link(page, *, event_id: int | None = None, teams: list[str]
     """Open a current public event anchor after the homepage has initialized."""
     if teams:
         expression = re.compile(r"^\s*" + re.escape(teams[0]) + r"\s*" + re.escape(teams[1]) + r"\s*$")
-        target = page.locator('a[href*="/stavki/event/"]').filter(has_text=expression).filter(visible=True).first
+        target = page.locator('a[href*="/event/"],a[href*="/sport/"]').filter(has_text=expression).filter(visible=True).first
     elif event_id:
-        target = page.locator(f'a[href$="/stavki/event/{event_id}"],a[href$="/stavki/event/{event_id}/"]').filter(visible=True).first
+        target = page.locator(f'a[href*="/event/"][href$="/{event_id}"],a[href*="/event/"][href$="/{event_id}/"],a[href*="/sport/"][href$="/{event_id}"],a[href*="/sport/"][href$="/{event_id}/"]').filter(visible=True).first
     else:
         raise ValueError("Нужны ID или обе команды для выбора текущей ссылки.")
     address = urlsplit(urljoin(page.url, await target.get_attribute("href", timeout=15000) or ""))

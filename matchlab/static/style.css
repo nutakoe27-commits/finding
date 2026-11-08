@@ -800,3 +800,16 @@ main { margin-right:330px; max-width:none; padding:0 27px; }
 body.without-ai-desk main { margin-right:0; }
 body.without-ai-desk #ai-desktop-host { display:none; }
 @media(max-width:1400px) { .forecast-grid.manual-mode { grid-template-columns:1fr; } }
+.sport-navigation { display:flex; gap:12px; align-items:center; margin:0 0 25px; min-width:0; }
+.sport-tabs { display:flex; flex:1; min-width:0; gap:6px; overflow-x:auto; padding:2px 0 8px; scrollbar-width:thin; scrollbar-color:#6b513d transparent; }
+.sport-tab { flex-shrink:0; white-space:nowrap; min-height:39px; border:1px solid var(--line); background:#1b211e; color:var(--muted); padding:9px 13px; font-size:12px; }
+.sport-tab.active { color:#ffc096; border-color:#9b643e; background:#3c2c20; }
+.sport-tab:hover { border-color:#9b643e; }
+#sport-filter { max-width:190px; font-size:11px; }
+.odds-strip { grid-template-columns:repeat(var(--odds-count,3),minmax(0,1fr)); }
+.headline-box { align-self:center; min-width:0; }
+.headline-caption { color:var(--muted); font-size:9px; line-height:1.5; margin:0 0 7px; overflow-wrap:anywhere; }
+.odds-tile span { white-space:normal; overflow-wrap:anywhere; text-align:center; }
+@media(max-width:1150px) { .match-card .headline-box { grid-column:2; margin-top:5px; } }
+@media(max-width:1050px) { .match-card .headline-box { grid-column:auto; margin:0; } }
+@media(max-width:650px) { .sport-navigation { flex-direction:column; align-items:stretch; gap:9px; margin-bottom:20px; } .sport-tabs { flex:auto; width:100%; } #sport-filter { max-width:none; width:100%; } .sport-tab { font-size:11px; min-height:37px; } .match-card .headline-box { grid-column:2; margin-top:4px; } .match-card .headline-box .odds-strip { margin:0; } .match-card .odds-tile { flex-direction:column; gap:6px; } .headline-caption { font-size:9px; } }

@@ -1,0 +1,6 @@
+[
+  {"id":"91001","sport":"football","slug":"futbol","label":"Футбол","home":"Брайтон","away":"Брентфорд","competition":"Англия. Премьер-лига","markets":[{"name":"Исход 1X2","period":"осн.время","outcomes":[["П1",1.9],["X",3.85],["П2",3.75]]}]},
+  {"id":"91002","sport":"hockey","slug":"xokkej","label":"Хоккей","home":"Нефтехимик","away":"Локомотив","competition":"Россия. КХЛ","markets":[{"name":"Исход 1X2","period":"осн.время","outcomes":[["П1",2.5],["X",4.0],["П2",2.1]]},{"name":"Победитель","period":"с ОТ и Б","outcomes":[["П1",1.9],["П2",1.9]]},{"name":"Исход 1X2","period":"1 период","outcomes":[["П1",2.0],["X",2.2],["П2",3.0]]}]},
+  {"id":"91003","sport":"tennis","slug":"tennis","label":"Теннис","home":"Шелтон Б.","away":"Алькарас К.","competition":"ATP. Тестовый турнир","markets":[{"name":"Победитель","period":"Матч","outcomes":[["П1",4.0],["П2",1.25]]},{"name":"Победитель","period":"1 сет","outcomes":[["П1",2.8],["П2",1.4]]}]},
+  {"id":"91004","sport":"motorsport","slug":"avtosport","label":"Автоспорт","title":"Тестовая гонка","competition":"Тестовый чемпионат","markets":[{"name":"Победитель","period":"Гонка","outcomes":[["Пилот A",2.5],["Пилот B",3.0],["Пилот C",6.0],["Пилот D",9.0]]}]}
+]

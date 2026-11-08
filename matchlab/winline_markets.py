@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from .bookmakers import DATE_RE, EPL, FORMAT as QUOTE_FORMAT, instant, iso, kickoff, lines, make_snapshot
 from .markets import FORMAT, identity, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id
+from .sports import sport_from_url, sport_label
 
 PARSER_VERSION = "winline-marketbook-dom-v1"
 
@@ -28,8 +29,10 @@ MARKETS_SCRIPT = r"""() => {
     const titleText = el => text(names(el)).split('\n')[0].trim();
     const dateText = text(top && top.querySelector('.prematch-info'));
     const groups = [...root.querySelectorAll('h2,h3')].filter(el => !el.closest('.market-header'));
-    const isPeriod = value => /^(?:осн\.?\s*время|матч|\d+\s*тайм|\d+[-–]\d+\s*мин\.?)$/i.test(value);
-    const inTitle = value => (value.match(/осн\.?\s*время|\d+\s*тайм/i) || [null])[0];
+    const isPeriod = value => /^(?:осн\.?\s*время|основное\s*время|матч|бой|гонка|заезд|встреча|с\s*(?:уч[её]том\s*)?(?:ОТ|овертайм|буллит|тайбрейк).*|\d+(?:-?й)?\s*(?:тайм|период|четверть|сет|партия|гейм|раунд|иннинг)|(?:сет|гейм|раунд|период|четверть|иннинг)\s*\d+|\d+[-–]\d+\s*мин\.?)$/i.test(value);
+    const inTitle = value => (value.match(/осн\.?\s*время|\d+(?:-?й)?\s*(?:тайм|период|четверть|сет|партия|гейм|раунд|иннинг)|с\s*(?:уч[её]том\s*)?ОТ(?:\s*и\s*Б)?/i) || [null])[0];
+    const titleRoot = document.querySelector('.ww-markets__stickybar,.marketbook-header--prematch,.marketbook-header--live');
+    const eventTitle = !home && !away && titleRoot && titleRoot.querySelector('h1,h2');
     const variants = new Map();
     const unsupported = [];
     let hidden = 0;
@@ -100,7 +103,7 @@ MARKETS_SCRIPT = r"""() => {
         }
     }
     const allButtons = [...root.querySelectorAll('button.market__row-btn')].filter(visible);
-    return {ready: true, home: titleText(home), away: titleText(away), date_text: dateText,
+    return {ready: true, home: titleText(home), away: titleText(away), title: text(eventTitle), date_text: dateText,
         phase: top ? 'prematch' : document.querySelector('.marketbook-header--live') ? 'live' : 'unknown', markets: [...variants.values()],
         market_sections: headers.length, expected_outcomes: allButtons.length,
         unparsed_outcomes: allButtons.length - [...variants.values()].reduce((total, item) => total + item.outcomes.length, 0),
@@ -120,6 +123,9 @@ async def ensure_event_page(page, expected_url: str, metadata: dict | None = Non
         # A short /event link can initialize on the homepage first. Follow its
         # real current anchor when present, exactly as the verified diagnostic.
         try:
+            await page.wait_for_selector('a[href="/stavki"],a[href="https://winline.ru/stavki"]', timeout=15000)
+            if not await page.locator(f'a[href$="/{wanted}"],a[href$="/{wanted}/"]').count():
+                raise ValueError('Current event link is outside the homepage slice')
             await open_event_link(page, event_id=int(wanted))
         except Exception:
             # Ordinary SPA navigation for a link discovered in the public
@@ -133,8 +139,8 @@ async def ensure_event_page(page, expected_url: str, metadata: dict | None = Non
                 raise ValueError('The public application did not initialize')
             await page.evaluate("url => { history.pushState({}, '', url); dispatchEvent(new PopStateEvent('popstate')); }", expected_url)
             await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted, timeout=15000)
-    if '/stavki/sport/' in urlsplit(page.url).path and '/stavki/sport/futbol/' not in urlsplit(page.url).path:
-        return
+    if not sport_from_url(page.url):
+        raise ValueError('Не подтверждён раздел обычного спорта на странице события')
     await page.wait_for_selector('ww-feature-marketbook-dsk button.market-header', timeout=30000)
 
 
@@ -240,8 +246,9 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
 def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict | None = None) -> dict:
     metadata = metadata or {}
     event_id = event_id_from_url(url)
-    if not event_id or '/stavki/sport/futbol/' not in urlsplit(url).path:
-        raise ValueError("Нужна подтверждённая футбольная страница события.")
+    sport = sport_from_url(url)
+    if not event_id or not sport:
+        raise ValueError("Нужна подтверждённая спортивная страница события.")
     start = metadata.get('kickoff_at')
     date_tokens = lines(snapshot.get('date_text', ''))
     date_labels = [token for token in date_tokens if DATE_RE.fullmatch(token)]
@@ -250,8 +257,11 @@ def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict |
     competition = metadata.get('competition', 'Турнир не указан')
     if re.fullmatch(r'/stavki/sport/futbol/angliya/apl/\d+/?', urlsplit(url).path):
         competition = EPL
-    document = {'format': FORMAT, 'source': 'winline', 'sport': 'football', 'source_event_id': event_id,
-                'url': url, 'home': snapshot.get('home') or metadata.get('home'), 'away': snapshot.get('away') or metadata.get('away'),
+    home, away = snapshot.get('home') or metadata.get('home'), snapshot.get('away') or metadata.get('away')
+    title = snapshot.get('title') or metadata.get('title') or None
+    kind = 'match' if home and away else 'outright'
+    document = {'format': FORMAT, 'source': 'winline', 'sport': sport, 'sport_label': sport_label(sport, metadata.get('sport_label')), 'source_event_id': event_id,
+                'event_kind': kind, 'title': title, 'url': url, 'home': home or None, 'away': away or None,
                 'competition': competition, 'kickoff_at': start,
                 'phase': snapshot.get('phase') if snapshot.get('phase') != 'unknown' else metadata.get('phase', 'unknown'),
                 'observed_at': observed_at, 'capture_started_at': snapshot.get('capture_started_at', observed_at),
@@ -263,7 +273,7 @@ def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict |
 
 def primary_quote(document: dict) -> dict | None:
     """Project only an explicit regular-time 1X2 into the existing forecasts."""
-    if document['phase'] != 'prematch' or not document.get('kickoff_at'):
+    if document.get('sport', 'football') != 'football' or document.get('event_kind', 'match') != 'match' or document['phase'] != 'prematch' or not document.get('kickoff_at'):
         return None
     selected = []
     names = {'П1': 'home', '1': 'home', 'X': 'draw', 'Х': 'draw', 'П2': 'away', '2': 'away'}

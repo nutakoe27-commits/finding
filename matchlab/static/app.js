@@ -7,6 +7,7 @@ const state = {
   analysisContext:null, detailTab:"markets", route:"", phase:"upcoming", catalogReturn:"#matches",
   favorites:new Set(), historyRequest:0, statusRequest:0, explainRequest:0,
   aiBusy:false, predicting:false, pendingSelection:null, toastTimer:null,
+  sport:"football", sports:[],
 };
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const localDate = (value) =>
@@ -409,18 +410,52 @@ function showView(id) {
   document.querySelectorAll("[data-view]").forEach(view => { view.hidden = view.id !== id; });
 }
 function mainMarket(document) {
+  if (document.headline?.key) return document.markets.find(market => market.key === document.headline.key);
   return document.markets.find(market => /^Исход\s+1[XХ]2$/i.test(market.name) && !market.parameter && ["оснвремя","основноевремя"].includes((market.period || "").replace(/[.\s]/g, "").toLowerCase()));
 }
-function oddsStrip(prices, eventId, selectable = false) {
+function eventTitle(event) {
+  return event.title || [event.home,event.away].filter(Boolean).join(" — ") || "Спортивное событие";
+}
+function sportLabel(key) {
+  return state.sports.find(sport => sport.key === key)?.label || ({football:"Футбол",hockey:"Хоккей",tennis:"Теннис",basketball:"Баскетбол",volleyball:"Волейбол",table_tennis:"Настольный теннис"})[key] || key || "Весь спорт";
+}
+function renderSports(sports = state.sports) {
+  state.sports = sports;
+  const selected = state.sport;
+  const select = $("sport-filter");
+  select.replaceChildren(el("option", "", "Все виды спорта"), ...sports.map(sport => { const option = el("option", "", `${sport.label} · ${sport.total}`); option.value = sport.key; return option; }));
+  select.options[0].value = ""; select.value = selected;
+  const popular = ["","football","hockey","tennis","basketball","volleyball","table_tennis"];
+  if (selected && !popular.includes(selected)) popular.push(selected);
+  $("sport-tabs").replaceChildren(...popular.map(key => {
+    const button = el("button", key === selected ? "sport-tab active" : "sport-tab", sportLabel(key)); button.type = "button";
+    button.setAttribute("aria-pressed", String(key === selected)); button.addEventListener("click", () => chooseSport(key)); return button;
+  }));
+  if (state.route === "#matches") {
+    $("catalog-title").textContent = sportLabel(selected);
+    $("catalog-eyebrow").textContent = `${sportLabel(selected).toLocaleUpperCase("ru-RU")} · WINLINE`;
+    $("breadcrumb").textContent = `Линия / ${sportLabel(selected)}`;
+  }
+}
+function chooseSport(key) {
+  state.sport = key; state.marketOffset = 0;
+  $("competition-filter").value = ""; $("match-search").value = "";
+  try { localStorage.setItem("matchlab:sport:v1",key); } catch { /* The selection still works for this page. */ }
+  renderSports(); loadCatalogue();
+}
+function oddsStrip(preview, eventId, selectable = false) {
   const strip = el("div", "odds-strip");
-  for (const [side,label] of [["home","П1"],["draw","X"],["away","П2"]]) {
+  const outcomes = preview.outcomes || [["home","П1"],["draw","X"],["away","П2"]].map(([side,name]) => ({side,name,odds:preview[side],state:"open"}));
+  strip.style.setProperty("--odds-count",outcomes.length);
+  for (const outcome of outcomes) {
     const tile = el(selectable ? "button" : "div", "odds-tile");
     if (selectable) {
       tile.type = "button";
-      tile.setAttribute("aria-label", `${label}, коэффициент ${prices[side]}. Выбрать для разбора ИИ`);
-      tile.addEventListener("click", () => openSelection(eventId, side));
+      tile.disabled = outcome.state !== "open";
+      tile.setAttribute("aria-label", `${outcome.name}, коэффициент ${outcome.odds ?? "недоступен"}. Выбрать для разбора ИИ`);
+      tile.addEventListener("click", () => openSelection(eventId, preview.key ? {marketKey:preview.key,outcomeKey:outcome.key} : outcome.side));
     }
-    tile.append(el("span", "", label), el("strong", "", Number(prices[side]).toFixed(2)));
+    tile.append(el("span", "", outcome.name), el("strong", "", outcome.state === "open" ? Number(outcome.odds).toFixed(2) : outcome.state === "suspended" ? "Пауза" : "Недоступен"));
     strip.append(tile);
   }
   return strip;
@@ -459,7 +494,7 @@ async function loadCatalogue() {
       renderCatalogue({events:[],total:0,offset:0,limit:30});
       return;
     }
-    const query = new URLSearchParams({offset:String(state.marketOffset),limit:"30",include_started:"true",phase:state.phase,search:$("match-search").value.trim(),competition:$("competition-filter").value,sort:$("sort-filter").value});
+    const query = new URLSearchParams({offset:String(state.marketOffset),limit:"30",include_started:"true",phase:state.phase,sport:state.sport,search:$("match-search").value.trim(),competition:$("competition-filter").value,sort:$("sort-filter").value});
     const day = $("day-filter").value;
     if (day) query.set("day", dayValue(day === "tomorrow" ? 1 : 0));
     if (favorites) query.set("ids", [...state.favorites].join(","));
@@ -480,6 +515,7 @@ function renderCatalogue(result) {
   showError("market-list-error", "");
   const favoriteView = state.route === "#favorites";
   if (result.summary) {
+    renderSports(result.sports || state.sports);
     $("nav-matches").textContent = result.summary.upcoming;
     $("count-upcoming").textContent = result.summary.upcoming;
     $("count-live").textContent = result.summary.live;
@@ -488,7 +524,7 @@ function renderCatalogue(result) {
     setOptions("competition-filter", result.competitions, "Все турниры");
     renderLeagues(result.competitions);
   }
-  $("market-list-summary").textContent = result.total ? `Найдено матчей: ${result.total} · ${result.offset + 1}–${result.offset + result.events.length}` : "Совпадений нет";
+  $("market-list-summary").textContent = result.total ? `Найдено событий: ${result.total} · ${result.offset + 1}–${result.offset + result.events.length}` : "Совпадений нет";
   $("catalog-page").textContent = result.total ? `${Math.floor(result.offset / result.limit) + 1} / ${Math.ceil(result.total / result.limit)}` : "";
   $("market-prev").disabled = result.offset === 0;
   $("market-next").disabled = result.offset + result.events.length >= result.total;
@@ -500,8 +536,9 @@ function renderCatalogue(result) {
   const focused = document.activeElement?.dataset.favorite;
   const rows = [], groups = new Map();
   for (const event of result.events) {
-    if (!groups.has(event.competition)) groups.set(event.competition, []);
-    groups.get(event.competition).push(event);
+    const group = state.sport ? event.competition : `${event.sport_label || sportLabel(event.sport)} · ${event.competition}`;
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(event);
   }
   for (const [competition, events] of groups) {
     const group = el("section", "tournament-group");
@@ -514,10 +551,16 @@ function renderCatalogue(result) {
       favorite.setAttribute("aria-label", state.favorites.has(event.source_event_id) ? "Удалить матч из избранного" : "Добавить матч в избранное");
       favorite.addEventListener("click", () => toggleFavorite(event.source_event_id)); card.append(favorite);
       const info = el("div", "match-info");
-      const title = el("a", "match-card-title", `${event.home}\n${event.away}`); title.href = `#match/${event.source_event_id}`;
+      const title = el("a", "match-card-title", event.title || `${event.home}\n${event.away}`); title.href = `#match/${event.source_event_id}`;
       const meta = el("div", "match-card-meta"); meta.append(el("span", event.phase === "live" ? "phase-label live" : "phase-label", phaseLabel(event)), el("span", "", event.kickoff_at ? moscowTime(event.kickoff_at) : "Время не указано"));
       info.append(title, meta); card.append(info);
-      const prices = event.primary_odds ? oddsStrip(event.primary_odds, event.source_event_id, true) : el("div", "odds-placeholder", "Коэффициенты — в рынках матча"); card.append(prices);
+      const headline = event.headline;
+      const quoteBox = el("div", "headline-box");
+      if (headline) {
+        quoteBox.append(el("p", "headline-caption", [headline.name,headline.period,headline.outcome_count > 3 ? `${headline.outcome_count} исходов` : null].filter(Boolean).join(" · ")), oddsStrip(headline,event.source_event_id,true));
+      } else if (event.primary_odds) quoteBox.append(oddsStrip(event.primary_odds,event.source_event_id,true));
+      else quoteBox.append(el("div","odds-placeholder","Коэффициенты — в рынках события"));
+      card.append(quoteBox);
       const actions = el("div", "match-actions");
       const ai = el("button", "match-ai-button", "Разбор ИИ"); ai.type = "button";
       ai.addEventListener("click", () => openSelection(event.source_event_id, null, true));
@@ -563,10 +606,10 @@ function renderAISelection() {
   const document = state.marketDocument;
   if (!document) { syncAIButton(); return; }
   $("ai-empty").hidden = true; $("ai-selection").hidden = false;
-  $("ai-match-label").textContent = `${document.home} — ${document.away}`;
+  $("ai-match-label").textContent = eventTitle(document);
   const market = document.markets.find(item => item.key === state.selection?.marketKey);
   const outcome = market?.outcomes.find(item => item.key === state.selection?.outcomeKey);
-  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter].filter(Boolean).join(" · ") : "Матч целиком · основные рынки";
+  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter].filter(Boolean).join(" · ") : "Событие целиком · основные рынки";
   $("ai-outcome-label").hidden = !outcome;
   $("ai-outcome-label").textContent = outcome ? `${outcome.name} · ${outcome.odds ?? "недоступен"}` : "";
   $("ai-clear-selection").hidden = !market;
@@ -593,9 +636,9 @@ function applyPendingSelection() {
   const pending = state.pendingSelection;
   if (!pending || pending.id !== state.eventId || !state.marketDocument) return;
   state.pendingSelection = null;
-  const market = mainMarket(state.marketDocument);
+  const market = typeof pending.side === "object" && pending.side ? state.marketDocument.markets.find(item => item.key === pending.side.marketKey) : mainMarket(state.marketDocument);
   const keys = {home:["П1","1"],draw:["X","Х"],away:["П2","2"]};
-  const outcome = pending.side && market ? market.outcomes.find(item => keys[pending.side].includes(item.name.toUpperCase())) : null;
+  const outcome = pending.side && market ? market.outcomes.find(item => typeof pending.side === "object" ? item.key === pending.side.outcomeKey : keys[pending.side].includes(item.name.toUpperCase())) : null;
   selectAI(outcome ? market : null, outcome);
   if (pending.auto) requestAI();
   if (pending.side) $("ai-desk").scrollIntoView({behavior:"smooth",block:"nearest"});
@@ -610,8 +653,10 @@ async function loadEvent(refresh = false) {
   const document = detail.value;
   state.analysisContext = context.status === "fulfilled" ? context.value : null;
   $("event-header").hidden = false;
-  $("market-detail-title").textContent = `${document.home} — ${document.away}`;
-  $("event-competition").textContent = document.competition;
+  $("market-detail-title").textContent = eventTitle(document);
+  $("event-competition").textContent = `${document.sport_label || sportLabel(document.sport)} · ${document.competition}`;
+  $("breadcrumb").textContent = `Линия / ${document.sport_label || sportLabel(document.sport)}`;
+  $("tab-analysis").hidden = document.sport !== "football" || document.event_kind === "outright";
   $("event-kickoff").textContent = document.kickoff_at ? `${moscowTime(document.kickoff_at)} МСК` : "Начало встречи в снимке не указано";
   $("event-phase").textContent = phaseLabel(document);
   $("event-phase").classList.toggle("live", document.phase === "live");
@@ -620,14 +665,8 @@ async function loadEvent(refresh = false) {
   $("event-freshness").classList.toggle("stale", document.is_stale);
   $("market-detail-meta").textContent = `Источник: Winline. ${document.coverage.captured_markets} рынков, ${document.coverage.captured_outcomes} исходов. Наблюдение: ${moscowTime(document.capture_started_at)}–${moscowTime(document.observed_at)} МСК. ${document.coverage.complete ? "Полный снимок страницы." : "Снимок неполный: часть рынков могла не загрузиться."}`;
   $("market-count").textContent = document.coverage.captured_markets;
-  const market = mainMarket(document);
-  const prices = {};
-  for (const outcome of market?.outcomes || []) {
-    const side = ({"П1":"home","1":"home","X":"draw","Х":"draw","П2":"away","2":"away"})[outcome.name.toUpperCase()];
-    if (side && outcome.state === "open") prices[side] = outcome.odds;
-  }
-  $("event-primary").hidden = Object.keys(prices).length !== 3;
-  $("event-primary").replaceChildren(...(Object.keys(prices).length === 3 ? [oddsStrip(prices,id,true)] : []));
+  $("event-primary").hidden = !document.headline;
+  $("event-primary").replaceChildren(...(document.headline ? [el("p","headline-caption",[document.headline.name,document.headline.period,document.headline.outcome_count > 3 ? `${document.headline.outcome_count} исходов` : null].filter(Boolean).join(" · ")), oddsStrip(document.headline,id,true)] : []));
   if (state.selection && !document.markets.some(item => item.key === state.selection.marketKey && (!state.selection.outcomeKey || item.outcomes.some(outcome => outcome.key === state.selection.outcomeKey)))) {
     state.selection = null; clearAIOutput(); toast("Рынки изменились. Выберите исход заново.");
   }
@@ -727,7 +766,7 @@ async function loadHistory() {
     showError("history-error", ""); $("history-empty").hidden = result.analyses.length > 0;
     $("history-list").replaceChildren(...result.analyses.map(analysis => {
       const card = el("article", "panel history-card"), info = el("div");
-      info.append(el("h2", "", `${analysis.event.home} — ${analysis.event.away}`), el("p", "small muted", `${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
+      info.append(el("h2", "", eventTitle(analysis.event)), el("p", "small muted", `${analysis.event.sport_label || "Футбол"} · ${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
       const excerpt = el("p", "history-excerpt", analysis.text.length > 200 ? analysis.text.slice(0,200) + "…" : analysis.text); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
@@ -740,7 +779,7 @@ async function loadSavedAnalysis(id) {
     if (request !== state.marketDetailRequest || state.route !== `#analysis/${id}`) return;
     const context = analysis.context;
     $("manual-heading").hidden = false;
-    $("manual-heading").querySelector("h1").textContent = `${analysis.event.home} — ${analysis.event.away}`;
+    $("manual-heading").querySelector("h1").textContent = eventTitle(analysis.event);
     $("manual-heading").querySelector(".subtitle").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
@@ -789,10 +828,10 @@ async function route() {
   showError("detail-error", "");
   if (hash === "#matches" || hash === "#favorites") {
     showView("view-matches");
-    $("catalog-title").textContent = hash === "#favorites" ? "Избранное" : "Футбол";
+    $("catalog-title").textContent = hash === "#favorites" ? "Избранное" : sportLabel(state.sport);
     $("catalog-subtitle").textContent = hash === "#favorites" ? "Ваши матчи в этом браузере. Сохраните звёздочкой нужные встречи." : "Выберите матч или коэффициент — получите разбор ИИ.";
     $("catalog-stats").hidden = hash === "#favorites";
-    $("breadcrumb").textContent = hash === "#favorites" ? "Линия / Избранное" : "Линия / Футбол";
+    $("breadcrumb").textContent = hash === "#favorites" ? "Линия / Избранное" : `Линия / ${sportLabel(state.sport)}`;
     state.catalogReturn = hash; state.marketOffset = 0; loadCatalogue();
   } else if (hash === "#history") {
     showView("view-history"); $("breadcrumb").textContent = "История / Разборы ИИ"; loadHistory();
@@ -806,7 +845,7 @@ async function route() {
     $("forecast").classList.toggle("manual-mode",hash === "#calculator");
     if (match) {
       state.eventId = match[1]; $("breadcrumb").textContent = "Линия / Матч";
-      $("match-back").href = state.catalogReturn; $("match-back").textContent = "← К матчам";
+      $("match-back").href = state.catalogReturn; $("match-back").textContent = "← К линии";
       $("market-search").value = ""; $("market-group-filter").value = "";
       $("market-groups").replaceChildren(el("p","small muted","Загружаем рынки…"));
       setDetailTab("markets"); loadEvent();
@@ -871,11 +910,13 @@ for (const id of ["competition-filter","day-filter","sort-filter"]) $(id).addEve
 document.querySelectorAll("[data-phase]").forEach(button => button.addEventListener("click", () => { state.phase = button.dataset.phase; state.marketOffset = 0; syncPhase(); loadCatalogue(); }));
 $("market-search").addEventListener("input",renderMarketGroups);
 $("market-group-filter").addEventListener("change",renderMarketGroups);
+$("sport-filter").addEventListener("change", () => chooseSport($("sport-filter").value));
 for (const tab of ["markets","analysis"]) $("tab-" + tab).addEventListener("click", () => setDetailTab(tab));
-$("event-tabs").addEventListener("keydown", event => { if (!["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return; event.preventDefault(); const tab = event.key === "Home" ? "markets" : event.key === "End" ? "analysis" : state.detailTab === "markets" ? "analysis" : "markets"; setDetailTab(tab); $("tab-" + tab).focus(); });
+$("event-tabs").addEventListener("keydown", event => { if ($("tab-analysis").hidden || !["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return; event.preventDefault(); const tab = event.key === "Home" ? "markets" : event.key === "End" ? "analysis" : state.detailTab === "markets" ? "analysis" : "markets"; setDetailTab(tab); $("tab-" + tab).focus(); });
 window.addEventListener("hashchange",route);
 window.addEventListener("resize",moveAIDesk);
 window.addEventListener("storage",event => { if (event.key === "matchlab:favorites:v1") { state.favorites = readFavorites(); $("nav-favorites").textContent = state.favorites.size; if (["#matches","#favorites"].includes(state.route)) loadCatalogue(); if (state.eventId) updateEventFavorite(); } });
 setInterval(() => { if (document.visibilityState !== "visible") return; loadStatus(); if (["#matches","#favorites"].includes(state.route)) loadCatalogue(); else if (state.eventId) loadEvent(true); },30000);
 state.favorites = readFavorites(); $("as-of").value = today;
+try { const key = localStorage.getItem("matchlab:sport:v1"); if (key !== null && (!key || /^[a-z][a-z0-9_-]{0,49}$/.test(key))) state.sport = key; } catch { /* Default to football when storage is unavailable. */ }
 loadStatus(); route();

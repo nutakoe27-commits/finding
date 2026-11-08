@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from .bookmakers import instant, iso
 from .capture import safe_url
 from .winline_browser import event_id_from_url
+from .sports import ordinary_sport, sport_from_url, sport_label
 
 FORMAT = "matchlab.event-markets.v1"
 
@@ -44,14 +45,49 @@ def main_odds(document: dict) -> dict | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+def headline_market(document: dict) -> dict | None:
+    """Pick an explicit match-winner market; preserve its labels and scope."""
+    winners = []
+    for market in document.get("markets", []):
+        name, period = market["name"], market.get("period") or ""
+        if not re.fullmatch(r"(?:Исход(?:\s+(?:1[XХ]2|12))?|Победитель(?:\s+матча)?|Победа(?:\s+в\s+матче)?|Победит)(?:\s*\([^)]*\))?", name, re.I):
+            continue
+        if market.get("parameter") or re.search(r"\b(?:тайм|четверт\w*|период|сет|гейм|раунд|карта|мин|партия|иннинг)\d*\b", period + " " + name, re.I):
+            continue
+        labels = [item["name"].casefold() for item in market["outcomes"]]
+        if len(labels) < 2 or len(labels) != len(set(labels)):
+            continue
+        rank = 0 if re.sub(r"[.\s]", "", period).lower() in ("оснвремя", "основноевремя") else 1 if period.lower() == "матч" else 2
+        winners.append((rank, market))
+    if not winners:
+        return None
+    winners.sort(key=lambda item: item[0])
+    rank, chosen = winners[0]
+    if len([item for item in winners if item[0] == rank]) != 1:
+        return None
+    return chosen
+
+
+def headline_preview(document: dict) -> dict | None:
+    market = headline_market(document)
+    if not market:
+        return None
+    return {key: market.get(key) for key in ("key", "name", "period", "parameter")} | {
+        "outcomes": market["outcomes"][:3], "outcome_count": len(market["outcomes"])}
+
+
 def validate_event_markets(value: dict) -> dict:
-    if not isinstance(value, dict) or value.get("format") != FORMAT or value.get("source") != "winline" or value.get("sport") != "football":
-        raise ValueError("Нужен документ футбольных рынков Winline.")
+    if not isinstance(value, dict) or value.get("format") != FORMAT or value.get("source") != "winline" or not ordinary_sport(value.get("sport")):
+        raise ValueError("Нужен документ спортивных рынков Winline.")
+    sport = value["sport"]
     event_id = value.get("source_event_id")
     if not isinstance(event_id, str) or not re.fullmatch(r"\d{1,20}", event_id):
         raise ValueError("Некорректный ID события.")
     if event_id_from_url(value.get("url", "")) != event_id:
         raise ValueError("Страница не соответствует событию Winline.")
+    url_sport = sport_from_url(value["url"])
+    if (url_sport and url_sport != sport) or (not url_sport and sport != "football"):
+        raise ValueError("Вид спорта не соответствует разделу источника.")
     observed = instant(value.get("observed_at"))
     capture_started = instant(value.get("capture_started_at", value.get("observed_at")))
     if capture_started > observed or observed - capture_started > timedelta(hours=1):
@@ -62,13 +98,18 @@ def validate_event_markets(value: dict) -> dict:
     start = instant(value["kickoff_at"]) if value.get("kickoff_at") else None
     if start and (start - observed > timedelta(days=400) or (phase == "prematch" and start <= observed)):
         raise ValueError("Некорректное предматчевое время.")
-    result = {"format": FORMAT, "source": "winline", "sport": "football", "source_event_id": event_id,
-              "url": safe_url(value["url"]), "home": label(value.get("home"), 200), "away": label(value.get("away"), 200),
+    kind = value.get("event_kind", "match")
+    if kind not in ("match", "outright"):
+        raise ValueError("Некорректный тип события.")
+    result = {"format": FORMAT, "source": "winline", "sport": sport, "source_event_id": event_id,
+              "sport_label": label(sport_label(sport, value.get("sport_label")), 100), "event_kind": kind,
+              "title": label(value.get("title"), 300, optional=kind == "match"),
+              "url": safe_url(value["url"]), "home": label(value.get("home"), 200, optional=kind == "outright"), "away": label(value.get("away"), 200, optional=kind == "outright"),
               "competition": label(value.get("competition", "Турнир не указан"), 200),
               "phase": phase, "kickoff_at": iso(start) if start else None, "observed_at": iso(observed),
               "capture_started_at": iso(capture_started),
               "parser_version": label(value.get("parser_version"), 80)}
-    if result["home"] == result["away"]:
+    if kind == "match" and result["home"] == result["away"]:
         raise ValueError("Нужны разные участники события.")
     incoming = value.get("markets")
     if not isinstance(incoming, list) or not 1 <= len(incoming) <= 10000:

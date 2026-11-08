@@ -24,3 +24,8 @@ from the user's successful Sunderland–Chelsea event report. The canonical
 URL and observed CSS class names come from that report. Browser tests build
 synthetic HTML around this data and use a future test kickoff; this is not
 a captured HTML document or evidence that every current market is parsed.
+
+`multisport_projection.json` — синтетические контракты футбола, хоккея, тенниса
+и гонок. Slug разделов взят из публичной навигации в пользовательском снимке.
+Рынки и коэффициенты служат только тестовыми входами, не являются текущими
+наблюдениями сайта. Даты и признаки полноты добавляются тестовым кодом.

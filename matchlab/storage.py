@@ -94,6 +94,7 @@ class Repository:
                     payload BLOB NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS bookmaker_market_kickoff ON bookmaker_event_markets(kickoff_at);
+                CREATE INDEX IF NOT EXISTS bookmaker_market_sport ON bookmaker_event_markets(json_extract(metadata, '$.sport'), kickoff_at);
             """)
 
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:
@@ -276,18 +277,21 @@ class Repository:
         return status
 
     def import_event_markets(self, value: dict) -> dict:
-        from .markets import main_odds, validate_event_markets
+        from .markets import main_odds, headline_preview, validate_event_markets
         document = validate_event_markets(value)
         if datetime.fromisoformat(document["observed_at"]) > datetime.now(timezone.utc) + timedelta(minutes=2):
             raise ValueError("Время наблюдения находится в будущем.")
         event_id, observed = document["source_event_id"], document["observed_at"]
         metadata = {key: item for key, item in document.items() if key != "markets"}
         metadata["primary_odds"] = main_odds(document)
+        metadata["headline"] = headline_preview(document)
         content = {key: item for key, item in document.items() if key not in ("observed_at", "capture_started_at")}
         encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         digest = hashlib.sha256(encoded).hexdigest()
         with self.connection() as db:
-            previous = db.execute("SELECT observed_at, content_hash FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
+            previous = db.execute("SELECT observed_at, content_hash, json_extract(metadata, '$.sport') AS sport FROM bookmaker_event_markets WHERE event_id = ?", (event_id,)).fetchone()
+            if previous and previous['sport'] != document['sport']:
+                raise ValueError('Вид спорта существующего события не может измениться.')
             if previous and observed < previous["observed_at"]:
                 return {"updated": False, "reason": "older_observation", "source_event_id": event_id}
             if previous and not document['coverage']['complete']:
@@ -317,10 +321,13 @@ class Repository:
                 "observed_at": row["observed_at"], "changed_at": row["changed_at"]}
 
     def market_events(self, *, include_started=False, limit=100, offset=0,
-                      search="", competition="", phase="", day=None, event_ids=None, sort="kickoff") -> dict:
+                      search="", competition="", phase="", day=None, event_ids=None, sort="kickoff", sport="") -> dict:
         query, params, clauses = "FROM bookmaker_event_markets", [], []
         current = datetime.now(timezone.utc)
         now = current.isoformat(timespec='microseconds')
+        if sport:
+            clauses.append("json_extract(metadata, '$.sport') = ?")
+            params.append(sport)
         if not include_started:
             clauses.append("phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)")
             params.append(now)
@@ -330,7 +337,7 @@ class Repository:
         elif phase == "live":
             clauses.append("phase = 'live'")
         if search:
-            clauses.append("instr(casefold(json_extract(metadata, '$.home') || ' ' || json_extract(metadata, '$.away') || ' ' || json_extract(metadata, '$.competition')), ?) > 0")
+            clauses.append("instr(casefold(COALESCE(json_extract(metadata, '$.home'), '') || ' ' || COALESCE(json_extract(metadata, '$.away'), '') || ' ' || COALESCE(json_extract(metadata, '$.title'), '') || ' ' || json_extract(metadata, '$.competition')), ?) > 0")
             params.append(search.casefold())
         if competition:
             clauses.append("json_extract(metadata, '$.competition') = ?")
@@ -353,16 +360,25 @@ class Repository:
             # those visible on this page, rather than rebuilding the database
             # or waiting for the crawler to revisit the entire catalogue.
             for event in events:
-                if "primary_odds" not in event:
-                    from .markets import main_odds
+                if "primary_odds" not in event or "headline" not in event:
+                    from .markets import main_odds, headline_preview
                     row = db.execute("SELECT payload FROM bookmaker_event_markets WHERE event_id = ?", (event["source_event_id"],)).fetchone()
-                    event["primary_odds"] = main_odds(json.loads(zlib.decompress(row[0])))
-            competitions = [row[0] for row in db.execute("SELECT DISTINCT json_extract(metadata, '$.competition') FROM bookmaker_event_markets ORDER BY 1")]
+                    document = json.loads(zlib.decompress(row[0]))
+                    event['primary_odds'], event['headline'] = main_odds(document), headline_preview(document)
+            sport_where = " WHERE json_extract(metadata, '$.sport') = ?" if sport else ""
+            sport_params = [sport] if sport else []
+            competitions = [row[0] for row in db.execute("SELECT DISTINCT json_extract(metadata, '$.competition') FROM bookmaker_event_markets" + sport_where + " ORDER BY 1", sport_params)]
             summary = dict(db.execute("""SELECT COUNT(*) AS total,
                 COALESCE(SUM(phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)), 0) AS upcoming,
                 COALESCE(SUM(phase = 'live'), 0) AS live,
                 COALESCE(SUM(json_extract(metadata, '$.capture_started_at') >= ?), 0) AS fresh,
                 MAX(json_extract(metadata, '$.capture_started_at')) AS last_observed_at
-                FROM bookmaker_event_markets""", (now, (current - timedelta(seconds=180)).isoformat(timespec='microseconds'))).fetchone())
+                FROM bookmaker_event_markets""" + sport_where, [now, (current - timedelta(seconds=180)).isoformat(timespec='microseconds'), *sport_params]).fetchone())
+            counts = {row['sport']: dict(row) for row in db.execute("""SELECT json_extract(metadata, '$.sport') AS sport,
+                MAX(json_extract(metadata, '$.sport_label')) AS label, COUNT(*) AS total
+                FROM bookmaker_event_markets GROUP BY 1""")}
+            from .sports import SPORTS, sport_label
+            keys = [item.key for item in SPORTS] + sorted(set(counts) - {item.key for item in SPORTS})
+            sports = [{'key':key, 'label':sport_label(key, counts.get(key, {}).get('label')), 'total':counts.get(key, {}).get('total', 0)} for key in keys]
         return {"events": events, "total": total, "offset": offset, "limit": limit,
-                "competitions": competitions, "summary": summary}
+                "competitions": competitions, "summary": summary, "sports": sports}

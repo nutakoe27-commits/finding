@@ -1,4 +1,4 @@
-"""Scrapy/Playwright football inventory and per-event market collection."""
+"""Scrapy/Playwright sports inventory and per-event market collection."""
 from __future__ import annotations
 
 import argparse
@@ -8,6 +8,7 @@ import gzip
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -23,9 +24,31 @@ from .bookmakers import lines
 from .capture import DOM_SCRIPT
 from .markets import validate_event_markets
 from .server_scraper import Publisher, local_api
-from .winline_browser import FOOTBALL_PATH, LINE_URL, event_id_from_url, select_football_line
+from .winline_browser import LINE_URL, event_id_from_url, select_public_line
 from .winline_markets import ensure_event_page, market_document, primary_quote, read_marketbook
 from .worker_protocol import market_feed
+from .sports import ordinary_sport, sport_from_url, sport_label, EXCLUDED
+
+
+LISTING_SCRIPT = r"""() => {
+    const anchors = [...document.querySelectorAll('a[href*="/sport/"],a[href*="/event/"]')]
+        .filter(el => el.getClientRects().length && !el.closest('form'));
+    return {truncated: anchors.length > 15000, nodes: anchors.slice(0,15000).map(el => {
+        const tournament = el.closest('.block-tournament');
+        const heading = tournament && (tournament.querySelector('h1,h2,h3,.tournament__title,.block-tournament__title') || tournament);
+        return {attrs:{href:el.href},text:(el.innerText || '').trim().slice(0,1200),
+                competition: heading ? (heading.innerText || '').split('\n').map(s=>s.trim()).find(Boolean) : null};
+    })};
+}"""
+
+
+def selected_sports(value: str) -> set[str] | None:
+    if value == 'all':
+        return None
+    keys = value.split(',')
+    if not keys or any(not ordinary_sport(key) for key in keys):
+        raise ValueError('Укажите all или виды спорта через запятую: football,hockey,tennis,basketball')
+    return set(keys)
 
 
 def stamp():
@@ -54,7 +77,7 @@ def listing_url(value: str) -> str | None:
     parsed = urlsplit(value)
     if parsed.scheme != 'https' or parsed.hostname not in ('winline.ru', 'www.winline.ru') or event_id_from_url(value):
         return None
-    if parsed.path.rstrip('/') != FOOTBALL_PATH and not parsed.path.startswith(FOOTBALL_PATH + '/'):
+    if not sport_from_url(value):
         return None
     # Route graph comes from real anchors; never enumerate guessed event IDs.
     return urlunsplit(('https', 'winline.ru', parsed.path, '', ''))
@@ -66,9 +89,15 @@ def event_candidates(payload: dict) -> list[dict]:
         url = node.get('attrs', {}).get('href', '')
         event_id = event_id_from_url(url)
         teams = lines(node.get('text', ''))
-        if event_id and len(teams) == 2:
-            result[event_id] = {'source_event_id': event_id, 'url': url.split('?', 1)[0],
-                                'home': teams[0], 'away': teams[1]}
+        if event_id and teams and len(' '.join(teams)) <= 300:
+            event = {'source_event_id': event_id, 'url': url.split('?', 1)[0]}
+            if len(teams) == 2:
+                event.update(home=teams[0], away=teams[1])
+            else:
+                event['title'] = ' '.join(teams)
+            if node.get('competition'):
+                event['competition'] = node['competition']
+            result[event_id] = event
     return list(result.values())
 
 
@@ -93,8 +122,10 @@ class MarketPipeline:
         finally:
             temporary.unlink(missing_ok=True)
         self.crawler.stats.inc_value('markets/saved_events')
+        spider.sport_counts.setdefault(document['sport'], {'saved':0, 'complete':0, 'failed':0})['saved'] += 1
         if document['coverage']['complete']:
             self.crawler.stats.inc_value('markets/complete_events')
+            spider.sport_counts[document['sport']]['complete'] += 1
         if spider.publisher:
             try:
                 reply = await spider.publisher.request('POST', '/api/bookmakers/events/ingest', document)
@@ -123,7 +154,7 @@ class WinlineSpider(scrapy.Spider):
     allowed_domains = ['winline.ru']
 
     def __init__(self, *, state_dir, api_url, no_publish=False, seed=None, max_events=5000,
-                 max_listings=200, max_scrolls=200, check=False, interval=60, **kwargs):
+                 max_listings=200, max_scrolls=200, check=False, interval=60, sports='all', **kwargs):
         super().__init__(**kwargs)
         self.state_dir = Path(state_dir)
         self.publisher = None if no_publish else Publisher(api_url, os.getenv('BOOKMAKER_INGEST_TOKEN', ''))
@@ -133,6 +164,10 @@ class WinlineSpider(scrapy.Spider):
         self.max_events, self.max_listings, self.max_scrolls = max_events, max_listings, max_scrolls
         self.events, self.listings = set(), set()
         self.last_status = 0.0
+        self.sports = selected_sports(sports)
+        self.sport_counts = {}
+        self.sport_labels = {}
+        self.sport_queued = {}
 
     async def publish_status(self, state):
         self.last_status = time.monotonic()
@@ -161,7 +196,9 @@ class WinlineSpider(scrapy.Spider):
     async def start(self):
         if self.publisher:
             try:
-                await self.publisher.request('GET', '/api/bookmakers/events?limit=1')
+                capabilities = await self.publisher.request('GET', '/api/bookmakers/events?limit=1')
+                if (self.sports is None or self.sports - {'football'}) and not isinstance(capabilities.get('sports'), list):
+                    raise ValueError('Обновите приложение на VPS: приёмник ещё не поддерживает несколько видов спорта')
             except ValueError as exc:
                 self.crawler.stats.inc_value('markets/receiver_unavailable')
                 self.logger.error('Receiver: %s', str(exc))
@@ -173,29 +210,47 @@ class WinlineSpider(scrapy.Spider):
             return
         self.listings.update((LINE_URL, 'https://winline.ru/'))
         yield self.request(LINE_URL, self.parse_listing,
-                           playwright_page_methods=[PageMethod(select_football_line)])
-        # The homepage supplies additional current links, including upcoming
-        # football fixtures. Other sports are rejected on their canonical page.
+                           playwright_page_methods=[PageMethod(select_public_line)], listing_depth=0)
+        # Both entrypoints contribute actual current links. No sport URLs or
+        # numeric event IDs are constructed speculatively.
         yield self.request('https://winline.ru/', self.parse_listing)
 
     async def parse_listing(self, response):
         page = response.meta['playwright_page']
         candidates, links, stable, previous, bottom = {}, set(), 0, None, False
         try:
-            await page.wait_for_selector('a[href*="/event/"],.block-tournament a[href]', timeout=20000)
+            selector = 'a[href*="/event/"],.block-tournament a[href]' if sport_from_url(response.request.url) else 'a[href*="/sport/"]'
+            try:
+                await page.wait_for_selector(selector, timeout=20000)
+            except Exception:
+                text = (await page.locator('body').inner_text())[:20000]
+                if not re.search(r'нет событий|нет доступных|ничего не найдено|событий пока нет', text, re.I):
+                    self.crawler.stats.inc_value('markets/listing_not_ready')
             for _ in range(self.max_scrolls):
-                payload = await page.evaluate(DOM_SCRIPT)
+                payload = await page.evaluate(LISTING_SCRIPT)
+                if payload.get('truncated'):
+                    self.crawler.stats.inc_value('markets/bounds_reached')
                 for event in event_candidates(payload):
+                    sport = sport_from_url(event['url']) or sport_from_url(response.request.url)
+                    if sport and self.sports is not None and sport not in self.sports:
+                        continue
+                    if sport:
+                        event.update(sport=sport, sport_label=self.sport_labels.get(sport, sport_label(sport)))
                     candidates[event['source_event_id']] = event
                 for node in payload.get('nodes', []):
                     target = listing_url(node.get('attrs', {}).get('href', ''))
-                    if target:
+                    sport = sport_from_url(target) if target else None
+                    if target and (self.sports is None or sport in self.sports):
+                        if urlsplit(target).path.rstrip('/').count('/') == 3 and EXCLUDED.search(node.get('text','')):
+                            continue
+                        if urlsplit(target).path.rstrip('/').count('/') == 3:
+                            self.sport_labels[sport] = sport_label(sport, node.get('text'))
                         links.add(target)
                 count = len(candidates)
                 stable = stable + 1 if count == previous else 0
                 previous = count
                 bottom = await page.evaluate("""() => {
-                    const anchors = [...document.querySelectorAll('a[href*="/event/"]')];
+                    const anchors = [...document.querySelectorAll('a[href*="/event/"],.block-tournament a[href*="/sport/"]')];
                     const last = anchors[anchors.length - 1];
                     for (let parent = last && last.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
                         if (parent.scrollHeight > parent.clientHeight && /auto|scroll/.test(getComputedStyle(parent).overflowY)) {
@@ -214,7 +269,10 @@ class WinlineSpider(scrapy.Spider):
         finally:
             await page.close()
         self.crawler.stats.inc_value('markets/listing_pages')
-        for event_id, event in candidates.items():
+        def cache_time(item):
+            cache = self.state_dir / 'events' / (item[0] + '.json.gz')
+            return cache.stat().st_mtime if cache.exists() else 0
+        for event_id, event in sorted(candidates.items(), key=cache_time):
             if event_id in self.events:
                 continue
             if len(self.events) >= self.max_events:
@@ -224,7 +282,13 @@ class WinlineSpider(scrapy.Spider):
             self.crawler.stats.inc_value('markets/discovered_events')
             cache = self.state_dir / 'events' / (event_id + '.json.gz')
             age = max(1, int(time.time() - cache.stat().st_mtime)) if cache.exists() else 10000000
-            yield self.request(event['url'], self.parse_event, event_metadata=event, priority=min(age, 10000000))
+            sport = event.get('sport', 'unclassified')
+            ordinal = self.sport_queued.get(sport, 0)
+            self.sport_queued[sport] = ordinal + 1
+            # The first events of every sport precede the second/third ones;
+            # large football inventories cannot consume the whole queue first.
+            priority = 10000000 - ordinal * 1000 + min(age, 499)
+            yield self.request(event['url'], self.parse_event, event_metadata=event, priority=priority)
         for url in sorted(links):
             if url in self.listings:
                 continue
@@ -232,7 +296,10 @@ class WinlineSpider(scrapy.Spider):
                 self.crawler.stats.inc_value('markets/bounds_reached')
                 break
             self.listings.add(url)
-            yield self.request(url, self.parse_listing, priority=20000000 if not self.check else 0)
+            depth = response.meta.get('listing_depth', 0) + 1
+            root = urlsplit(url).path.rstrip('/').count('/') == 3
+            priority = 20000000 if root else 5000000 - min(depth,1000) * 1000
+            yield self.request(url, self.parse_listing, priority=priority if not self.check else 0, listing_depth=depth)
 
     async def parse_event(self, response):
         page = response.meta['playwright_page']
@@ -240,11 +307,13 @@ class WinlineSpider(scrapy.Spider):
         try:
             if response.status in (401, 403, 429):
                 raise ValueError('Source limited access')
-            if '/stavki/sport/' in urlsplit(page.url).path and '/stavki/sport/futbol/' not in urlsplit(page.url).path:
+            source_sport = sport_from_url(page.url)
+            if '/sport/' in urlsplit(page.url).path and (not source_sport or (self.sports is not None and source_sport not in self.sports)):
                 self.crawler.stats.inc_value('markets/skipped_other_sports')
                 return
             await ensure_event_page(page, response.request.url, response.meta.get('event_metadata'))
-            if '/stavki/sport/futbol/' not in urlsplit(page.url).path:
+            sport = sport_from_url(page.url)
+            if not sport or (self.sports is not None and sport not in self.sports):
                 self.crawler.stats.inc_value('markets/skipped_other_sports')
                 return
             snapshot = await read_marketbook(page)
@@ -257,7 +326,13 @@ class WinlineSpider(scrapy.Spider):
                 raise ValueError('No current public market feed')
             document = market_document(snapshot, page.url, stamp(), response.meta.get('event_metadata'))
         except Exception as exc:
+            if '/sport/' in urlsplit(page.url).path and not sport_from_url(page.url):
+                self.crawler.stats.inc_value('markets/skipped_other_sports')
+                return
             self.crawler.stats.inc_value('markets/failed_events')
+            sport = sport_from_url(page.url) or response.meta.get('event_metadata', {}).get('sport')
+            if sport:
+                self.sport_counts.setdefault(sport, {'saved':0,'complete':0,'failed':0})['failed'] += 1
             # Our validation errors contain fixed diagnostic messages, while
             # browser exceptions can include request details. Keep those out
             # of the journal and still explain a failed source check.
@@ -306,7 +381,7 @@ def one_cycle(args) -> int:
     started = time.monotonic()
     process.crawl(crawler, state_dir=args.state_dir, api_url=args.api_url, no_publish=args.no_publish,
                   seed=args.seed, max_events=args.max_events, max_listings=args.max_listings, max_scrolls=args.max_scrolls,
-                  check=args.check, interval=args.interval)
+                  check=args.check, interval=args.interval, sports=args.sports)
     process.start()
     values = crawler.stats.get_stats()
     summary = {key.split('/', 1)[1]: value for key, value in values.items() if key.startswith('markets/')}
@@ -314,7 +389,8 @@ def one_cycle(args) -> int:
                    finish_reason=values.get('finish_reason'), mode='event_markets')
     ready = bool(summary.get('complete_events')) if args.no_publish else bool(summary.get('published_complete_events'))
     summary['traversal_complete'] = (summary['finish_reason'] == 'finished' and not any(summary.get(key) for key in
-                                     ('bounds_reached', 'request_failures', 'failed_events', 'publish_failed')))
+                                     ('bounds_reached', 'request_failures', 'failed_events', 'publish_failed', 'listing_not_ready')))
+    summary['sports'] = crawler.spider.sport_counts if crawler.spider else {}
     summary['incomplete_events'] = max(0, summary.get('saved_events', 0) - summary.get('complete_events', 0))
     summary['success'] = ready and (args.check or bool(args.seed) or (summary['traversal_complete'] and not summary['incomplete_events']))
     if crawler.spider and crawler.spider.publisher:
@@ -334,6 +410,7 @@ def main():
     parser.add_argument('--check', action='store_true', help='Stop after one complete event has been validated and delivered')
     parser.add_argument('--no-publish', action='store_true')
     parser.add_argument('--seed', help='One current canonical event URL for verification')
+    parser.add_argument('--sports', default=os.getenv('BOOKMAKER_SPORTS', 'all'), help='all or comma-separated sport keys')
     parser.add_argument('--interval', type=int, default=60)
     parser.add_argument('--concurrency', type=int, default=int(os.getenv('BOOKMAKER_CRAWL_CONCURRENCY', '4')))
     parser.add_argument('--max-events', type=int, default=5000)
@@ -342,6 +419,10 @@ def main():
     parser.add_argument('--cycle-timeout', type=int, default=1800)
     parser.add_argument('--executable')
     args = parser.parse_args()
+    try:
+        selected_sports(args.sports)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.check:
         args.once = True
     if not 1 <= args.concurrency <= 8 or not 10 <= args.interval <= 3600 or min(args.max_events, args.max_listings, args.max_scrolls, args.cycle_timeout) < 1:
