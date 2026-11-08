@@ -81,7 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repo.initialize()
         yield
 
-    app = FastAPI(title="Matchlab", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="prognozich ai", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 

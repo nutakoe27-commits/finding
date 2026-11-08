@@ -11,6 +11,7 @@ from matchlab.config import Settings
 from matchlab.event_analysis import analysis_context, request_key
 from matchlab.markets import FORMAT, validate_event_markets
 from matchlab.storage import Repository
+from matchlab import qwen
 
 
 def event(event_id="123", *, competition="Россия. Премьер-лига", home="Спартак", phase="prematch"):
@@ -36,6 +37,12 @@ class ProductTests(unittest.TestCase):
     def tearDown(self):
         self.client.__exit__(None, None, None)
         self.directory.cleanup()
+
+    def test_current_brand_is_used_in_api_and_ai_prompts(self):
+        self.assertEqual(self.client.get('/openapi.json').json()['info']['title'],'prognozich ai')
+        for prompt in (qwen.SYSTEM,qwen.EVENT_SYSTEM):
+            self.assertIn('prognozich ai',prompt)
+            self.assertNotIn('Matchlab',prompt)
 
     def test_catalogue_searches_all_pages_with_cyrillic_and_filters(self):
         self.repo.import_event_markets(event("124", home="Динамо", competition="Беларусь. Высшая лига"))

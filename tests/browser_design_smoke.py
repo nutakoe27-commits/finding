@@ -38,6 +38,12 @@ async def exercise(base):
                     page=await context.new_page(); errors=[]
                     page.on('pageerror',lambda error:errors.append(str(error)))
                     await page.goto(base+'/#matches'); await page.locator('.match-card').first.wait_for()
+                    assert await page.title()=='prognozich ai — спортивная аналитика'
+                    assert await page.locator('.brand').get_attribute('aria-label')=='prognozich ai, матчи'
+                    assert (await page.locator('.brand').inner_text()).replace('\n','').replace(' ','')=='prognozichai'
+                    assert await page.locator('.brand-mark').evaluate('img=>img.complete && img.naturalWidth>0')
+                    assert await page.locator('a[href="#calculator"]:visible, a[href="#status"]:visible').count()==0
+                    assert 'matchlab' not in (await page.locator('body').inner_text()).lower()
                     assert await page.locator('html').get_attribute('data-theme')==theme
                     assert await page.locator('#quick-guide').is_visible()
                     assert await page.locator('#guide-toggle').get_attribute('aria-expanded')=='true'

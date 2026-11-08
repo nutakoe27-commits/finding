@@ -985,3 +985,21 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
   .nav-history-long { display:none; }
   .nav-history-short { display:inline; }
 }
+
+/* Prognozich identity: the mark remains legible as both a favicon and a logo. */
+.brand { min-width:0; white-space:nowrap; letter-spacing:-.7px; }
+.brand .brand-mark { display:block; flex:none; width:34px; height:34px; padding:0; margin-right:8px; border-radius:10px; background:transparent; }
+.brand-name { font-size:17px; font-weight:750; line-height:1; }
+.brand-ai { color:var(--lime); font-size:11px; font-weight:750; letter-spacing:0; line-height:1; margin:4px 0 0 4px; }
+.footer-brand { color:var(--text); font-size:17px; }
+.footer-brand span { color:var(--lime); }
+@media(min-width:651px) and (max-width:1150px) {
+  .brand .brand-mark { width:29px; height:29px; margin-right:6px; }
+  .brand-name { font-size:14px; letter-spacing:-.6px; }
+  .brand-ai { font-size:10px; margin-left:3px; }
+}
+@media(max-width:650px) {
+  .brand .brand-mark { width:34px; height:34px; margin-right:8px; }
+  .brand-name { font-size:19px; }
+  .brand-ai { font-size:12px; }
+}

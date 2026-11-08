@@ -179,7 +179,7 @@ class APITests(unittest.TestCase):
     def test_qwen_is_optional_and_page_is_served(self):
         self.assertEqual(self.client.post("/api/explain", json={"forecast_id": "missing"}).status_code, 503)
         self.assertFalse(self.client.get("/api/status").json()["qwen"]["configured"])
-        self.assertIn("Matchlab", self.client.get("/").text)
+        self.assertIn("prognozich ai", self.client.get("/").text)
         self.assertEqual(self.client.get("/static/app.js").status_code, 200)
 
     def test_health_not_ready_without_training_data(self):

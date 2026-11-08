@@ -4,25 +4,26 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#121618" />
-  <title>Matchlab — спорт и аналитика</title>
-  <link rel="icon" href="/static/icon.svg?v=1" type="image/svg+xml" />
+  <title>prognozich ai — спортивная аналитика</title>
+  <meta name="application-name" content="prognozich ai" />
+  <meta name="description" content="Матчи, спортивные рынки и аргументированные разборы с ИИ." />
+  <meta property="og:title" content="prognozich ai — спортивная аналитика" />
+  <link rel="icon" href="/static/icon.svg?v=2" type="image/svg+xml" />
   <script>let initialTheme;try{initialTheme=localStorage.getItem('matchlab:theme:v1')}catch(e){}document.documentElement.dataset.theme=(initialTheme==='light'||initialTheme==='dark')?initialTheme:(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');</script>
-  <link rel="stylesheet" href="/static/style.css?v=20261109-ui9" />
-  <script src="/static/app.js?v=20261109-ui9" defer></script>
+  <link rel="stylesheet" href="/static/style.css?v=20261109-ui10" />
+  <script src="/static/app.js?v=20261109-ui10" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">К содержимому</a>
   <aside class="sidebar">
-    <div class="brand-row"><a class="brand" href="#matches" aria-label="Matchlab, матчи"><span class="brand-mark">m<svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span>matchlab<span class="brand-dot">.</span></a><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Сменить тему" title="Сменить тему"><span class="theme-sun" aria-hidden="true">☼</span><span class="theme-moon" aria-hidden="true">☾</span></button></div>
+    <div class="brand-row"><a class="brand" href="#matches" aria-label="prognozich ai, матчи"><img class="brand-mark" src="/static/icon.svg?v=2" alt="" width="34" height="34" /><span class="brand-name">prognozich</span><span class="brand-ai">ai</span></a><button id="theme-toggle" class="theme-toggle" type="button" aria-label="Сменить тему" title="Сменить тему"><span class="theme-sun" aria-hidden="true">☼</span><span class="theme-moon" aria-hidden="true">☾</span></button></div>
     <div class="workspace-label">СПОРТИВНАЯ АНАЛИТИКА</div>
     <nav aria-label="Основные разделы">
       <a href="#matches" class="nav-link active"><span aria-hidden="true">◉</span> Линия <span class="nav-count" id="nav-matches">—</span></a>
       <a href="#favorites" class="nav-link"><span aria-hidden="true">☆</span> Избранное <span class="nav-count" id="nav-favorites">0</span></a>
       <a href="#history" class="nav-link" aria-label="История разборов"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><span class="nav-history-long" aria-hidden="true">История разборов</span><span class="nav-history-short" aria-hidden="true">История</span></a>
     </nav>
-    <div id="league-nav" class="league-nav" aria-label="Турниры"></div><div class="sidebar-bottom">
-      <a href="#calculator" class="nav-link utility-link"><span aria-hidden="true">＋</span> Ручной расчёт</a>
-      <a href="#status" class="nav-link utility-link"><span aria-hidden="true">◎</span> Состояние сервиса</a>
+    <div id="league-nav" class="league-nav" aria-label="Турниры"></div><div class="sidebar-bottom" hidden>
       <div class="sidebar-source"><span id="feed-dot" class="status-dot"></span><div><strong>Winline</strong><small id="feed-state">Проверяем обновления</small></div></div>
       <p class="sidebar-footnote">Данные и вероятности.<br />Решение — за вами.</p>
     </div>
@@ -334,7 +335,7 @@
       </section>
 
     </section>
-    <footer class="page-footer"><span class="footer-brand">matchlab.</span><span>Вероятность — оценка модели, а не гарантия результата.</span><a href="#status">Источники и качество <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></footer>
+    <footer class="page-footer"><span class="footer-brand">prognozich <span>ai</span></span><span>Вероятность — оценка модели, а не гарантия результата.</span></footer>
   </main>
 
   <div id="ai-desktop-host">
