@@ -7,7 +7,7 @@ const state = {
   analysisContext:null, detailTab:"markets", route:"", phase:"upcoming", catalogReturn:"#matches",
   favorites:new Set(), historyRequest:0, statusRequest:0, explainRequest:0,
   aiBusy:false, predicting:false, pendingSelection:null, toastTimer:null,
-  sport:"football", sports:[],
+  sport:"football", sports:[], refreshRequest:0,
 };
 const percent = (value) => `${(value * 100).toFixed(1)}%`;
 const localDate = (value) =>
@@ -692,6 +692,7 @@ function applyPendingSelection() {
 }
 async function loadEvent(refresh = false) {
   const id = state.eventId, request = ++state.marketDetailRequest;
+  if (!refresh) { state.refreshRequest++; $("event-refresh").disabled=false; $("event-refresh-status").textContent=""; }
   const [detail, context, teamStatistics] = await Promise.allSettled([api(`/api/bookmakers/events/${id}/markets`), api(`/api/bookmakers/events/${id}/analysis`),api(`/api/bookmakers/events/${id}/statistics`)]);
   if (request !== state.marketDetailRequest || state.eventId !== id || !state.route.startsWith("#match/")) return;
   if (detail.status === "rejected") { showError("detail-error", detail.reason.message); return; }
@@ -728,8 +729,9 @@ async function loadEvent(refresh = false) {
 function renderTeamStatistics(data) {
   const snapshot=data?.statistics;
   const stale=snapshot?.observed_at && Date.now()-Date.parse(snapshot.observed_at)>3600000;
-  $("team-statistics-status").textContent=snapshot?.state === "ok" ? stale ? "· устарела" : "· получена" : snapshot?.state === "blocked" ? "· недоступна" : "· пока нет данных";
-  $("team-statistics-note").textContent=snapshot?.state === "ok" ? `Источник: StatsHub / Sportradar. Наблюдение ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Источник уже содержит итог этой встречи: данные подходят для разбора завершённого матча." : ""}${snapshot.latest_attempt?.state !== "ok" ? " Повторное обновление не удалось, показан сохранённый снимок." : ""}` : snapshot?.state === "blocked" ? "Источник ограничил доступ к статистике. ИИ использует доступные рынки и не выдумывает форму или личные встречи." : data?.link_status === "found" ? "Статистика по ссылке этой встречи ещё не получена." : "Связь этой встречи со статистикой источника пока не определена.";
+  const blocked=snapshot?.state === "blocked" || !!data?.source_blocked_until;
+  $("team-statistics-status").textContent=snapshot?.state === "ok" ? stale ? "· устарела" : "· получена" : blocked ? "· недоступна" : "· пока нет данных";
+  $("team-statistics-note").textContent=snapshot?.state === "ok" ? `Источник: StatsHub / Sportradar. Наблюдение ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Источник уже содержит итог этой встречи: данные подходят для разбора завершённого матча." : ""}${snapshot.latest_attempt?.state !== "ok" || blocked ? " Повторное обновление не удалось, показан сохранённый снимок." : ""}` : blocked ? "Источник ограничил доступ к статистике. ИИ использует доступные рынки и не выдумывает форму или личные встречи." : data?.link_status === "found" ? "Статистика по ссылке этой встречи ещё не получена." : "Связь этой встречи со статистикой источника пока не определена.";
   if (stale) $("team-statistics-note").textContent+=" Снимок старше часа; данные могли измениться.";
   $("team-statistics-source").hidden=!data?.statistics_url;
   if (data?.statistics_url) $("team-statistics-source").href=data.statistics_url;
@@ -971,7 +973,33 @@ $("explain-button").addEventListener("click",requestAI);
 $("ai-clear-selection").addEventListener("click", () => selectAI());
 $("event-predict").addEventListener("click",calculateEvent);
 $("event-favorite").addEventListener("click", () => toggleFavorite(state.eventId));
-$("event-refresh").addEventListener("click", async () => { clearToast(); $("event-refresh").disabled = true; try { if (await loadEvent(true)) toast("Загружен последний сохранённый снимок матча."); } finally { $("event-refresh").disabled = false; } });
+$("event-refresh").addEventListener("click", async () => {
+  clearToast();
+  const id=state.eventId, request=++state.refreshRequest, status=$("event-refresh-status");
+  const current=()=>state.refreshRequest===request && state.eventId===id && state.route.startsWith("#match/");
+  $("event-refresh").disabled=true;
+  status.textContent="Запрашиваем свежие данные этого матча…";
+  try {
+    const queued=await api(`/api/bookmakers/events/${id}/refresh`,{method:"POST",body:"{}",cache:"no-store"});
+    for (let attempt=0;attempt<150 && current();attempt++) {
+      const result=await api(`/api/bookmakers/events/${id}/refresh/${queued.job_id}`,{cache:"no-store"});
+      if (!current()) return;
+      if (result.state==="finished") {
+        await loadEvent(true);
+        if (!current()) return;
+        const markets={ok:"Рынки обновлены.",partial:"Рынки получены частично; показан доступный сохранённый снимок.",blocked:"Источник ограничил доступ к рынкам.",unavailable:"Не удалось обновить рынки."};
+        const stats={ok:"Статистика обновлена.",blocked:"Источник ограничил доступ к статистике; повтор будет выполнен после паузы.",empty:"Источник не предоставил статистику.",unavailable:"Не удалось обновить статистику.",missing_link:"Ссылка на статистику этой встречи не найдена."};
+        status.textContent=`${markets[result.market_state] || "Результат обновления рынков неизвестен."} ${stats[result.statistics_state] || "Результат обновления статистики неизвестен."}`;
+        return;
+      }
+      if (result.state==="timeout") { status.textContent="Сборщик не завершил запрос вовремя. Показаны сохранённые данные; попробуйте позже."; return; }
+      status.textContent=result.state==="running" ? "Собираем рынки и статистику этого матча…" : "Запрос в очереди сборщика…";
+      await new Promise(resolve=>setTimeout(resolve,2000));
+    }
+    if (current()) status.textContent="Ожидание обновления завершилось. Проверьте состояние сборщика и повторите позже.";
+  } catch (error) { if (current()) status.textContent=error.message; }
+  finally { if (current()) $("event-refresh").disabled=false; }
+});
 $("market-refresh").addEventListener("click", async () => { clearToast(); loadStatus(); if (await loadCatalogue()) toast("Список обновлён из сохранённых данных. Сбор идёт автоматически."); });
 $("history-refresh").addEventListener("click", async () => { clearToast(); $("history-refresh").disabled = true; try { if (await loadHistory()) toast("История обновлена."); } finally { $("history-refresh").disabled = false; } });
 $("status-refresh").addEventListener("click", async () => { clearToast(); $("status-refresh").disabled = true; try { const [ok] = await Promise.all([loadStatus(),loadBacktest().catch(error => showError("backtest-empty",error.message))]); if (ok) toast("Состояние сервиса обновлено."); } finally { $("status-refresh").disabled = false; } });

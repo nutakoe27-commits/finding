@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import signal
@@ -15,6 +16,11 @@ from urllib.parse import urlsplit
 import httpx
 
 from .statistics import collect_statistics
+from .worker_protocol import market_feed
+from .winline_markets import ensure_event_page, read_marketbook, discover_statistics_link, market_document, primary_quote
+from .winline_browser import event_id_from_url
+
+LOG=logging.getLogger(__name__)
 
 
 def validate_config(config):
@@ -54,6 +60,92 @@ def report(args,value):
     print(json.dumps(value,ensure_ascii=False),flush=True)
 
 
+async def refresh_market(context,client,event):
+    """Use the same public, feed-verified extraction as the regular crawler."""
+    page=await context.new_page()
+    feeds=[]
+    def opened(socket):
+        if not market_feed('winline',socket.url): return
+        feed={'connected':True,'last_frame':0.0}; feeds.append(feed)
+        socket.on('framereceived',lambda data: feed.update(last_frame=time.monotonic()))
+        socket.on('close',lambda *args: feed.update(connected=False))
+        socket.on('socketerror',lambda *args: feed.update(connected=False))
+    page.on('websocket',opened)
+    stage='navigation'
+    try:
+        response=await page.goto(event['url'],wait_until='domcontentloaded',timeout=45000)
+        if response and response.status in (401,403,429): return 'blocked'
+        await ensure_event_page(page,event['url'],event)
+        stage='markets'
+        snapshot=await read_marketbook(page)
+        if not any(feed['connected'] and 0 <= time.monotonic()-feed['last_frame'] <= 180 for feed in feeds):
+            LOG.warning('Event %s refresh: no current market feed',event['source_event_id'])
+            return 'unavailable'
+        captured_url,captured_at=page.url,datetime.now(timezone.utc).isoformat()
+        if event_id_from_url(captured_url)!=event['source_event_id']: return 'unavailable'
+        try: snapshot['statistics_links']=await discover_statistics_link(page,snapshot)
+        except Exception: pass
+        stage='receiver'
+        document=market_document(snapshot,captured_url,captured_at,event)
+        response=await client.post('/api/bookmakers/events/ingest',json=document)
+        response.raise_for_status(); reply=response.json()
+        if not reply.get('updated'): return 'partial' if reply.get('reason')=='incomplete_snapshot' else 'unavailable'
+        quote=primary_quote(document)
+        if quote:
+            response=await client.post('/api/bookmakers/ingest',json=quote)
+            response.raise_for_status()
+        return 'ok' if document['coverage']['complete'] else 'partial'
+    except Exception as error:
+        LOG.warning('Event %s refresh failed at %s (%s)',event.get('source_event_id'),stage,type(error).__name__)
+        try:
+            body=(await page.locator('body').inner_text())[:1000]
+            if any(marker in body.lower() for marker in ('access denied','verify you are human','проверка безопасности')): return 'blocked'
+        except Exception: pass
+        return 'unavailable'
+    finally:
+        await page.close()
+
+
+async def refresh_job(context,client,job):
+    event=job['event']; market_state='unavailable'; statistics_state='unavailable'
+    try:
+        market_state=await asyncio.wait_for(refresh_market(context,client,event),timeout=115)
+    except Exception as error:
+        LOG.warning('Event %s market refresh did not complete (%s)',event.get('source_event_id'),type(error).__name__)
+    try:
+        response=await client.get('/api/bookmakers/events/'+event['source_event_id']+'/statistics')
+        response.raise_for_status(); detail=response.json()
+        url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
+        if not url:
+            statistics_state='missing_link'
+        else:
+            previous=(detail.get('statistics') or {}).get('latest_attempt') or {}
+            blocked_until=None
+            if detail.get('source_blocked_until'):
+                try: blocked_until=datetime.fromisoformat(detail['source_blocked_until'])
+                except ValueError: pass
+            elif previous.get('state')=='blocked' and previous.get('at'):
+                try: blocked_until=datetime.fromisoformat(previous['at'])+timedelta(hours=1)
+                except ValueError: pass
+            if blocked_until and blocked_until>datetime.now(timezone.utc):
+                statistics_state='blocked'
+            else:
+                page=await context.new_page()
+                try:
+                    snapshot=await collect_statistics(page,{**event,'statistics_url':url})
+                finally: await page.close()
+                response=await client.post('/api/bookmakers/statistics/ingest',json=snapshot)
+                response.raise_for_status()
+                statistics_state=snapshot['state'] if response.json().get('updated') else 'unavailable'
+    except Exception as error:
+        LOG.warning('Event %s statistics refresh did not complete (%s)',event.get('source_event_id'),type(error).__name__)
+        statistics_state='unavailable'
+    response=await client.post('/api/bookmakers/refresh/finish',json={'job_id':job['job_id'],'lease_id':job['lease_id'],
+                                'market_state':market_state,'statistics_state':statistics_state})
+    response.raise_for_status()
+    return {'source_event_id':event['source_event_id'],'market_state':market_state,'statistics_state':statistics_state}
+
+
 async def run(args):
     from playwright.async_api import async_playwright
     config=runtime_config(args)
@@ -79,11 +171,25 @@ async def run(args):
                 await context.route('**/*',resources)
                 page=await context.new_page()
                 latest_attempt=None
+                next_regular=0.0
                 while not stopped.is_set():
-                    started=time.monotonic(); states={}; linked=0
+                    started=time.monotonic(); states={}; linked=0; source_blocked=False
                     try:
+                        response=await client.post('/api/bookmakers/refresh/claim',json={})
+                        response.raise_for_status(); job=response.json().get('job')
+                        if job:
+                            if not page.is_closed():
+                                try: await page.goto('about:blank',timeout=5000)
+                                except Exception: pass
+                            result=await refresh_job(context,client,job)
+                            report(args,{'state':'refresh','refresh':result})
+                            continue
+                        if not args.once and time.monotonic()<next_regular:
+                            try: await asyncio.wait_for(stopped.wait(),timeout=min(5,next_regular-time.monotonic()))
+                            except asyncio.TimeoutError: pass
+                            continue
                         response=await client.get('/api/bookmakers/statistics/queue',params={'limit':args.batch_size})
-                        response.raise_for_status(); queue=response.json(); linked=queue.get('linked_events',0)
+                        response.raise_for_status(); queue=response.json(); linked=queue.get('linked_events',0); source_blocked=bool(queue.get('blocked_until'))
                         for job in queue['jobs']:
                             if stopped.is_set(): break
                             if not browser.is_connected():
@@ -99,17 +205,15 @@ async def run(args):
                             response.raise_for_status()
                             latest_attempt={'state':snapshot['state'],'at':snapshot['attempted_at'],'source_event_id':job['source_event_id']}
                             states[snapshot['state']]=states.get(snapshot['state'],0)+1
+                            if snapshot['state']=='blocked': break
                     except (httpx.HTTPError,ValueError,KeyError):
                         report(args,{'state':'receiver_unavailable','latest_attempt':latest_attempt,'hint':'Проверьте локальный SSH-туннель, обновление приложения на VPS и настройку сборщика.'})
                         if args.once: return 2
                     else:
-                        state='ok' if states.get('ok') and len(states)==1 else 'partial' if states.get('ok') else 'blocked' if states.get('blocked') else 'unavailable' if states else 'idle' if linked else 'waiting_links'
+                        state='ok' if states.get('ok') and len(states)==1 else 'partial' if states.get('ok') else 'blocked' if states.get('blocked') or source_blocked else 'unavailable' if states else 'idle' if linked else 'waiting_links'
                         report(args,{'state':state,'linked_events':linked,'statistics':states,'latest_attempt':latest_attempt,'cycle_seconds':round(time.monotonic()-started,2)})
                     if args.once: return 0 if states.get('ok') else 2
-                    remaining=max(0,args.interval-(time.monotonic()-started))
-                    if remaining:
-                        try: await asyncio.wait_for(stopped.wait(),timeout=remaining)
-                        except asyncio.TimeoutError: pass
+                    next_regular=time.monotonic()+max(0,args.interval-(time.monotonic()-started))
             finally:
                 await browser.close()
     return 0

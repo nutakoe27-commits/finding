@@ -47,7 +47,7 @@ server {{
     add_header X-Matchlab-Site {domain} always;
 
     # The worker API remains accessible only through the existing SSH tunnel.
-    location ~ ^/api/bookmakers/(ingest|worker-status|events/ingest|statistics/(queue|ingest))/?$ {{
+    location ~ ^/api/bookmakers/(ingest|worker-status|events/ingest|statistics/(queue|ingest)|refresh/(claim|finish))/?$ {{
         return 404;
     }}
     location ~ ^/api/(explain|forecast|bookmakers/events/[0-9]+/explain)/?$ {{

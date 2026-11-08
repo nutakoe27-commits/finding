@@ -124,6 +124,19 @@ class StatisticsTests(unittest.TestCase):
             clock.now.return_value=datetime.now(timezone.utc)+timedelta(hours=2)
             self.assertEqual(len(self.repo.statistics_queue()['jobs']),1)
 
+    def test_provider_block_pauses_other_events_until_retry_window(self):
+        other=event('124'); other['statistics_url']='https://winline.ru/stats/match/72334410'
+        self.repo.import_event_markets(other)
+        self.assertEqual(self.post(stats(state='blocked')).status_code,200)
+        queue=self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()
+        self.assertEqual(queue['jobs'],[])
+        self.assertIsNotNone(queue['blocked_until'])
+        self.assertIsNotNone(self.client.get('/api/bookmakers/events/124/statistics').json()['source_blocked_until'])
+        with patch('matchlab.storage.datetime',wraps=datetime) as clock:
+            clock.now.return_value=datetime.now(timezone.utc)+timedelta(hours=2)
+            self.assertIsNone(self.repo.statistics_blocked_until())
+            self.assertEqual(len(self.repo.statistics_queue()['jobs']),2)
+
     def test_ai_uses_audited_statistics_and_cache_changes_when_data_arrive(self):
         with patch('matchlab.api.qwen.explain_event',return_value='Разбор рынка.') as completion:
             first=self.client.post('/api/bookmakers/events/123/explain',json={}).json()

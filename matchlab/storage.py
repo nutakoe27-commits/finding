@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import zlib
 from typing import Iterator
+from uuid import uuid4
 
 
 def utc_now() -> str:
@@ -65,6 +66,11 @@ class Repository:
                     last_state TEXT NOT NULL,
                     last_attempt_at TEXT NOT NULL,
                     payload TEXT
+                );
+                CREATE TABLE IF NOT EXISTS event_refresh_jobs (
+                    event_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, requested_at TEXT NOT NULL,
+                    state TEXT NOT NULL, lease_id TEXT, lease_until TEXT,
+                    market_state TEXT, statistics_state TEXT
                 );
                 CREATE TABLE IF NOT EXISTS bookmaker_quotes (
                     id TEXT PRIMARY KEY,
@@ -363,9 +369,17 @@ class Repository:
         payload=json.loads(row['payload']) if row['payload'] else {'state':row['last_state'],'source_event_id':event_id,'statistics_id':row['statistics_id']}
         return {**payload,'latest_attempt':{'state':row['last_state'],'at':row['last_attempt_at']}}
 
+    def statistics_blocked_until(self) -> str | None:
+        with self.connection() as db:
+            row=db.execute('SELECT last_state,last_attempt_at FROM event_statistics ORDER BY last_attempt_at DESC LIMIT 1').fetchone()
+        if not row or row['last_state']!='blocked': return None
+        until=datetime.fromisoformat(row['last_attempt_at'])+timedelta(hours=1)
+        return until.isoformat() if until>datetime.now(timezone.utc) else None
+
     def statistics_queue(self,limit=10) -> dict:
         now=datetime.now(timezone.utc)
         cutoff=lambda seconds:(now-timedelta(seconds=seconds)).isoformat(timespec='microseconds')
+        blocked_until=self.statistics_blocked_until()
         with self.connection() as db:
             rows=db.execute("""SELECT b.metadata FROM bookmaker_event_markets b
                 LEFT JOIN event_statistics s ON s.event_id=b.event_id
@@ -379,7 +393,66 @@ class Repository:
             jobs=[{key:document.get(key) for key in ('source_event_id','url','sport','sport_label','title','home','away','statistics_url')}
                   for document in (json.loads(row['metadata']) for row in rows)]
             linked=db.execute("SELECT COUNT(*) FROM bookmaker_event_markets WHERE json_extract(metadata,'$.statistics_link_status')='found'").fetchone()[0]
-        return {'jobs':jobs,'linked_events':linked}
+        return {'jobs':[] if blocked_until else jobs,'linked_events':linked,'blocked_until':blocked_until}
+
+    def request_event_refresh(self, event_id: str) -> dict:
+        now=datetime.now(timezone.utc)
+        current=now.isoformat(timespec='microseconds')
+        timeout=(now-timedelta(minutes=5)).isoformat(timespec='microseconds')
+        cooldown=(now-timedelta(seconds=30)).isoformat(timespec='microseconds')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM bookmaker_event_markets WHERE event_id=?',(event_id,)).fetchone():
+                raise LookupError('Событие не найдено.')
+            db.execute('DELETE FROM event_refresh_jobs WHERE requested_at<?',((now-timedelta(days=1)).isoformat(timespec='microseconds'),))
+            old=db.execute('SELECT * FROM event_refresh_jobs WHERE event_id=?',(event_id,)).fetchone()
+            if old and old['requested_at']>=timeout and old['state'] in ('queued','running'):
+                return self._refresh_public(old,now)
+            if old and old['requested_at']>=cooldown:
+                raise ValueError('Подождите 30 секунд перед следующим обновлением этого матча.')
+            active=db.execute("SELECT COUNT(*) FROM event_refresh_jobs WHERE state IN ('queued','running') AND requested_at>=?",(timeout,)).fetchone()[0]
+            recent=db.execute('SELECT COUNT(*) FROM event_refresh_jobs WHERE requested_at>=?',((now-timedelta(minutes=1)).isoformat(timespec='microseconds'),)).fetchone()[0]
+            if active>=20 or recent>=30:
+                raise ValueError('Очередь обновления занята. Повторите попытку немного позже.')
+            job_id=uuid4().hex
+            db.execute('INSERT OR REPLACE INTO event_refresh_jobs VALUES (?,?,?,?,?,?,?,?)',(event_id,job_id,current,'queued',None,None,None,None))
+            return {'job_id':job_id,'state':'queued','requested_at':current,'market_state':None,'statistics_state':None}
+
+    @staticmethod
+    def _refresh_public(row,now):
+        state=row['state']
+        if state in ('queued','running') and row['requested_at']<(now-timedelta(minutes=5)).isoformat(timespec='microseconds'):
+            state='timeout'
+        return {key:row[key] for key in ('job_id','requested_at','market_state','statistics_state')} | {'state':state}
+
+    def event_refresh(self,event_id: str,job_id: str) -> dict | None:
+        with self.connection() as db:
+            row=db.execute('SELECT * FROM event_refresh_jobs WHERE event_id=? AND job_id=?',(event_id,job_id)).fetchone()
+        return self._refresh_public(row,datetime.now(timezone.utc)) if row else None
+
+    def claim_event_refresh(self) -> dict | None:
+        now=datetime.now(timezone.utc); current=now.isoformat(timespec='microseconds')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute("""SELECT j.*,b.metadata FROM event_refresh_jobs j JOIN bookmaker_event_markets b ON b.event_id=j.event_id
+                WHERE j.requested_at>=? AND (j.state='queued' OR (j.state='running' AND j.lease_until<?))
+                ORDER BY j.requested_at LIMIT 1""",((now-timedelta(minutes=5)).isoformat(timespec='microseconds'),current)).fetchone()
+            if not row: return None
+            lease=uuid4().hex
+            db.execute("UPDATE event_refresh_jobs SET state='running',lease_id=?,lease_until=? WHERE event_id=?",(lease,(now+timedelta(seconds=270)).isoformat(timespec='microseconds'),row['event_id']))
+            event=json.loads(row['metadata'])
+            return {'job_id':row['job_id'],'lease_id':lease,'requested_at':row['requested_at'],
+                    'event':{key:event.get(key) for key in ('source_event_id','url','sport','sport_label','competition','home','away','title','kickoff_at','phase','statistics_url','statistics_link_status')}}
+
+    def finish_event_refresh(self, job_id: str, lease_id: str, market_state: str, statistics_state: str) -> bool:
+        if any(not isinstance(value,str) or len(value)!=32 or any(char not in '0123456789abcdef' for char in value) for value in (job_id,lease_id)):
+            raise ValueError('Некорректный идентификатор задания.')
+        if not isinstance(market_state,str) or not isinstance(statistics_state,str) or market_state not in ('ok','partial','blocked','unavailable') or statistics_state not in ('ok','blocked','empty','unavailable','missing_link'):
+            raise ValueError('Некорректное состояние обновления.')
+        with self.connection() as db:
+            cursor=db.execute("UPDATE event_refresh_jobs SET state='finished',market_state=?,statistics_state=? WHERE job_id=? AND lease_id=? AND state='running' AND lease_until>=?",
+                              (market_state,statistics_state,job_id,lease_id,datetime.now(timezone.utc).isoformat(timespec='microseconds')))
+            return cursor.rowcount==1
 
     def market_events(self, *, include_started=False, limit=100, offset=0,
                       search="", competition="", phase="", day=None, event_ids=None, sort="kickoff", sport="") -> dict:

@@ -95,7 +95,8 @@ async def run(url):
                 assert '3.9' in await page.locator('#ai-outcome-label').inner_text()
                 assert await page.locator('#market-detail-title').inner_text() == 'Сандерленд — Челси'
                 await page.locator('#event-refresh').click()
-                await page.locator('#toast').filter(has_text='сохранённый снимок матча').wait_for()
+                await page.locator('#event-refresh-status').filter(has_text='Сборщик ещё не настроен').wait_for()
+                assert not await page.locator('#event-refresh').is_disabled()
                 await page.locator('#market-groups summary').first.click()
                 outcomes = page.locator('.market-outcomes').first
                 assert await outcomes.inner_text() == 'П1\n3.9\nX\n3.75\nП2\n1.89'

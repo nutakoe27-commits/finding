@@ -260,6 +260,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (ValueError,TypeError,KeyError,AttributeError) as error:
             raise HTTPException(422,'Некорректный снимок статистики события.') from error
 
+    @app.post('/api/bookmakers/refresh/claim')
+    async def claim_refresh(request: Request):
+        await worker_body(request,1024)
+        return {'job':repo.claim_event_refresh()}
+
+    @app.post('/api/bookmakers/refresh/finish')
+    async def finish_refresh(request: Request):
+        body=await worker_body(request,4096)
+        try:
+            done=repo.finish_event_refresh(body.get('job_id',''),body.get('lease_id',''),body.get('market_state',''),body.get('statistics_state',''))
+        except ValueError as error:
+            raise HTTPException(422,str(error)) from error
+        if not done: raise HTTPException(409,'Задание устарело или уже завершено.')
+        return {'finished':True}
+
+    @app.post('/api/bookmakers/events/{event_id}/refresh',status_code=202)
+    def request_refresh(event_id: str, request: Request):
+        if not event_id.isdigit() or len(event_id)>20: raise HTTPException(422,'Некорректный ID события.')
+        if request.headers.get('content-type','').split(';')[0].strip().lower()!='application/json' or request.headers.get('sec-fetch-site','') in ('cross-site','same-site'):
+            raise HTTPException(403,'Обновление доступно со страницы сервиса.')
+        if not settings.bookmaker_ingest_token: raise HTTPException(503,'Сборщик ещё не настроен.')
+        try: return repo.request_event_refresh(event_id)
+        except LookupError as error: raise HTTPException(404,str(error)) from error
+        except ValueError as error: raise HTTPException(429,str(error)) from error
+
+    @app.get('/api/bookmakers/events/{event_id}/refresh/{job_id}')
+    def refresh_status(event_id: str,job_id: str):
+        if not event_id.isdigit() or len(event_id)>20 or len(job_id)!=32 or any(char not in '0123456789abcdef' for char in job_id):
+            raise HTTPException(422,'Некорректное задание обновления.')
+        result=repo.event_refresh(event_id,job_id)
+        if not result: raise HTTPException(404,'Задание не найдено или заменено более новым.')
+        return result
+
     @app.get('/api/bookmakers/events/{event_id}/statistics')
     def statistics_detail(event_id: str):
         event=repo.event_markets(event_id)
@@ -267,7 +300,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result=repo.statistics(event_id)
         if result and result['statistics_id']!=statistics_id_from_url(event.get('statistics_url') or ''):
             result=None
-        return {'statistics':result,'link_status':event.get('statistics_link_status','missing'),'statistics_url':event.get('statistics_url')}
+        return {'statistics':result,'link_status':event.get('statistics_link_status','missing'),'statistics_url':event.get('statistics_url'),
+                'source_blocked_until':repo.statistics_blocked_until()}
 
     @app.get("/api/bookmakers/events")
     def market_events(include_started: bool = False, limit: int = 100, offset: int = 0,
