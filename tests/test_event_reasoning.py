@@ -51,6 +51,57 @@ class FakeModel:
 class ReasoningTests(unittest.TestCase):
     def settings(self):return Settings(Path('/tmp'),'http://localhost:9/v1','fixture')
 
+    def test_large_advertised_window_does_not_create_large_or_concurrent_requests_by_default(self):
+        model=FakeModel(limit=32768);lock=threading.Lock();active=[0];maximum=[0];timeouts=[];tokens=[]
+        def complete(settings,messages):
+            with lock:active[0]+=1;maximum[0]=max(maximum[0],active[0])
+            try:
+                timeouts.append(settings.qwen_timeout)
+                tokens.append(sum(len(m['content'].encode()) for m in messages)//3+30)
+                time.sleep(.001)
+                return model.complete(settings,messages)
+            finally:
+                with lock:active[0]-=1
+        _,diag=analyze(self.settings(),context_large(),complete,model.request)
+        self.assertEqual(diag['state'],'ready',{k:v for k,v in diag.items() if k not in ('evidence','attempts')})
+        self.assertEqual(maximum[0],1)
+        self.assertTrue(all(t<=4096 for t in tokens))
+        self.assertGreater(timeouts[0],35)
+        self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
+        self.assertTrue(all(a['status']=='validated' for a in diag['attempts']))
+
+    def test_explicit_large_batch_setting_can_use_a_larger_verified_model_window(self):
+        model=FakeModel(limit=131072)
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=131072),context_large(),model.complete,model.request)
+        self.assertEqual(diag['state'],'ready')
+        self.assertEqual(diag['parts_total'],1)
+        self.assertEqual(diag['model_calls'],2)
+        self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
+
+    def test_timeout_stops_future_calls_including_final_synthesis(self):
+        model=FakeModel(limit=32768);calls=[]
+        def complete(settings,messages):
+            calls.append(json.loads(messages[1]['content'])['stage'])
+            raise ValueError('Сервер Qwen не ответил вовремя.')
+        _,diag=analyze(self.settings(),context_large(),complete,model.request)
+        self.assertEqual(calls,['evidence'])
+        self.assertEqual(diag['model_calls'],1)
+        self.assertEqual(diag['attempts'][0]['status'],'timeout')
+        self.assertEqual(diag['errors']['timeout'],1)
+        self.assertEqual(diag['state'],'unavailable')
+
+    def test_timeout_after_valid_part_keeps_partial_evidence_without_sending_more_requests(self):
+        model=FakeModel();calls=[]
+        def complete(settings,messages):
+            calls.append(json.loads(messages[1]['content'])['stage'])
+            if len(calls)>1:raise ValueError('Сервер Qwen не ответил вовремя.')
+            return model.complete(settings,messages)
+        arguments,diag=analyze(self.settings(),context_large(),complete,model.request)
+        self.assertTrue(arguments)
+        self.assertEqual(diag['state'],'partial')
+        self.assertEqual(calls,['evidence','evidence'])
+        self.assertEqual(diag['reason'],'timeout')
+
     def test_real_http_rejected_large_requests_are_partitioned_and_final_report_keeps_server_probability(self):
         seen=[]
         class Handler(BaseHTTPRequestHandler):

@@ -91,6 +91,10 @@ def _completion(settings: Settings, messages: list[dict]) -> str:
         content = message.get("content")
     except (KeyError, IndexError, TypeError, AttributeError) as exc:
         raise ValueError("Ответ API не содержит сообщение Chat Completions. Проверьте адрес и совместимость сервера.") from exc
+    usage=data.get('usage') if isinstance(data.get('usage'),dict) else {}
+    safe_count=lambda key: usage.get(key) if type(usage.get(key)) is int else None
+    finish=choice.get('finish_reason') if choice.get('finish_reason') in ('stop','length','tool_calls','content_filter') else 'unknown'
+    logging.getLogger('uvicorn.error').info('Qwen completion usage: prompt_tokens=%s completion_tokens=%s finish=%s',safe_count('prompt_tokens'),safe_count('completion_tokens'),finish)
     if choice.get("finish_reason") == "length":
         raise ValueError("Qwen достиг лимита токенов до завершения ответа. Для vLLM попробуйте QWEN_ENABLE_THINKING=false или увеличьте QWEN_MAX_TOKENS.")
     if content is not None and not isinstance(content, str):

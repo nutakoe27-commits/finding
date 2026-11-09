@@ -2,9 +2,10 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
+import logging
 from decimal import Decimal
 import re
-from threading import Event,Lock
+from threading import Event,Lock,local
 import time
 
 
@@ -34,8 +35,15 @@ def encoded(value):return json.dumps(value,ensure_ascii=False,separators=(',',':
 
 
 def error_code(error):
+    if isinstance(error,ModelStopped):return error.reason
     from .qwen import event_error_code
     return event_error_code(error)
+
+
+class ModelStopped(ValueError):
+    def __init__(self,reason):
+        self.reason=reason
+        super().__init__('Model processing stopped')
 
 
 def source_texts(value):
@@ -98,7 +106,7 @@ def records_for(context,limit=1800):
 
 class Budget:
     def __init__(self,settings,request):
-        self.settings=settings;self.request=request;self.tokenizer=None;self.counts={}
+        self.settings=settings;self.request=request;self.tokenizer=None;self.counts={};self.measured={}
         self.limit=getattr(settings,'qwen_context_tokens',0) or 4096
         if not getattr(settings,'qwen_context_tokens',0):
             try:
@@ -111,24 +119,25 @@ class Budget:
 
     def fits(self,system,payload,output):
         message=encoded(payload)
+        input_limit=min(getattr(self.settings,'qwen_batch_tokens',4096),self.limit-output-64)
         # Byte fallback is deliberately conservative for byte-based tokenizers.
-        if len(system.encode())+len(message.encode())+output+256<=self.limit:return True
+        if len(system.encode())+len(message.encode())+256<=input_limit:return True
         if self.tokenizer is False:return False
-        key=(self.limit,system,message,output)
+        key=(self.limit,input_limit,system,message,output)
         if key not in self.counts:
             try:
                 reply=self.request(self.token_settings,'post','/tokenize',json={'model':self.settings.qwen_model,
                     'messages':[{'role':'system','content':system},{'role':'user','content':message}], 'add_generation_prompt':True})
                 count=reply.get('count')
                 if type(count) is not int or count<0:raise ValueError('Invalid tokenizer count')
-                self.tokenizer=True;self.counts[key]=count+output+64<=self.limit
+                self.tokenizer=True;self.measured[(system,message)]=count;self.counts[key]=count<=input_limit
             except (ValueError,TypeError,AttributeError):self.tokenizer=False;return False
         return self.counts[key]
 
     def batches(self,values,system,build,output):
         result=[];start=0
         while start<len(values):
-            hi=min(len(values)-start,64);lo=1;best=0
+            hi=min(len(values)-start,512);lo=1;best=0
             while lo<=hi:
                 mid=(lo+hi)//2
                 if self.fits(system,build(values[start:start+mid]),output):best=mid;lo=mid+1
@@ -182,28 +191,68 @@ def synthesis_arguments(reply,evidence):
     return result,citations
 
 
-def analyze(settings,context,complete,request):
-    """Return public arguments plus auditable delivery/coverage diagnostics."""
-    start=time.monotonic();deadline=start+getattr(settings,'qwen_analysis_timeout',120)
-    budget=Budget(settings,request)
-    source_records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
+def evidence_payload(context,records):
     event=context.get('event') or {}
     scope={key:str(event.get(key) or '')[:120] for key in ('home','away','sport','phase','competition','kickoff_at')}
     scope['as_of']=(context.get('request_time') or {}).get('at')
     scope['snapshot']={k:(context.get('snapshot') or {}).get(k) for k in ('observed_at','is_stale')}
     scope['statistics_phase']=(context.get('team_statistics') or {}).get('match_phase')
-    build=lambda records:{'stage':'evidence','match':scope,'records':records}
+    return {'stage':'evidence','match':scope,'records':records}
+
+
+def analyze(settings,context,complete,request):
+    """Return public arguments plus auditable delivery/coverage diagnostics."""
+    start=time.monotonic();deadline=start+getattr(settings,'qwen_analysis_timeout',120)
+    budget=Budget(settings,request)
+    source_records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
+    build=lambda records:evidence_payload(context,records)
+    scope=build([])['match']
     batches=budget.batches(source_records,EXTRACT,build,768)
-    lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[]
+    lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={}
+    logger=logging.getLogger('uvicorn.error')
+    def mark_valid():
+        detail=getattr(current,'attempt',None)
+        if detail and detail['status']=='received':
+            detail['status']='validated'
+            logger.info('Qwen part accepted: call=%s stage=%s elapsed_ms=%s',detail['call'],detail['stage'],detail['elapsed_ms'])
+    def mark_invalid(error):
+        detail=getattr(current,'attempt',None)
+        if not detail or detail['status']!='received':return
+        reasons={'Unsupported quotation':'quotation_mismatch','Unsupported numeric claim':'unsupported_number',
+                 'Unsupported final numbers':'unsupported_number','Invalid evidence response':'evidence_schema',
+                 'Invalid evidence format':'evidence_schema','Invalid argument citation':'argument_schema',
+                 'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema'}
+        detail.update(status='invalid_response',validation=reasons.get(str(error),'unexpected_response'))
+        logger.warning('Qwen part invalid: call=%s stage=%s validation=%s',detail['call'],detail['stage'],detail['validation'])
     def invoke(system,payload,output=768,final=False):
         nonlocal calls
+        current.attempt=None
         remaining=deadline-time.monotonic()-(0 if final else 12)
         if remaining<1 or (stop.is_set() and not final):raise ValueError('Сервер Qwen не ответил вовремя.')
         with lock:
             if calls>=256:raise ValueError('Сервер Qwen не ответил вовремя.')
             calls+=1
-        opts=replace(settings,qwen_timeout=min(settings.qwen_timeout,remaining,35),qwen_max_tokens=min(settings.qwen_max_tokens,output))
-        return json.loads(complete(opts,[{'role':'system','content':system},{'role':'user','content':encoded(payload)}]))
+            call=calls
+        message=encoded(payload)
+        opts=replace(settings,qwen_timeout=min(settings.qwen_timeout,remaining),qwen_max_tokens=min(settings.qwen_max_tokens,output))
+        detail={'call':call,'stage':payload['stage'],'status':'pending','input_bytes':len(system.encode())+len(message.encode()),
+                'input_tokens':budget.measured.get((system,message)),'timeout_seconds':round(opts.qwen_timeout,2)}
+        current.attempt=detail
+        with lock:attempts.append(detail)
+        logger.info('Qwen part started: call=%s stage=%s input_tokens=%s input_bytes=%s timeout_seconds=%s',call,detail['stage'],detail['input_tokens'],detail['input_bytes'],detail['timeout_seconds'])
+        began=time.monotonic()
+        try:
+            text=complete(opts,[{'role':'system','content':system},{'role':'user','content':message}])
+            parsed=json.loads(text)
+            detail.update(status='received',response_bytes=len(text.encode()))
+            return parsed
+        except (ValueError,TypeError,AttributeError) as error:
+            detail['status']=error_code(error)
+            if isinstance(error,json.JSONDecodeError):detail['validation']='invalid_json'
+            raise
+        finally:
+            detail['elapsed_ms']=int((time.monotonic()-began)*1000)
+            logger.info('Qwen part finished: call=%s stage=%s status=%s elapsed_ms=%s',call,detail['stage'],detail['status'],detail['elapsed_ms'])
 
     def extract(records):
         if stop.is_set():
@@ -212,18 +261,22 @@ def analyze(settings,context,complete,request):
         try:
             reply=invoke(EXTRACT,build(records))
             observations=verified_observations(reply,records)
+            mark_valid()
             with lock:accepted.update(r['id'] for r in records);leaves.append(True)
             return observations
         except (ValueError,TypeError,AttributeError) as error:
+            mark_invalid(error)
             code=error_code(error)
             with lock:errors.append(code)
             if code=='context_limit' and len(records)>1 and not stop.is_set():
                 mid=len(records)//2
                 return extract(records[:mid])+extract(records[mid:])
-            if code in ('connection','proxy','authentication','model_or_endpoint','provider_http') or (code=='context_limit' and len(records)==1):stop.set()
+            if code in ('connection','proxy','authentication','model_or_endpoint','provider_http','timeout') or (code=='context_limit' and len(records)==1):
+                with lock:
+                    if not stop.is_set():stopped_reason['value']=code;stop.set()
             with lock:leaves.append(False)
             return []
-    with ThreadPoolExecutor(max_workers=2,thread_name_prefix='match-evidence') as pool:
+    with ThreadPoolExecutor(max_workers=getattr(settings,'qwen_parallelism',1),thread_name_prefix='match-evidence') as pool:
         extracted=list(pool.map(extract,batches))
     evidence=[]
     for values in extracted:
@@ -252,14 +305,17 @@ def analyze(settings,context,complete,request):
             reply=invoke(REDUCE,payload,128,final=True)
             ids=reply.get('evidence_ids');allowed={e['id']:e for e in group}
             if not isinstance(ids,list) or not 1<=len(ids)<=maximum or any(not isinstance(i,str) or i not in allowed for i in ids):raise ValueError('Invalid reduction')
+            mark_valid()
             return [allowed[i] for i in dict.fromkeys(ids)]
         except (ValueError,TypeError,AttributeError) as error:
+            mark_invalid(error)
             if error_code(error)!='context_limit' or len(group)==1:raise
             errors.append('context_limit');budget.limit=max(1024,budget.limit//2);budget.counts.clear()
             mid=len(group)//2
             return reduce_group(group[:mid])+reduce_group(group[mid:])
     try:
         # No failed connection is retried just to generate a final paragraph.
+        if stop.is_set():raise ModelStopped(stopped_reason.get('value','timeout'))
         if not accepted:raise ValueError('Нет обработанных частей контекста.')
         for final_attempt in range(6):
             for _ in range(10):
@@ -272,13 +328,15 @@ def analyze(settings,context,complete,request):
             else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
             try:
                 reply=invoke(SYNTHESIZE,final_build(evidence),512,final=True)
-                arguments,citations=synthesis_arguments(reply,evidence);final_ok=True;break
+                arguments,citations=synthesis_arguments(reply,evidence);mark_valid();final_ok=True;break
             except (ValueError,TypeError,AttributeError) as error:
+                mark_invalid(error)
                 if error_code(error)!='context_limit' or final_attempt==5:raise
                 errors.append('context_limit');budget.limit=max(1024,budget.limit//2);budget.counts.clear()
         else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
     except (ValueError,TypeError,AttributeError) as error:
-        final_error=error_code(error);errors.append(final_error)
+        final_error=error_code(error)
+        if not isinstance(error,ModelStopped):errors.append(final_error)
         arguments=[e['text'] for e in all_evidence if e['id'].startswith('E') and not e['unverified']][:3] or None
     market_records={}
     for record in source_records:
@@ -296,5 +354,6 @@ def analyze(settings,context,complete,request):
         'outcomes_total':sum(len(m.get('outcomes',[])) for m in context.get('markets',[])),
         'outcomes_completed':sum(len(context['markets'][index].get('outcomes',[])) for index,ids in market_records.items() if ids<=accepted),
         'context_tokens':budget.limit,'tokenizer_available':budget.tokenizer is True,'elapsed_ms':int((time.monotonic()-start)*1000),
+        'batch_tokens':getattr(settings,'qwen_batch_tokens',4096),'parallelism':getattr(settings,'qwen_parallelism',1),'attempts':attempts,
         'arguments':citations,'evidence':all_evidence,'errors':dict((c,errors.count(c)) for c in set(errors))}
     return arguments,diagnostics

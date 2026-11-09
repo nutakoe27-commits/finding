@@ -24,6 +24,8 @@ def main():
     backtest.add_argument("--seasons", nargs="+", default=["2425", "2526"], type=validate_season)
     sub.add_parser("status")
     sub.add_parser("check-qwen", help="Check /models and a real completion without exposing the API key")
+    sub.add_parser('check-qwen-load',help='Time a tiny request and one bounded match sample; never print its content')
+    sub.add_parser('inspect-qwen-context',help='Count the full saved match context without starting generation')
     bookmaker_import = sub.add_parser("import-bookmakers", help="Append validated 90-minute football snapshots from a capture or normalized JSON")
     bookmaker_import.add_argument("file", nargs="?", type=Path)
     bookmaker_import.add_argument("--stdin", action="store_true")
@@ -33,6 +35,14 @@ def main():
         if args.command == "check-qwen":
             from .qwen import check_connection
             print(json.dumps(check_connection(settings), ensure_ascii=False, indent=2))
+            return
+        if args.command=='check-qwen-load':
+            from .qwen_probe import check_load
+            print(json.dumps(check_load(settings),ensure_ascii=False,indent=2))
+            return
+        if args.command=='inspect-qwen-context':
+            from .qwen_probe import inspect_context
+            print(json.dumps(inspect_context(settings),ensure_ascii=False,indent=2))
             return
         repo = Repository(settings.database)
         repo.initialize()
