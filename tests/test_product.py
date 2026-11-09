@@ -85,7 +85,8 @@ class ProductTests(unittest.TestCase):
         self.assertIn('09.11.2026, 08:47:05 МСК', text)
         self.assertIn('09.11.2026, 08:40:00 МСК', text)
         self.assertIn('Тотал · 2-й тайм · значение: 2.5', text)
-        self.assertIn('Снимок мог устареть', text)
+        self.assertIn('Снимок мог устареть', text)  # Stale live score.
+        self.assertIn('Эти котировки устарели', text)
         self.assertNotIn('давление', text)
         self.assertNotIn('доминиру', text)
 

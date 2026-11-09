@@ -250,6 +250,22 @@ class ArchiveTests(unittest.TestCase):
             statuses = [row[0] for row in db.execute('SELECT status FROM ai_usage ORDER BY rowid')]
         self.assertEqual(statuses, ['limited', 'limited'])
 
+    def test_selected_first_half_market_receives_complete_market_calculation(self):
+        live = header(live=True, score='0:0')
+        live['clock'] = "1Т 27'"
+        live['primary']['name'] = '1 тайм исход 1X2'
+        for outcome, odd in zip(live['primary']['outcomes'], [10, 1.87, 2.1]):
+            outcome['odds'] = odd
+        self.feed([live])
+        with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
+            response = self.client.post('/api/archive/events/101/explain', json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        value = response.json()
+        self.assertEqual(value['analysis_type'], 'limited_summary')
+        self.assertTrue(value['context']['markets'][0]['outcomes_complete'])
+        for part in ("1Т 27'", '1 тайм исход 1X2', '1 — хозяева: 9,0%', 'X — ничья: 48,1%', '2 — гости: 42,9%', '11,1 п.п.'):
+            self.assertIn(part, value['text'])
+
     def test_web_links_alone_do_not_trigger_model_and_live_clock_stays_verbatim(self):
         live = header(live=True, score='2:0')
         live['clock'] = "2Т 13'"

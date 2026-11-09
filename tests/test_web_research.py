@@ -64,6 +64,19 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(found[0]['id'], 1)
         self.assertEqual(web._relevant_sources(results[:1], EVENT), [])
 
+    def test_team_matching_rejects_shared_united_and_short_prefixes(self):
+        event = {'home': 'Ньюкасл Юнайтед', 'away': 'Саут Юнайтед', 'competition': 'Тест', 'sport_label': 'Футбол'}
+        sources = [
+            {'title': 'Манчестер Юнайтед', 'url': 'https://sports.example/1', 'excerpt': 'новости команды'},
+            {'title': 'Саутгемптон Юнайтед', 'url': 'https://sports.example/2', 'excerpt': 'новости команды'},
+            {'title': 'Саут Юнайтед — результаты', 'url': 'https://sports.example/3', 'excerpt': 'матчи'},
+            {'title': 'Ньюкасл Юнайтед — календарь', 'url': 'https://sports.example/4', 'excerpt': 'матчи'},
+        ]
+        self.assertEqual([row['url'] for row in web._relevant_sources(sources, event)],
+                         ['https://sports.example/3', 'https://sports.example/4'])
+        event = {'home': 'Юнайтед', 'away': 'Сити', 'competition': '', 'sport_label': 'Футбол'}
+        self.assertEqual(web._relevant_sources(sources, event), [])
+
     def test_slow_query_does_not_discard_successful_results(self):
         async def run():
             async def one(query):

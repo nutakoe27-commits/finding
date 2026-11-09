@@ -154,6 +154,12 @@ def _relevant_sources(sources, event):
     def normalize(value):
         return unicodedata.normalize('NFKC', unquote(_clean(value, 4000))).casefold()
 
+    def matches(word, source_words):
+        # Short prefixes (e.g. "Саут" in "Саутгемптон") are not team matches.
+        return word in source_words or (len(word) >= 6 and any(
+            candidate.startswith(word) and len(candidate) - len(word) <= 2 for candidate in source_words
+        ))
+
     ignored = {'команда', 'football', 'футбол', 'фк', 'club', 'клуб', 'team', 'люб', 'любители',
                'россия', 'россии', 'russia'}
     participants = []
@@ -161,6 +167,8 @@ def _relevant_sources(sources, event):
         full = normalize(name)
         words = {word for word in re.findall(r'[^\W_]+', re.sub(r'\([^)]*\)', ' ', full))
                  if len(word) >= 4 and word not in ignored}
+        if words <= {'юнайтед', 'united', 'сити', 'city'}:
+            words = set()
         qualified = any(marker in full for marker in ('люб.', 'любитель', 'amateur'))
         participants.append((words, qualified))
     competition = normalize(event.get('competition'))
@@ -172,8 +180,9 @@ def _relevant_sources(sources, event):
     accepted = []
     for source in sources:
         text = normalize(' '.join(str(source.get(field) or '') for field in ('title', 'excerpt', 'url')))
+        source_words = set(re.findall(r'[^\W_]+', text))
         for words, qualified in participants:
-            if not words or not any(word in text for word in words):
+            if not words or not all(matches(word, source_words) for word in words):
                 continue
             if qualified and not (any(marker in text for marker in ('люб.', 'любитель', 'amateur'))
                                   or any(word in text for word in tournament_words)):

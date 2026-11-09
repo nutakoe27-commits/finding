@@ -7,6 +7,7 @@ import httpx
 
 from .bookmakers import instant
 from .config import Settings
+from .market_math import normalized_1x2
 
 SYSTEM = """Ты аналитик футбольного сервиса prognozich ai. Дай связный аргументированный разбор по-русски.
 Единственные подтверждённые сведения — JSON статистической модели. Вероятности
@@ -246,9 +247,27 @@ def limited_event_summary(context: dict) -> str | None:
             observed = moscow_time(selected.get('observed_at'))
             if observed:
                 text += f'\n\nНаблюдение коэффициентов: {observed}.'
-            text += '\n\nКоэффициенты описывают рынок и сами по себе не доказывают равенство сил команд.'
-            if selected.get('is_stale') or snapshot.get('is_stale'):
-                text += ' Снимок мог устареть.'
+            if selected.get('is_stale'):
+                text += ' Эти котировки устарели; расчёт относится только ко времени указанного наблюдения.'
+            elif snapshot.get('is_stale'):
+                text += ' Снимок матча устарел; данные могли измениться.'
+            distribution = normalized_1x2(selected)
+            if distribution:
+                def pct(value):
+                    return f'{value * 100:.1f}'.replace('.', ',')
+                text += ('\n\n**Распределение по котировкам**\n'
+                         'Нормированные доли для указанного рынка и периода:')
+                labels = {'1': '1 — хозяева', 'X': 'X — ничья', '2': '2 — гости'}
+                for key, value in distribution['weights'].items():
+                    text += f'\n- {labels[key]}: {pct(value)}%'
+                text += ('\n\nЭто расчёт по коэффициентам с пропорциональным удалением '
+                         'избыточности, а не независимый прогноз или подтверждённые шансы команд.')
+                if distribution['overround'] >= 0:
+                    text += (f" Сумма обратных коэффициентов — {pct(distribution['reciprocal_sum'])}%; "
+                             f"превышение над 100% — {pct(distribution['overround'])} п.п.")
+                else:
+                    text += (f" Сумма обратных коэффициентов — {pct(distribution['reciprocal_sum'])}%, "
+                             'меньше 100%; перед выводами проверьте условия и актуальность рынка.')
     if ((context.get('request_time') or {}).get('kickoff_passed') and
             (context.get('event') or {}).get('phase') not in ('live', 'finished')):
         text += '\n\nВремя начала прошло, но текущая стадия матча не подтверждена.'
