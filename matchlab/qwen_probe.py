@@ -51,8 +51,8 @@ def check_load(settings):
         start=time.monotonic()
         try:
             reply=qwen._request(settings,'post','/chat/completions',json=payload)
-            usage=reply.get('usage') or {};choice=(reply.get('choices') or [{}])[0]
-            message=choice.get('message') or {}
+            choice,message=qwen._chat_choice(reply)
+            usage=reply.get('usage') or {}
             item.update(state='received',prompt_tokens=usage.get('prompt_tokens') if type(usage.get('prompt_tokens')) is int else None,
                         completion_tokens=usage.get('completion_tokens') if type(usage.get('completion_tokens')) is int else None,
                         response_characters=len(message.get('content')) if isinstance(message.get('content'),str) else 0,

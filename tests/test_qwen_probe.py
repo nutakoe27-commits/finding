@@ -57,5 +57,15 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(report['probes'][0]['reason'],'connection')
         self.assertNotIn('private-key',json.dumps(report))
 
+    def test_model_error_with_http_200_stops_probe_before_larger_request(self):
+        for reply in ({'error': {'message': 'EngineDeadError private-key'}},
+                      {'object': 'error', 'message': 'EngineDeadError private-key', 'code': 500},
+                      {'choices': [], 'usage': {}}, {'choices': [{'text': 'private legacy completion'}]}):
+            with self.subTest(shape=tuple(reply)), patch('matchlab.qwen._request',return_value=reply) as request:
+                report=check_load(self.settings)
+            self.assertEqual(request.call_count,1)
+            self.assertEqual(report['probes'][0]['state'],'failed')
+            self.assertNotIn('private',json.dumps(report))
+
 
 if __name__=='__main__':unittest.main()

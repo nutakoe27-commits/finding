@@ -75,6 +75,20 @@ def _request(settings: Settings, method: str, path: str, **kwargs) -> dict:
     return data
 
 
+def _chat_choice(data: dict) -> tuple[dict, dict]:
+    """Reject API error envelopes even when the transport status was HTTP 200."""
+    if isinstance(data, dict) and (data.get('error') or data.get('object') == 'error'):
+        raise ValueError('API Qwen вернул объект ошибки вместо Chat Completions. Проверьте журнал сервера vLLM.')
+    try:
+        choice = data['choices'][0]
+        message = choice['message']
+        if not isinstance(choice, dict) or not isinstance(message, dict):
+            raise TypeError('Invalid Chat Completions structure')
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise ValueError('Ответ API не содержит сообщение Chat Completions. Проверьте адрес и совместимость сервера.') from exc
+    return choice, message
+
+
 def _completion(settings: Settings, messages: list[dict]) -> str:
     if not settings.qwen_configured:
         raise ValueError("Сервер Qwen ещё не подключён.")
@@ -85,12 +99,8 @@ def _completion(settings: Settings, messages: list[dict]) -> str:
     if settings.qwen_enable_thinking is not None:
         payload["chat_template_kwargs"] = {"enable_thinking": settings.qwen_enable_thinking}
     data = _request(settings, "post", "/chat/completions", json=payload)
-    try:
-        choice = data["choices"][0]
-        message = choice["message"]
-        content = message.get("content")
-    except (KeyError, IndexError, TypeError, AttributeError) as exc:
-        raise ValueError("Ответ API не содержит сообщение Chat Completions. Проверьте адрес и совместимость сервера.") from exc
+    choice, message = _chat_choice(data)
+    content = message.get('content')
     usage=data.get('usage') if isinstance(data.get('usage'),dict) else {}
     safe_count=lambda key: usage.get(key) if type(usage.get(key)) is int else None
     finish=choice.get('finish_reason') if choice.get('finish_reason') in ('stop','length','tool_calls','content_filter') else 'unknown'

@@ -281,6 +281,13 @@ class QwenTests(unittest.TestCase):
             self.invoke(self.response({"choices": [{"message": {"content": "<think>private reasoning"}}]}))
         self.assertNotIn("private reasoning", str(error.exception))
 
+    def test_http_200_error_envelopes_are_not_reported_as_endpoint_incompatibility(self):
+        for body in ({'error': {'type': 'InternalServerError', 'message': 'EngineDeadError private-test-key'}},
+                     {'object': 'error', 'type': 'InternalServerError', 'message': 'private-test-key', 'code': 500}):
+            with self.subTest(body_type=tuple(body)), self.assertRaisesRegex(ValueError, 'объект ошибки') as error:
+                self.invoke(self.response(body))
+            self.assertNotIn('private-test-key', str(error.exception))
+
     def test_connection_failure_is_sanitized_and_identified(self):
         settings = Settings(Path("/unused"), "http://host.docker.internal:23333/v1", "local-model")
         with patch("matchlab.qwen.httpx.Client") as client:
