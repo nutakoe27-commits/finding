@@ -118,7 +118,16 @@ def passive_details(documents, header, expected_id):
         value=public_label(line)
         if value: lines.append(value)
         if len(lines)>=20: break
-    matches=[]; teams=[]; header_key=participant_key(header)
+    matches=[]; teams=[]; header_key=participant_key(header); target=None
+    for _,data in documents:
+        match=data.get('match') if isinstance(data.get('match'),dict) else data
+        if not isinstance(match,dict): continue
+        match_ids=public_sports_ids(match)
+        members=match.get('teams')
+        if expected_id in match_ids.values() and isinstance(members,dict):
+            if isinstance(members.get('home'),dict) and isinstance(members.get('away'),dict):
+                target=members
+                break
     for _,data in documents:
         match=data.get('match') if isinstance(data.get('match'),dict) else data
         members=match.get('teams') if isinstance(match,dict) else None
@@ -138,9 +147,33 @@ def passive_details(documents, header, expected_id):
                             'matching_id_fields':identifiers})
         team=data.get('team')
         if isinstance(team,dict) and isinstance(data.get('matches'),list):
-            teams.append({'name':public_label(team.get('name')),'name_type':type(team.get('name')).__name__,
-                          'team_ids':public_sports_ids(team),
-                          'match_count':len(data['matches'])})
+            item={'name':public_label(team.get('name')),'name_type':type(team.get('name')).__name__,
+                  'team_ids':public_sports_ids(team),'match_count':len(data['matches'])}
+            if target:
+                key=participant_key(team.get('name'))
+                matching=[side for side in ('home','away') if key and participant_key(target[side].get('name'))==key]
+                if len(matching)==1:
+                    target_team=target[matching[0]]
+                    target_ids=set(public_sports_ids(target_team).values())
+                    list_ids=set(public_sports_ids(team).values())
+                    evidence={'matching_side':matching[0],'rows_with_same_name':0,
+                              'rows_with_match_team_id':0,'rows_with_list_team_id':0,
+                              'rows_for_requested_match':0}
+                    for row in data['matches'][:100]:
+                        if not isinstance(row,dict): continue
+                        if expected_id in public_sports_ids(row).values(): evidence['rows_for_requested_match']+=1
+                        members=row.get('teams')
+                        if not isinstance(members,dict): continue
+                        for side in ('home','away'):
+                            member=members.get(side)
+                            if not isinstance(member,dict) or participant_key(member.get('name'))!=key: continue
+                            evidence['rows_with_same_name']+=1
+                            ids=set(public_sports_ids(member).values())
+                            if ids & target_ids: evidence['rows_with_match_team_id']+=1
+                            if ids & list_ids: evidence['rows_with_list_team_id']+=1
+                            break
+                    item['evidence']=evidence
+            teams.append(item)
     return {'header_lines':lines,'match_candidates':matches[:5],'team_match_lists':teams[:6]}
 
 

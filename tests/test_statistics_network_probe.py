@@ -103,6 +103,18 @@ class RedactionTests(unittest.TestCase):
         feed['participants']['away']=[{'matches':[{}]}]
         self.assertEqual(preview_feed_result(feed)['state'],'ready')
 
+    def test_passive_details_count_cross_references_without_inventing_identity(self):
+        docs=[(1,{'match':{'_id':123,'teams':{'home':{'_id':10,'name':'Alpha'},'away':{'_id':20,'name':'Beta'}}}}),
+              (2,{'team':{'_id':100,'name':'Alpha'},'matches':[
+                  {'_id':123,'teams':{'home':{'_id':10,'name':'Alpha'},'away':{'_id':20,'name':'Beta'}}},
+                  {'_id':888,'teams':{'home':{'_id':100,'name':'Alpha'},'away':{'_id':33,'name':'Other'}}},
+              ]})]
+        details=passive_details(docs,'Alpha — Beta','123')
+        evidence=details['team_match_lists'][0]['evidence']
+        self.assertEqual(evidence,{'matching_side':'home','rows_with_same_name':2,
+                                   'rows_with_match_team_id':1,'rows_with_list_team_id':1,
+                                   'rows_for_requested_match':1})
+
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(shutil.which('chromium'), 'Chromium is required')
