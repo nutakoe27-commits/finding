@@ -62,23 +62,7 @@ function showError(id, message) {
   $(id).hidden = !message;
 }
 async function api(url, options = {}) {
-  let response;
-  try {
-    response = await fetch(url, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-    });
-  } catch { throw new Error("Не удалось связаться с сервером. Проверьте соединение."); }
-  let body;
-  try { body = await response.json(); }
-  catch { throw new Error(response.ok ? "Сервис вернул некорректный ответ." : `Сервис вернул HTTP ${response.status}.`); }
-  if (!response.ok) {
-    const detail = Array.isArray(body.detail)
-      ? body.detail.map((item) => item.msg).join("; ")
-      : body.detail;
-    throw new Error(detail || `Ошибка сервиса (${response.status})`);
-  }
-  return body;
+  return window.Account.api(url, options);
 }
 
 function renderSources(data) {
@@ -453,16 +437,16 @@ function updateEventFavorite() {
 function observationTime(value) { return new Intl.DateTimeFormat("ru-RU",{timeZone:"Europe/Moscow",hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(value)); }
 function ageLabel(event) {
   const age = event.age_seconds ?? Math.max(0, (Date.now() - Date.parse(event.capture_started_at)) / 1000);
-  if (event.source_kind === "stream" && age < 45) return "Наблюдение " + observationTime(event.capture_started_at) + " МСК";
+  if (event.source_kind === "stream" && age < 45) return "Обновлено " + observationTime(event.capture_started_at) + " МСК";
   if (age < 60) return "Обновлено меньше минуты назад";
   if (age < 3600) return `Обновлено ${Math.floor(age / 60)} мин. назад`;
-  if (age < 86400) return `Снимок ${Math.floor(age / 3600)} ч. назад`;
-  return `Снимок от ${moscowTime(event.capture_started_at)}`;
+  if (age < 86400) return `Обновлено ${Math.floor(age / 3600)} ч. назад`;
+  return `Данные от ${moscowTime(event.capture_started_at)}`;
 }
 function phaseLabel(event) {
-  if (event.phase === "live") return event.is_stale ? "LIVE В СНИМКЕ" : "LIVE";
+  if (event.phase === "live") return event.is_stale ? "LIVE · ДАННЫЕ ЗАДЕРЖИВАЮТСЯ" : "LIVE";
   if (event.phase === "finished") return "ИТОГ ПОЛУЧЕН";
-  if (event.source_present === false) return "НЕТ В ПОСЛЕДНЕМ ПОТОКЕ";
+  if (event.source_present === false) return "СОБЫТИЕ БОЛЬШЕ НЕ ОБНОВЛЯЕТСЯ";
   if (event.kickoff_at && Date.parse(event.kickoff_at) <= Date.now()) return "НАЧАЛСЯ";
   return event.phase === "prematch" ? "ДО МАТЧА" : "СТАТУС НЕ УКАЗАН";
 }
@@ -633,7 +617,8 @@ function renderCatalogue(result) {
       const ai = el("button", "match-ai-button", "Разбор ИИ"); ai.type = "button";
       ai.addEventListener("click", () => openSelection(event.source_event_id, null, true));
       const markets = el("a", "match-open", event.source_kind === "stream" ? "Матч и рынки →" : `${event.coverage.captured_markets} рынков →`); markets.href = eventRoute(event);
-      actions.append(ai, markets); card.append(actions);
+      const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
+      actions.append(ai, markets, bookmaker); card.append(actions);
       const freshness = el("div", "match-freshness"); freshness.append(el("span", event.is_stale ? "freshness-badge stale" : "freshness-badge", ageLabel(event)));
       if (!event.coverage.complete && event.source_kind !== "stream") freshness.append(el("span", "partial-label", event.source_kind === "stream" ? "Основные рынки" : "Неполный снимок"));
       card.append(freshness); group.append(card);
@@ -689,11 +674,11 @@ function renderAISelection() {
   $("ai-match-label").textContent = eventTitle(document);
   const market = document.markets.find(item => item.key === state.selection?.marketKey);
   const outcome = market?.outcomes.find(item => item.key === state.selection?.outcomeKey);
-  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ") : "Событие целиком · основные рынки";
+  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ") : "Матч целиком";
   $("ai-outcome-label").hidden = !outcome;
   $("ai-outcome-label").textContent = outcome ? `${outcome.name} · ${outcome.odds ?? "недоступен"}` : "";
   $("ai-clear-selection").hidden = !market;
-  $("ai-snapshot-label").textContent = `${ageLabel(document)}${document.coverage.complete ? "" : " · неполные данные"}`;
+  $("ai-snapshot-label").textContent = ageLabel(document);
   renderAIAnalysisMeta();
   syncAIButton();
 }
@@ -704,18 +689,16 @@ function renderAIAnalysisMeta() {
   const market = context.markets.find(item => item.key === context.selection.market_key);
   const outcome = market?.outcomes.find(item => item.key === context.selection.outcome_key);
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
-  $("ai-analysis-meta").textContent = `${analysis.cached ? "Сохранённый разбор" : "Разбор готов"} · ${moscowTime(analysis.generated_at)} МСК. По снимку ${moscowTime(context.snapshot.capture_started_at)} МСК${outcome ? ` · ${outcome.name}: ${outcome.odds}` : ""}. Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} рынков.${changed ? " После начала разбора появились новые данные. Этот ответ относится к прежнему снимку." : ""}`;
-  $("ai-analysis-meta").textContent+=context.team_statistics ? ` Статистика участников: ${moscowTime(context.team_statistics.observed_at)} МСК.${context.team_statistics.match_phase === "finished" ? " Источник содержит итог матча." : ""}` : " Статистика участников в этом разборе не использовалась.";
-  if (context.team_statistics?.truncated_sections) $("ai-analysis-meta").textContent+=` Часть разделов статистики передана ИИ сокращённо (${context.team_statistics.truncated_sections} из ${context.team_statistics.total_sections}).`;
-  if (context.team_statistics?.header_truncated) $("ai-analysis-meta").textContent+=" Заголовок статистики передан сокращённо.";
-  const archive=context.archive_history;
-  $("ai-analysis-meta").textContent+=archive?.state === "ready" ? ` История участников учтена: ${archive.teams.map(t=>`${t.name} — ${t.recent_results.length}`).join("; ")}.` : " Совпадающая история участников в этом разборе не использовалась.";
+  $("ai-analysis-meta").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК.${changed ? " Данные матча обновились. Этот ответ относится к предыдущему состоянию — запросите новый разбор." : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}`;
   $("ai-analysis-meta").hidden = false;
 }
 function eventRoute(event) { return `#${event.source_kind === "stream" ? "stream" : "match"}/${event.source_event_id}`; }
 function eventAPI(id) { return `${state.streamEvent ? "/api/archive/events/" : "/api/bookmakers/events/"}${id}`; }
 function isEventRoute() { return /^#(?:match|stream)\//.test(state.route); }
 function openSelection(id, side = null, auto = false) {
+  if (auto && !Account.user) {
+    Account.ensure(()=>openSelection(id,side,auto)).then(allowed=>{if(allowed)openSelection(id,side,auto)}); return;
+  }
   state.pendingSelection = {id, side, auto};
   const stream=state.marketDocument ? state.marketDocument.source_kind === "stream" : state.catalogSource === "stream";
   const target=`#${stream ? "stream" : "match"}/${id}`;
@@ -751,11 +734,11 @@ async function loadEvent(refresh = false) {
   $("market-detail-title").textContent = eventTitle(document);
   $("event-competition").textContent = `${document.sport_label || sportLabel(document.sport)} · ${document.competition}`;
   $("breadcrumb").textContent = `Линия / ${document.sport_label || sportLabel(document.sport)}`;
-  $("tab-analysis").hidden = document.sport !== "football" || document.event_kind === "outright";
+  $("tab-analysis").hidden = !state.analysisContext?.prediction_available;
   $("event-kickoff").textContent = document.kickoff_at ? `${moscowTime(document.kickoff_at)} МСК` : "Начало встречи в снимке не указано";
   $("event-phase").textContent = [phaseLabel(document),document.final_result?.score_text || document.live_score,document.source_present === false ? null : document.live_clock].filter(Boolean).join(" · ");
   $("event-phase").classList.toggle("live", document.phase === "live");
-  $("event-source").href = document.url;
+  $("event-source").href = `/go/winline/${id}?source=${document.source_kind === "stream" ? "stream" : "legacy"}`;
   $("event-freshness").textContent = ageLabel(document);
   $("event-freshness").classList.toggle("stale", document.is_stale);
   $("market-detail-meta").textContent = `Источник: Winline. ${document.coverage.captured_markets} рынков, ${document.coverage.captured_outcomes} исходов. Наблюдение: ${moscowTime(document.capture_started_at)}–${moscowTime(document.observed_at)} МСК. ${document.coverage.complete ? "Полный снимок страницы." : "Снимок неполный: часть рынков могла не загрузиться."}`;
@@ -774,27 +757,19 @@ async function loadEvent(refresh = false) {
   return true;
 }
 function renderTeamStatistics(data) {
-  const expanded=new Set([...$("team-statistics-sections").querySelectorAll("details[open] > summary")].map(node=>node.textContent));
-  const snapshot=data?.statistics;
-  const stale=snapshot?.observed_at && Date.now()-Date.parse(snapshot.observed_at)>3600000;
-  const blocked=snapshot?.state === "blocked" || !!data?.source_blocked_until;
-  $("team-statistics-status").textContent=snapshot?.state === "ok" ? stale ? "· устарела" : "· получена" : blocked ? "· недоступна" : "· пока нет данных";
-  $("team-statistics-note").textContent=snapshot?.state === "ok" ? `Источник: StatsHub / Sportradar. Наблюдение ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Источник уже содержит итог этой встречи: данные подходят для разбора завершённого матча." : ""}${snapshot.latest_attempt?.state !== "ok" || blocked ? " Повторное обновление не удалось, показан сохранённый снимок." : ""}` : blocked ? "Источник ограничил доступ к статистике. ИИ использует доступные рынки и не выдумывает форму или личные встречи." : data?.link_status === "found" ? "Статистика по ссылке этой встречи ещё не получена." : "Связь этой встречи со статистикой источника пока не определена.";
-  if (stale) $("team-statistics-note").textContent+=" Снимок старше часа; данные могли измениться.";
-  $("team-statistics-source").hidden=!data?.statistics_url;
-  if (data?.statistics_url) $("team-statistics-source").href=data.statistics_url;
-  const groups=new Map();
-  for (const section of snapshot?.state === "ok" ? snapshot.sections : []) {
-    const title=section.title;
-    const category=/последние матчи|последние игры|последние бои|last matches|recent/i.test(title) ? "Форма и последние матчи" :
-      /последние встречи|сыгранные матчи|личные встречи|очные встречи|head.to.head/i.test(title) ? "Личные встречи" :
-      /статистика сезона|таблица|season|standings/i.test(title) ? "Сезон и турнирная таблица" :
-      /обзор матча|overall/i.test(title) ? "Обзор встречи" : "Другие показатели";
-    if (!groups.has(category)) { const group=el("section","statistics-category"); group.append(el("h3","",category)); groups.set(category,group); }
-    const details=el("details","statistics-section"); details.open=expanded.has(title); details.append(el("summary","",title),el("p","statistics-text",section.text)); groups.get(category).append(details);
-  }
-  $("team-statistics-sections").replaceChildren(...groups.values());
+  const snapshot=data?.statistics, stale=snapshot?.observed_at && Date.now()-Date.parse(snapshot.observed_at)>3600000;
+  const available=snapshot?.state === "ok";
+  $("team-statistics-status").textContent=available ? stale ? "· последнее обновление давно" : "· краткая сводка" : "· пока нет данных";
+  $("team-statistics-note").textContent=available ? `Обновлено ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Включает результат этой встречи." : ""}` : "Расширенная статистика пока недоступна. Ниже появятся последние игры из накопленной истории, когда данные будут получены.";
+  $("team-statistics-source").hidden=true;
+  const brief=(text,limit=240)=>{const lines=[...new Set((text || "").split(/\n+/).map(s=>s.trim()).filter(Boolean))];const value=lines.join(" · ");return value.length>limit ? value.slice(0,limit).replace(/\s+\S*$/,"")+"…" : value;};
+  const cards=[];
+  if(available && snapshot.header){const card=el("article","statistics-brief-card");card.append(el("h3","","Обзор участников"),el("p","",brief(snapshot.header)));cards.push(card);}
+  for(const section of available ? snapshot.sections.slice(0,4) : []){const card=el("article","statistics-brief-card");card.append(el("h3","",section.title),el("p","",brief(section.text)));cards.push(card);}
+  $("team-statistics-sections").classList.add("statistics-brief-grid");
+  $("team-statistics-sections").replaceChildren(...cards);
 }
+
 function renderMarketGroups() {
   if (!state.marketDocument) return;
   const focusedSelection = document.activeElement?.dataset.selection;
@@ -841,6 +816,9 @@ function setDetailTab(tab) {
   }
 }
 async function requestAI() {
+  if (!await Account.ensure(()=>requestAI())) return;
+  const accountId=Account.user.id;
+  Account.track("ai_intent",state.eventId || "forecast");
   if (state.aiBusy) { toast("Дождитесь завершения предыдущего разбора."); return; }
   const document = state.marketDocument, forecast = state.forecast;
   if (!document && !forecast) return;
@@ -853,13 +831,14 @@ async function requestAI() {
     const endpoint = document ? eventAPI(eventId)+"/explain" : "/api/explain";
     const body = document ? {content_version:document.content_version || null, observed_at:document.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value} : {forecast_id:forecastId,notes:$("notes").value};
     const result = await api(endpoint, {method:"POST",body:JSON.stringify(body)});
-    if (request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
+    if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
     renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
     if (result.context) {
       state.aiAnalysis = result; renderAIAnalysisMeta();
     }
   } catch (error) {
-    if (request === state.explainRequest) showError("ai-request-error", error.message);
+    if(error.status===401 && eventId===state.eventId) Account.show("login",()=>requestAI());
+    else if (request === state.explainRequest) showError("ai-request-error", error.message);
   } finally {
     state.aiBusy = false; $("ai-desk").setAttribute("aria-busy", "false"); syncAIButton();
   }
@@ -879,6 +858,7 @@ async function calculateEvent() {
   }
 }
 async function loadHistory() {
+  if (!await Account.ensure(()=>loadHistory())) return;
   const request = ++state.historyRequest;
   try {
     const result = await api("/api/analyses");
@@ -895,6 +875,7 @@ async function loadHistory() {
   } catch (error) { if (request === state.historyRequest) showError("history-error", error.message); }
 }
 async function loadSavedAnalysis(id) {
+  if (!await Account.ensure(()=>loadSavedAnalysis(id))) return;
   const request = ++state.marketDetailRequest;
   try {
     const analysis = await api(`/api/analyses/${encodeURIComponent(id)}`);
@@ -945,9 +926,10 @@ async function route() {
   const aliases = {"#markets":"#matches","#bookmakers":"#matches","#forecast":"#calculator","#validation":"#status","#data":"#status"};
   if (aliases[hash]) { hash = aliases[hash]; history.replaceState(null,"",hash); }
   const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/);
-  if (!["#matches","#favorites","#history","#archive","#status","#calculator"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
-  state.route = hash; state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
-  document.body.classList.toggle("without-ai-desk", ["#matches","#favorites","#history","#archive","#status"].includes(hash) || Boolean(saved));
+  if (!["#matches","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
+  state.route = hash; Account.track("page_view",hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
+  $("league-nav").hidden=!["#matches","#favorites"].includes(hash) && !match;
+  document.body.classList.toggle("without-ai-desk", ["#matches","#favorites","#history","#archive","#status","#account","#admin"].includes(hash) || Boolean(saved));
   syncGuide();
   state.streamEvent=hash.startsWith("#stream/");
   if (previous !== hash) { invalidateForecast(); state.marketDocument = null; state.analysisContext = null; state.eventId = null; state.selection = null; clearAIOutput(); renderTeamStatistics(null); renderArchiveHistory(null); $("notes").value = ""; $("ai-empty").hidden = false; $("ai-selection").hidden = true; }
@@ -964,6 +946,10 @@ async function route() {
     $("catalog-stats").hidden = hash === "#favorites";
     $("breadcrumb").textContent = hash === "#favorites" ? "Линия / Избранное" : `Линия / ${sportLabel(state.sport)}`;
     state.catalogReturn = hash; state.marketOffset = 0; loadCatalogue();
+  } else if (hash === "#account") {
+    showView("view-account"); $("breadcrumb").textContent="Личный кабинет"; Account.renderPage();
+  } else if (hash === "#admin") {
+    showView("view-admin"); $("breadcrumb").textContent="Управление / Обзор"; window.Admin?.open();
   } else if (hash === "#archive") {
     showView("view-archive"); $("breadcrumb").textContent="Данные / Архив матчей"; state.archiveOffset=0; loadArchive();
   } else if (hash === "#history") {
@@ -977,7 +963,7 @@ async function route() {
     $("event-analysis-controls").hidden = !match;
     $("forecast").classList.toggle("manual-mode",hash === "#calculator");
     if (match) {
-      state.eventId = match[1]; $("breadcrumb").textContent = "Линия / Матч";
+      state.eventId = match[1]; Account.track("match_view",match[1]); $("breadcrumb").textContent = "Линия / Матч";
       $("match-back").href = state.catalogReturn; $("match-back").textContent = "← К линии";
       $("market-search").value = ""; $("market-group-filter").value = "";
       $("market-groups").replaceChildren(el("p","small muted","Загружаем рынки…"));
@@ -1118,14 +1104,14 @@ function renderArchiveHistory(data) {
   const box=$("archive-team-history");
   box.hidden=!data;
   if(!data)return;
-  $("archive-binding").textContent=data.state === "ready" ? "Winline · накопленные результаты" : "Данных пока недостаточно";
-  $("archive-team-note").textContent=data.state === "ready" ? `Показана ограниченная подборка результатов, известных на момент разбора.${data.mode === "live" ? " Для Live это история до начала текущей встречи." : data.mode === "retrospective" ? " Начало выбранной встречи уже прошло: доступен ретроспективный разбор." : ""}` : data.reason || "Сопоставленная история ещё не поступила. Отсутствие записей не означает отсутствие игр.";
+  $("archive-binding").textContent=data.state === "ready" ? "Последние игры" : "Данных пока недостаточно";
+  $("archive-team-note").textContent=data.state === "ready" ? "Последние результаты участников до начала выбранной встречи." : data.reason || "Сопоставленная история ещё не поступила. Отсутствие записей не означает отсутствие игр.";
   $("archive-team-cards").replaceChildren(...(data.teams || []).map(team=>{
     const card=el("article","archive-team-card");card.append(el("h3","",team.name));
-    card.append(el("p","small muted",team.available_result_records ? `${team.recent_results.length} из ${team.available_result_records} найденных результатов` : "Совпадающие результаты ещё не накоплены"));
-    card.append(...team.recent_results.map(resultRow));return card;
+    card.append(el("p","small muted",team.available_result_records ? "Недавние результаты" : "Совпадающие результаты ещё не накоплены"));
+    card.append(...team.recent_results.slice(0,3).map(resultRow));return card;
   }));
-  $("archive-h2h-list").replaceChildren(...(data.head_to_head?.length ? data.head_to_head.map(resultRow) : [el("p","small muted","Совпадающих личных встреч пока нет в базе.")]));
+  $("archive-h2h-list").replaceChildren(...(data.head_to_head?.length ? data.head_to_head.slice(0,2).map(resultRow) : [el("p","small muted","Совпадающих личных встреч пока нет в базе.")]));
 }
 async function loadArchive() {
   const request=++state.archiveRequest;
@@ -1157,3 +1143,10 @@ $("archive-sport").addEventListener("change",()=>{state.archiveOffset=0;loadArch
 $("archive-refresh").addEventListener("click",loadArchive);
 $("archive-prev").addEventListener("click",()=>{state.archiveOffset=Math.max(0,state.archiveOffset-30);loadArchive()});
 $("archive-next").addEventListener("click",()=>{state.archiveOffset+=30;loadArchive()});
+
+document.addEventListener("accountchange",()=>{
+  state.explainRequest++;clearAIOutput();syncAIButton();
+  $("explanation").replaceChildren();$("history-list").replaceChildren();$("saved-analysis-text").replaceChildren();
+  if(state.route==="#account") Account.renderPage();
+  if(state.route==="#history"){if(Account.user)loadHistory();else $("history-empty").hidden=false;}
+});

@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from account_helpers import signed_in
+
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.event_analysis import analysis_context, request_key
@@ -31,6 +33,7 @@ class ProductTests(unittest.TestCase):
         self.path = Path(self.directory.name)
         self.client = TestClient(create_app(Settings(self.path, "http://127.0.0.1:9/v1", "isolated-model")))
         self.client.__enter__()
+        signed_in(self.client,Repository(self.path / 'matchlab.sqlite3'))
         self.repo = Repository(self.path / "matchlab.sqlite3")
         self.repo.import_event_markets(event())
 

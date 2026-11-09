@@ -60,13 +60,13 @@ async def exercise(base,repo):
             await front.goto(base+'/#match/123')
             await front.locator('#event-refresh').wait_for(state='visible')
             await front.locator('#event-refresh').click()
-            await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('очереди')")
+            await front.locator("#event-refresh-status").filter(has_text='очереди').wait_for()
             async with httpx.AsyncClient(base_url=base,headers={'X-Matchlab-Collector-Key':KEY},timeout=30,trust_env=False) as client:
                 claim=(await client.post('/api/bookmakers/refresh/claim',json={})).json()['job']
                 assert claim and claim['event']['source_event_id']=='123',claim
                 result=await refresh_job(source,client,claim)
                 assert result=={'source_event_id':'123','market_state':'ok','statistics_state':'ok'},result
-                await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('Статистика обновлена')",timeout=15000)
+                await front.locator("#event-refresh-status").filter(has_text='Статистика обновлена').wait_for(timeout=15000)
                 assert 'Рынки обновлены' in await front.locator('#event-refresh-status').inner_text()
                 saved=repo.event_markets('123'); assert saved['markets'][0]['outcomes'][0]['odds']==3.9
                 old=repo.statistics('123'); assert old['state']=='ok'
@@ -76,14 +76,14 @@ async def exercise(base,repo):
                     with repo.connection() as db:
                         db.execute('UPDATE event_refresh_jobs SET requested_at=? WHERE event_id=?',((datetime.now(timezone.utc)-timedelta(seconds=31)).isoformat(timespec='microseconds'),'123'))
                     await front.locator('#event-refresh').click()
-                    await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('очереди')")
+                    await front.locator("#event-refresh-status").filter(has_text='очереди').wait_for()
                     claim=(await client.post('/api/bookmakers/refresh/claim',json={})).json()['job']
                     count=len(stat_requests)
                     result=await refresh_job(source,client,claim)
                     assert result['market_state']=='ok' and result['statistics_state']=='blocked',result
                     if run: assert len(stat_requests)==count,stat_requests
                     else: assert len(stat_requests)>count,stat_requests
-                    await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('Источник ограничил доступ к статистике')",timeout=15000)
+                    await front.locator("#event-refresh-status").filter(has_text='Источник ограничил доступ к статистике').wait_for(timeout=15000)
                     retained=repo.statistics('123')
                     assert retained['sections']==old['sections'] and retained['observed_at']==old['observed_at'] and retained['latest_attempt']['state']=='blocked'
                 other=document(PROJECTIONS[0]); other.update(source_event_id='124',url='https://winline.ru/stavki/sport/futbol/rossiya/rpl/124',home='Спартак М',away='Акрон Тольятти',statistics_url='https://winline.ru/stats/match/72334422')
@@ -91,12 +91,12 @@ async def exercise(base,repo):
                 await front.goto(base+'/#match/124')
                 await front.locator('#event-refresh').wait_for(state='visible')
                 await front.locator('#event-refresh').click()
-                await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('очереди')")
+                await front.locator("#event-refresh-status").filter(has_text='очереди').wait_for()
                 claim=(await client.post('/api/bookmakers/refresh/claim',json={})).json()['job']
                 count=len(stat_requests)
                 result=await refresh_job(source,client,claim)
                 assert result['market_state']=='ok' and result['statistics_state']=='blocked' and len(stat_requests)==count,result
-                await front.wait_for_function("document.querySelector('#event-refresh-status').textContent.includes('Источник ограничил доступ к статистике')",timeout=15000)
+                await front.locator("#event-refresh-status").filter(has_text='Источник ограничил доступ к статистике').wait_for(timeout=15000)
                 assert not errors,errors
             await source.close()
         finally: await browser.close()

@@ -73,13 +73,12 @@ async def exercise(base,repo):
                 page=await browser.new_page(viewport={'width':width,'height':900})
                 errors=[]; page.on('pageerror',lambda error:errors.append(str(error)))
                 await page.goto(base+'/#match/123')
-                await page.wait_for_function("document.getElementById('team-statistics-status').textContent.includes('получена')")
+                await page.locator("#team-statistics-status").filter(has_text="краткая сводка").wait_for()
                 await page.locator('#team-statistics>summary').click()
-                assert 'итог этой встречи' in await page.locator('#team-statistics-note').inner_text()
-                groups=await page.locator('.statistics-category h3').all_inner_texts()
-                assert 'Сезон и турнирная таблица' in groups and 'Личные встречи' in groups and 'Форма и последние матчи' in groups,groups
-                await page.locator('.statistics-section>summary').first.click()
-                assert '25 Забитые мячи 17' in await page.locator('.statistics-section').first.inner_text()
+                assert 'результат этой встречи' in await page.locator('#team-statistics-note').inner_text()
+                groups=await page.locator('.statistics-brief-card h3').all_inner_texts()
+                assert 'Статистика сезона' in groups and 'Обзор участников' in groups,groups
+                assert '25 Забитые мячи 17' in await page.locator('#team-statistics-sections').inner_text()
                 assert not await page.evaluate('document.documentElement.scrollWidth>window.innerWidth')
                 assert not errors,errors
                 await page.close()

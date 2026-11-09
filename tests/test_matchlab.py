@@ -12,6 +12,8 @@ from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 import httpx
 
+from account_helpers import signed_in
+
 from matchlab.api import create_app
 from matchlab.backtest import metrics, run_backtest, save_report
 from matchlab.config import Settings
@@ -124,6 +126,7 @@ class APITests(unittest.TestCase):
         self.repo.replace_season("2324", training_rows(), "test", "fixture")
         self.client = TestClient(create_app(self.settings))
         self.client.__enter__()
+        signed_in(self.client,Repository(self.settings.database))
 
     def tearDown(self):
         self.client.__exit__(None, None, None)

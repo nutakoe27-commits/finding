@@ -31,6 +31,7 @@ def domain_name(value):
 
 def configuration(domain,port,cert=None,key=None,acme_root=None):
     zone='matchlab_'+hashlib.sha256(domain.encode()).hexdigest()[:12]
+    auth_zone='matchlab_auth_'+hashlib.sha256(domain.encode()).hexdigest()[:12]
     tls=(f'    listen 443 ssl;\n    listen [::]:443 ssl;\n    ssl_certificate {cert};\n    ssl_certificate_key {key};\n' if cert and key else '')
     acme=(f'''    # Managed by Matchlab ACME challenge
     location ^~ /.well-known/acme-challenge/ {{
@@ -50,11 +51,13 @@ def configuration(domain,port,cert=None,key=None,acme_root=None):
     return f'''{MARKER}
 # HTTP and optional HTTPS for this virtual host; no global defaults changed.
 limit_req_zone $binary_remote_addr zone={zone}:1m rate=6r/m;
+limit_req_zone $binary_remote_addr zone={auth_zone}:1m rate=20r/m;
 server {{
     listen 80;
     listen [::]:80;
 {tls.rstrip()}
     server_name {domain};
+{('    if ($scheme = http) { return 308 https://'+domain+'$request_uri; }') if cert and key else ''}
     client_max_body_size 2m;
     add_header X-Matchlab-Site {domain} always;
 
@@ -65,6 +68,11 @@ server {{
     }}
     location ~ ^/api/(explain|forecast|bookmakers/events/[0-9]+/explain|archive/events/[0-9]+/explain)/?$ {{
         limit_req zone={zone} burst=2 nodelay;
+        limit_req_status 429;
+{proxy}
+    }}
+    location ~ ^/api/(auth/(login|register)|admin/reauth)/?$ {{
+        limit_req zone={auth_zone} burst=10 nodelay;
         limit_req_status 429;
 {proxy}
     }}

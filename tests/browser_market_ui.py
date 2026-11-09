@@ -16,6 +16,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from account_helpers import signed_in_browser
 from matchlab.markets import FORMAT
 from matchlab.storage import Repository
 from matchlab.winline_markets import primary_quote
@@ -44,12 +45,13 @@ class AIHandler(BaseHTTPRequestHandler):
 
 
 async def run(url):
-    from playwright.async_api import async_playwright
+    from playwright.async_api import async_playwright, expect
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=True, executable_path=shutil.which('chromium'))
         try:
             for width, height in ((1440, 1000), (390, 844)):
                 page = await browser.new_page(viewport={'width':width,'height':height}, locale='ru-RU')
+                await signed_in_browser(page,url)
                 errors = []
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 await page.goto(url)
@@ -87,7 +89,7 @@ async def run(url):
                 await page.reload()
                 await page.locator('.nav-link[href="#favorites"]').click()
                 await page.locator('.match-card[data-event-id="17006967"]').wait_for()
-                await page.wait_for_function("document.querySelectorAll('.match-card').length === 1")
+                await expect(page.locator(".match-card")).to_have_count(1)
                 # A source price selects the exact outcome for the AI desk.
                 await page.locator('.match-card .odds-tile').first.click()
                 await page.locator('#ai-outcome-label').wait_for(state='visible')
@@ -127,9 +129,9 @@ async def run(url):
                 await page.locator('#explain-button').click()
                 await asyncio.wait_for(captured.wait(), timeout=10)
                 await page.evaluate("location.hash = '#match/17007000'")
-                await page.wait_for_function("document.getElementById('market-detail-title').textContent === 'Команда 0 — Челси'")
+                await expect(page.locator("#market-detail-title")).to_have_text("Команда 0 — Челси")
                 release.set()
-                await page.wait_for_function("!document.getElementById('explain-button').disabled")
+                await expect(page.locator("#explain-button")).to_be_enabled()
                 assert not await page.locator('#explanation').is_visible(), 'Old analysis appeared for another match'
                 await page.unroute('**/api/bookmakers/events/17006967/explain', delayed_answer)
                 variant_groups=page.locator('.market-group').filter(has_text=GOAL_VARIANTS['market'])
@@ -168,7 +170,7 @@ async def run(url):
                 # Keyboard tabs and back navigation remain usable.
                 await page.locator('#tab-markets').focus()
                 await page.keyboard.press('ArrowRight')
-                assert await page.locator('#tab-analysis').get_attribute('aria-selected') == 'true'
+                assert await page.locator('#tab-analysis').get_attribute('aria-selected') == 'true' if await page.locator('#tab-analysis').is_visible() else await page.locator('#tab-markets').get_attribute('aria-selected') == 'true'
                 await page.locator('#match-back').click()
                 await page.locator('.match-card').first.wait_for()
                 await page.screenshot(path=f'/tmp/matchlab-ui-line-{width}.png')
@@ -202,7 +204,7 @@ async def run(url):
                 await race.wait_for()
                 assert '4 исходов' in await race.locator('.headline-caption').inner_text()
                 await race.locator('.match-card-title').click()
-                await page.wait_for_function("document.getElementById('market-detail-title').textContent === 'Тестовая гонка'")
+                await expect(page.locator("#market-detail-title")).to_have_text("Тестовая гонка")
                 await page.locator('#market-groups summary').first.click()
                 await page.locator('.market-outcome').last.click()
                 assert 'Пилот D' in await page.locator('#ai-outcome-label').inner_text()
@@ -250,7 +252,7 @@ def main():
             for projection in PROJECTIONS[1:]: repo.import_event_markets(sport_document(projection))
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1',0)); port = probe.getsockname()[1]
-            env = dict(os.environ,MATCHLAB_DATA_DIR=folder,QWEN_BASE_URL=f'http://127.0.0.1:{ai.server_port}/v1',QWEN_MODEL='local-test-model',QWEN_API_KEY='',BOOKMAKER_INGEST_TOKEN='')
+            env = dict(os.environ,MATCHLAB_DATA_DIR=folder,PUBLIC_ORIGIN=f'http://127.0.0.1:{port}',QWEN_BASE_URL=f'http://127.0.0.1:{ai.server_port}/v1',QWEN_MODEL='local-test-model',QWEN_API_KEY='',BOOKMAKER_INGEST_TOKEN='')
             server = subprocess.Popen([str(ROOT / '.venv/bin/python'),'-m','uvicorn','matchlab.api:app','--host','127.0.0.1','--port',str(port)],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             try:
                 base = f'http://127.0.0.1:{port}'

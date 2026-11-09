@@ -6,12 +6,16 @@
   <meta name="theme-color" content="#121618" />
   <title>prognozich ai — спортивная аналитика</title>
   <meta name="application-name" content="prognozich ai" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="manifest" href="/static/manifest.webmanifest" />
   <meta name="description" content="Матчи, спортивные рынки и аргументированные разборы с ИИ." />
   <meta property="og:title" content="prognozich ai — спортивная аналитика" />
   <link rel="icon" href="/static/icon.svg?v=2" type="image/svg+xml" />
-  <script>let initialTheme;try{initialTheme=localStorage.getItem('matchlab:theme:v1')}catch(e){}document.documentElement.dataset.theme=(initialTheme==='light'||initialTheme==='dark')?initialTheme:(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');</script>
-  <link rel="stylesheet" href="/static/style.css?v=20261109-runtime11" />
-  <script src="/static/app.js?v=20261109-runtime11" defer></script>
+  <script src="/static/theme.js?v=20261109-accounts1"></script>
+  <link rel="stylesheet" href="/static/style.css?v=20261109-accounts1" />
+  <script src="/static/account.js?v=20261109-accounts1" defer></script>
+  <script src="/static/app.js?v=20261109-accounts1" defer></script>
+  <script src="/static/admin.js?v=20261109-accounts1" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -30,7 +34,7 @@
     </div>
   </aside>
   <main id="main-content" tabindex="-1">
-    <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span></div></header>
+    <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span><a id="admin-link" href="#admin" hidden>Управление</a><button id="account-button" class="account-button" type="button">Войти</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
       <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Футбол<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Предстоящие встречи, Live и история участников. Данные обновляются без перезагрузки.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Загрузить сохранённые данные; сборщик работает автоматически"><span aria-hidden="true">↻</span> Обновить</button></div>
@@ -53,9 +57,9 @@
       <a id="match-back" class="back-link" href="#matches">← К матчам</a>
       <header id="event-header" class="event-header" hidden>
         <div class="event-topline"><p id="event-competition" class="eyebrow"></p><button id="event-favorite" class="secondary-button" type="button" aria-pressed="false">☆ В избранное</button></div>
-        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p></div><a id="event-source" class="source-link" target="_blank" rel="noopener noreferrer">Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></div>
+        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p></div><a id="event-source" class="source-link event-bookmaker-button" target="_blank" rel="sponsored noopener noreferrer">Перейти к событию на Winline ↗</a></div>
         <div id="event-primary" class="event-primary" hidden></div>
-        <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Запросить свежие данные по этому матчу">Обновить данные</button><button id="event-show-markets" class="text-button" type="button">Все рынки ↓</button><details class="snapshot-info"><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
+        <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Запросить свежие данные по этому матчу">Обновить</button><button id="event-show-markets" class="text-button" type="button">Все рынки ↓</button><details class="snapshot-info" hidden><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
         <p id="event-refresh-status" class="small muted" role="status" aria-live="polite"></p>
       </header>
       <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
@@ -350,6 +354,45 @@
       </section>
 
     </section>
+    <section id="view-account" data-view hidden>
+      <div class="page-heading"><div><p class="eyebrow">ВАШ ПРОФИЛЬ</p><h1>Личный кабинет<span class="lime">.</span></h1><p class="subtitle">Разборы, бонусы и уведомления — всё в одном месте.</p></div></div>
+      <article id="account-guest" class="panel"><h2>Войдите в аккаунт</h2><p>Матчи и статистика доступны всем. Аккаунт нужен для ИИ-разборов и личной истории.</p><button id="account-login" type="button" class="primary-button">Войти или зарегистрироваться</button></article>
+      <div id="account-content" hidden>
+        <div class="account-summary panel"><div><span class="eyebrow">АККАУНТ</span><h2 id="account-name"></h2><p id="account-usage" class="muted"></p></div><button id="account-logout" class="secondary-button" type="button">Выйти</button></div>
+        <p id="account-message" class="account-message" role="status"></p>
+        <div class="account-grid">
+          <article class="panel"><span class="eyebrow">БОНУСЫ</span><h2 id="account-bonus">Бонусные разборы</h2><p id="account-bonus-note" class="small muted"></p><form id="promo-redeem-form"><label for="promo-code">Промокод</label><div class="inline-form"><input id="promo-code" maxlength="40" minlength="4" required placeholder="Введите код" autocomplete="off"/><button class="secondary-button" type="submit">Активировать</button></div></form></article>
+          <article class="panel"><span class="eyebrow">НА СВЯЗИ</span><h2>Уведомления</h2><p id="push-note" class="muted"></p><div class="button-row"><button id="push-enable" class="secondary-button" type="button">Включить на этом устройстве</button><button id="push-disable" class="text-button" type="button" hidden>Отключить</button></div></article>
+          <article class="panel"><span class="eyebrow">БЕЗОПАСНОСТЬ</span><h2>Изменить пароль</h2><form id="account-password-form"><label for="account-old-password">Текущий пароль</label><input id="account-old-password" type="password" autocomplete="current-password" maxlength="128" required/><label for="account-new-password">Новый пароль</label><input id="account-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required/><p class="small muted">Не менее 12 символов. Используйте уникальный пароль.</p><button type="submit" class="secondary-button">Сохранить пароль</button></form></article>
+          <article class="panel"><span class="eyebrow">ЛИЧНАЯ ИСТОРИЯ</span><h2>Ваши ИИ-разборы</h2><p class="muted">Сохранённые разборы и заметки доступны только вам. Вернитесь к выбранному матчу в любой момент.</p><a href="#history" class="text-link">Открыть историю →</a></article>
+        </div>
+      </div>
+    </section>
+    <section id="view-admin" data-view hidden>
+      <div class="page-heading"><div><p class="eyebrow">УПРАВЛЕНИЕ СЕРВИСОМ</p><h1>Пульт управления<span class="lime">.</span></h1><p class="subtitle">Аудитория, коммуникации и работа продукта.</p></div><button id="admin-refresh" class="secondary-button" type="button">Обновить</button></div>
+      <div id="admin-denied" class="panel" hidden><h2>Нужен аккаунт администратора</h2><p class="muted">Управление сервисом доступно только назначенным администраторам.</p></div>
+      <div id="admin-content" hidden>
+        <div class="admin-security-line"><span class="status-dot green"></span><span>Действия сохраняются в журнале</span><button id="admin-confirm-access" type="button" class="text-button">Подтвердить пароль</button></div>
+        <nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
+        <p id="admin-message" class="account-message" role="status"></p>
+        <div data-admin-panel="overview">
+          <div class="admin-period"><label for="admin-period">Период</label><select id="admin-period"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select><button id="admin-export" class="text-button" type="button">Скачать отчёт CSV ↓</button></div>
+          <div id="admin-metrics" class="admin-metrics"></div>
+          <div class="admin-overview-grid"><article class="panel"><div class="panel-heading"><h2>Посещаемость</h2><span class="small muted">Уникальные браузеры по дням · UTC</span></div><div id="admin-traffic" class="admin-traffic"></div></article><article class="panel"><h2>Путь пользователя</h2><div id="admin-funnel" class="admin-funnel"></div></article></div>
+          <article class="panel admin-source-card"><h2>Данные и ИИ</h2><div id="admin-service-health"></div></article>
+          <article class="panel"><h2>Последние запросы ИИ</h2><div id="admin-ai-list" class="admin-table-wrap"></div></article>
+        </div>
+        <div data-admin-panel="users" hidden><div class="admin-section-heading"><h2>Пользователи</h2><label class="search-field"><span class="sr-only">Поиск по логину</span><input id="admin-user-search" type="search" maxlength="50" placeholder="Найти по логину"/></label></div><p id="admin-user-total" class="small muted"></p><div id="admin-users" class="admin-table-wrap panel"></div><div class="pagination"><button id="admin-users-prev" class="secondary-button" type="button">← Назад</button><button id="admin-users-next" class="secondary-button" type="button">Дальше →</button></div></div>
+        <div data-admin-panel="push" hidden>
+          <div class="admin-section-heading"><h2>Push-уведомления</h2><span id="admin-push-state" class="subtle-badge"></span></div><p id="admin-push-note" class="muted"></p>
+          <div class="admin-compose-grid"><article class="panel"><h3>Новая кампания</h3><form id="admin-push-form"><label for="push-title">Заголовок</label><input id="push-title" maxlength="80" required placeholder="Матч, который стоит посмотреть"/><label for="push-body">Текст уведомления</label><textarea id="push-body" maxlength="240" rows="3" required placeholder="Короткое сообщение для подписчиков"></textarea><label for="push-url">Страница после нажатия</label><input id="push-url" value="/#matches" maxlength="100" required/><label for="push-segment">Аудитория</label><select id="push-segment"><option value="self">Только мои устройства — тест</option><option value="all">Все подписчики</option><option value="active_7d">Входили за последние 7 дней</option></select><label for="push-scheduled">Время отправки <span class="muted">(необязательно)</span></label><input id="push-scheduled" type="datetime-local"/><p class="small muted">Время в вашем часовом поясе. Отправка потребует отдельного подтверждения.</p><button type="submit" class="primary-button">Сохранить черновик</button></form></article><article class="panel notification-preview-panel"><span class="eyebrow">ПРЕДПРОСМОТР</span><div class="notification-preview"><div class="notification-app"><img src="/static/icon.svg" width="24" height="24" alt=""/><span>prognozich ai</span><small>сейчас</small></div><strong id="push-preview-title">Заголовок уведомления</strong><p id="push-preview-body">Так подписчики увидят ваше сообщение.</p></div><p class="small muted">Внешний вид зависит от браузера и устройства. Уведомления получают только пользователи, давшие разрешение.</p></article></div>
+          <article class="panel"><h3>Кампании и доставка</h3><div id="admin-campaigns" class="admin-table-wrap"></div></article>
+        </div>
+        <div data-admin-panel="promos" hidden><div class="admin-section-heading"><h2>Промокоды</h2><span class="small muted">Активации и бонусные разборы</span></div><article class="panel"><form id="admin-promo-form" class="admin-promo-grid"><label>Код<input id="admin-promo-code" pattern="[A-Za-z0-9_-]{4,40}" maxlength="40" required placeholder="WELCOME"/></label><label>Название кампании<input id="admin-promo-title" maxlength="100" required placeholder="Ранний доступ"/></label><label>Бонусных разборов<input id="admin-promo-bonus" type="number" min="1" max="1000" value="5" required/></label><label>Лимит активаций<input id="admin-promo-limit" type="number" min="1" max="100000" value="100" required/></label><label>Начало<input id="admin-promo-start" type="datetime-local" required/></label><label>Окончание<input id="admin-promo-end" type="datetime-local" required/></label><p class="small muted">Промокод создаётся черновиком. Один аккаунт может активировать его один раз. Бонусы сохраняются и используются при включённом дневном лимите.</p><button type="submit" class="primary-button">Создать черновик</button></form></article><article class="panel"><h3>Все промокоды</h3><div id="admin-promos" class="admin-table-wrap"></div></article></div>
+        <div data-admin-panel="links" hidden><article class="panel"><span class="eyebrow">ПАРТНЁРСКИЕ ПЕРЕХОДЫ</span><h2>Ссылки Winline</h2><p class="muted">Все кнопки перехода к событию используют одно правило. Пока шаблон пуст, открывается прямая ссылка на матч.</p><form id="admin-link-form"><label for="admin-link-template">Шаблон реферальной ссылки</label><input id="admin-link-template" maxlength="2000" placeholder="https://partner.example/click?url={url}&event={event_id}"/><p class="small muted"><code>{url}</code> — закодированная ссылка на событие, <code>{event_id}</code> — номер события. Используйте HTTPS-ссылку, выданную вашей партнёрской программой.</p><button class="primary-button" type="submit">Сохранить правило</button></form></article></div>
+        <div data-admin-panel="audit" hidden><article class="panel"><h2>Журнал действий</h2><p class="muted">Изменения пользователей, промокодов, ссылок и отправки уведомлений.</p><div id="admin-audit" class="admin-table-wrap"></div><div class="pagination"><button id="admin-audit-prev" class="secondary-button" type="button">← Назад</button><button id="admin-audit-next" class="secondary-button" type="button">Дальше →</button></div></article></div>
+      </div>
+    </section>
     <footer class="page-footer"><span class="footer-brand">prognozich <span>ai</span></span><span>Вероятность — оценка модели, а не гарантия результата.</span></footer>
   </main>
 
@@ -359,7 +402,7 @@
       <div id="ai-empty" class="ai-empty"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h3>Выберите событие</h3><p>Выберите событие или коэффициент. ИИ разберёт рынок и объяснит, на что обратить внимание.</p></div>
       <div id="ai-selection" hidden><p id="ai-match-label" class="ai-match-label"></p><p id="ai-market-label" class="muted small"></p><p id="ai-outcome-label" class="ai-outcome-label" hidden></p><button type="button" id="ai-clear-selection" class="text-button" hidden>Разобрать весь матч</button><p id="ai-snapshot-label" class="small muted"></p></div>
       <details id="ai-notes-details" class="ai-notes"><summary>Добавить сведения о матче</summary><label class="sr-only" for="notes">Ваши сведения о матче</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Например, новость об участнике или составе. Эти сведения будут отмечены как непроверенные."></textarea></details>
-      <p class="ai-visibility">Разборы и заметки видны всем посетителям.</p>
+      <p class="ai-visibility">Ваши разборы и заметки сохраняются в личном аккаунте.</p>
       <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
       <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
       <div id="ai-request-error" class="notice error" role="alert" hidden></div>
@@ -367,5 +410,8 @@
     </aside>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title"><button id="auth-close" class="dialog-close" type="button" aria-label="Закрыть">×</button><div class="auth-brand"><img src="/static/icon.svg" width="40" height="40" alt=""/><span>prognozich <strong>ai</strong></span></div><p class="eyebrow">БОЛЬШЕ КОНТЕКСТА. ОСМЫСЛЕННЫЙ РАЗБОР.</p><h2 id="auth-title">Ваш личный аналитик</h2><p id="auth-description" class="muted"></p><form id="auth-form"><label for="auth-username">Логин</label><input id="auth-username" name="username" autocomplete="username" pattern="[A-Za-z0-9_]{3,32}" minlength="3" maxlength="32" required/><label for="auth-password">Пароль</label><input id="auth-password" name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required/><p class="small muted">Логин: латинские буквы, цифры и _. Пароль: от 12 символов.</p><p id="auth-error" class="form-error" role="alert"></p><button id="auth-submit" type="submit" class="primary-button">Создать аккаунт</button></form><button id="auth-switch" type="button" class="text-button"></button><p class="auth-public-note small muted">Матчи, коэффициенты и статистика остаются доступными без регистрации.</p></dialog>
+  <dialog id="admin-password-dialog" class="auth-dialog" aria-labelledby="admin-password-title"><button id="admin-password-close" class="dialog-close" type="button" aria-label="Закрыть">×</button><p class="eyebrow">ПОДТВЕРЖДЕНИЕ ДОСТУПА</p><h2 id="admin-password-title">Пароль администратора</h2><p class="muted">Подтверждение действует 10 минут в этом сеансе.</p><form id="admin-password-form"><label for="admin-password">Ваш пароль</label><input id="admin-password" type="password" autocomplete="current-password" maxlength="128" required/><p id="admin-password-error" class="form-error" role="alert"></p><button type="submit" class="primary-button">Подтвердить</button></form></dialog>
+  <dialog id="push-confirm-dialog" class="auth-dialog" aria-labelledby="push-confirm-title"><button id="push-confirm-close" class="dialog-close" type="button" aria-label="Закрыть">×</button><p class="eyebrow">ПРОВЕРКА ПЕРЕД ОТПРАВКОЙ</p><h2 id="push-confirm-title"></h2><p id="push-confirm-body" class="muted"></p><p id="push-confirm-audience"></p><button id="push-confirm-send" type="button" class="primary-button">Подтвердить отправку</button><p class="small muted">Уже переданные push-службе сообщения отозвать нельзя.</p></dialog>
 </body>
 </html>

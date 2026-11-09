@@ -473,7 +473,7 @@ def project(e, markets=None):
         "competition": e["competition"],
         "phase": phase,
         "kickoff_at": e["kickoff_at"],
-        "url": "https://winline.ru/",
+        "url": f"https://winline.ru/stavki/event/{e['event_id']}",
         "observed_at": at,
         "capture_started_at": at,
         "age_seconds": age(at),

@@ -146,23 +146,14 @@ def analysis_statistics(snapshot: dict | None) -> dict | None:
     # captions and periods: a provider's 80/100 form score is not a win chance.
     priority=('последние матчи','последние встречи','сыгранные матчи','статистика сезона','таблица','обзор матча')
     ordered=sorted(snapshot['sections'],key=lambda section:next((index for index,label in enumerate(priority) if section['title'].lower().startswith(label)),len(priority)))
-    # Spread the bounded context across every collected section rather than
-    # letting a long early result list hide the other team's data or standings.
-    remaining=16000
-    sections=[]
-    for index,section in enumerate(ordered):
-        allowance=min(2500,remaining//(len(ordered)-index))
-        content=section['text'][:allowance]
-        truncated=len(content)<len(section['text'])
-        if truncated and '\n' in content and content.rfind('\n')>=len(content)//2:
-            content=content[:content.rfind('\n')]
-        sections.append({'title':section['title'],'text':content,'truncated':truncated})
-        remaining-=len(content)
+    # UI summaries are built only in the browser. Keep every validated source
+    # section intact for the model and the audited analysis snapshot.
+    sections=[{'title':section['title'],'text':section['text'],'truncated':False} for section in ordered]
     age=max(0,int((datetime.now(timezone.utc)-instant(snapshot['observed_at'])).total_seconds()))
     return {'source':'Sportradar / StatsHub via Winline','statistics_id':snapshot['statistics_id'],
             'statistics_url':snapshot['statistics_url'],'observed_at':snapshot['observed_at'],'age_seconds':age,
-            'is_stale':age>3600,'match_phase':snapshot['match_phase'],'header':snapshot['header'][:2200],
-            'header_truncated':len(snapshot['header'])>2200,
+            'is_stale':age>3600,'match_phase':snapshot['match_phase'],'header':snapshot['header'],
+            'header_truncated':False,
             'sections':sections,'total_sections':len(snapshot['sections']),
             'truncated_sections':sum(section['truncated'] for section in sections),
             'scope':'visible source sections, may include this match and future fixtures'}

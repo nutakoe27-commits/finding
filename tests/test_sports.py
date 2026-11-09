@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from account_helpers import signed_in
+
 from matchlab.api import create_app
 from matchlab.bookmakers import EPL, model_teams
 from matchlab.config import Settings
@@ -74,6 +76,7 @@ class SportReceiver(unittest.TestCase):
         self.path=Path(self.folder.name)
         self.client=TestClient(create_app(Settings(self.path,'http://127.0.0.1:9/v1','local-test-model')))
         self.client.__enter__()
+        signed_in(self.client,Repository(self.path / 'matchlab.sqlite3'))
         self.repo=Repository(self.path/'matchlab.sqlite3')
         for item in PROJECTIONS: self.repo.import_event_markets(document(item))
 

@@ -112,6 +112,13 @@ class Repository:
 
             from .archive import SCHEMA
             db.executescript(SCHEMA)
+            from .accounts import SCHEMA as ACCOUNT_SCHEMA
+            db.executescript(ACCOUNT_SCHEMA)
+            from .growth import SCHEMA as GROWTH_SCHEMA
+            db.executescript(GROWTH_SCHEMA)
+            columns={row['name'] for row in db.execute('PRAGMA table_info(event_analyses)')}
+            if 'user_id' not in columns:db.execute('ALTER TABLE event_analyses ADD COLUMN user_id TEXT')
+            db.execute('CREATE INDEX IF NOT EXISTS analyses_owner ON event_analyses(user_id,generated_at)')
 
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:
         if not rows:
@@ -194,22 +201,22 @@ class Repository:
             rows = db.execute("SELECT payload FROM forecasts ORDER BY generated_at DESC LIMIT ?", (limit,))
             return [json.loads(row[0]) for row in rows]
 
-    def save_event_analysis(self, payload: dict, request_key: str) -> None:
+    def save_event_analysis(self, payload: dict, request_key: str, user_id=None) -> None:
         with self.connection() as db:
-            db.execute("INSERT INTO event_analyses VALUES (?, ?, ?, ?)",
-                       (payload["id"], request_key, payload["generated_at"], json.dumps(payload, ensure_ascii=False)))
+            db.execute("INSERT INTO event_analyses(id,request_key,generated_at,payload,user_id) VALUES (?, ?, ?, ?, ?)",
+                       (payload["id"], request_key, payload["generated_at"], json.dumps(payload, ensure_ascii=False),user_id))
 
-    def event_analysis(self, *, analysis_id=None, request_key=None) -> dict | None:
+    def event_analysis(self, *, analysis_id=None, request_key=None,user_id=None) -> dict | None:
         with self.connection() as db:
             if analysis_id:
-                row = db.execute("SELECT payload FROM event_analyses WHERE id = ?", (analysis_id,)).fetchone()
+                row = db.execute("SELECT payload FROM event_analyses WHERE id = ?"+(' AND user_id=?' if user_id else ''), (analysis_id,user_id) if user_id else (analysis_id,)).fetchone()
             else:
-                row = db.execute("SELECT payload FROM event_analyses WHERE request_key = ? ORDER BY generated_at DESC LIMIT 1", (request_key,)).fetchone()
+                row = db.execute("SELECT payload FROM event_analyses WHERE request_key = ?"+(' AND user_id=?' if user_id else '')+" ORDER BY generated_at DESC LIMIT 1", (request_key,user_id) if user_id else (request_key,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def recent_event_analyses(self, limit=20) -> list[dict]:
+    def recent_event_analyses(self, limit=20,user_id=None) -> list[dict]:
         with self.connection() as db:
-            rows = db.execute("SELECT payload FROM event_analyses ORDER BY generated_at DESC LIMIT ?", (limit,))
+            rows = db.execute("SELECT payload FROM event_analyses"+(' WHERE user_id=?' if user_id else '')+" ORDER BY generated_at DESC LIMIT ?", (user_id,limit) if user_id else (limit,))
             # Send summaries without the audited prompt context; the detail
             # endpoint returns the full saved snapshot of the request.
             return [{key: value for key, value in json.loads(row[0]).items() if key != "context"} for row in rows]

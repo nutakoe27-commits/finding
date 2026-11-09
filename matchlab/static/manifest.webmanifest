@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "prognozich ai — спортивная аналитика",
+  "short_name": "prognozich ai",
+  "lang": "ru",
+  "start_url": "/#matches",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#121618",
+  "theme_color": "#121618",
+  "icons": [{"src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}

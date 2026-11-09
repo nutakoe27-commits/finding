@@ -13,6 +13,8 @@ import subprocess
 
 from fastapi.testclient import TestClient
 
+from account_helpers import signed_in
+
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.statistics import FORMAT,analysis_statistics,validate_statistics
@@ -37,6 +39,7 @@ class StatisticsTests(unittest.TestCase):
         self.stack=ExitStack(); folder=self.stack.enter_context(tempfile.TemporaryDirectory()); self.path=Path(folder)
         self.client=self.stack.enter_context(TestClient(create_app(Settings(self.path,'http://127.0.0.1:9/v1','local-test-model',bookmaker_ingest_token=KEY)),client=('127.0.0.1',1234)))
         self.repo=Repository(self.path/'matchlab.sqlite3')
+        signed_in(self.client,self.repo)
         parent=event(); parent.update(home='Спартак М',away='Акрон Тольятти',statistics_url='https://winline.ru/stats/match/72334410')
         self.repo.import_event_markets(parent)
         self.headers={'X-Matchlab-Collector-Key':KEY}
@@ -161,7 +164,7 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(snapshot['state'],'blocked')
         self.assertIsNone(analysis_statistics(snapshot))
 
-    def test_ai_context_includes_all_source_sections_with_explicit_truncation(self):
+    def test_ai_context_keeps_full_source_sections_independent_of_ui_summary(self):
         self.post(stats())
         snapshot=self.repo.statistics('123')
         snapshot['header']='А'*3000
@@ -169,10 +172,10 @@ class StatisticsTests(unittest.TestCase):
         context=analysis_statistics(snapshot)
         self.assertEqual(context['total_sections'],20)
         self.assertEqual(len(context['sections']),20)
-        self.assertEqual(context['truncated_sections'],20)
-        self.assertTrue(context['header_truncated'])
-        self.assertLessEqual(sum(len(item['text']) for item in context['sections']),16000)
-        self.assertTrue(all(item['truncated'] and item['text'] for item in context['sections']))
+        self.assertEqual(context['truncated_sections'],0)
+        self.assertFalse(context['header_truncated'])
+        self.assertEqual(sum(len(item['text']) for item in context['sections']),sum(len(item['text']) for item in snapshot['sections']))
+        self.assertTrue(all(not item['truncated'] and item['text'] for item in context['sections']))
 
     def test_client_setup_copies_only_collector_key_without_printing_it(self):
         output=self.path/'client.json'

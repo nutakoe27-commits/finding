@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
 import json
+import hashlib
 import math
 import secrets
 from pathlib import Path
@@ -82,8 +83,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repo.initialize()
         yield
 
-    app = FastAPI(title="prognozich ai", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings
+    from . import accounts, growth, push
+    accounts.install(app,repo,settings)
+    growth.install(app,repo,settings)
+    push.install(app,repo,settings)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     models = OrderedDict()
@@ -102,8 +107,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return models[key], revision
 
     @app.get("/", include_in_schema=False)
-    def index():
-        return FileResponse(STATIC / "index.html")
+    def index(request:Request):
+        response=FileResponse(STATIC / "index.html",headers={'Cache-Control':'no-store'})
+        if not request.cookies.get('prognozich_visitor'):
+            response.set_cookie('prognozich_visitor',growth.visitor(request),max_age=30*86400,httponly=True,samesite='lax',secure=accounts.origin(request).startswith('https://'),path='/')
+        return response
+
+    @app.get('/sw.js',include_in_schema=False)
+    def service_worker():
+        return FileResponse(STATIC/'sw.js',media_type='application/javascript',headers={'Cache-Control':'no-cache','Service-Worker-Allowed':'/'})
 
     @app.get("/api/health")
     def health():
@@ -430,14 +442,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"forecasts": repo.recent_forecasts()}
 
     @app.post("/api/bookmakers/events/{event_id}/explain")
-    def explain_event(event_id: str, request: EventExplainRequest):
-        return explain_event_impl(event_id,request,False)
+    def explain_event(event_id: str, request: EventExplainRequest,http_request:Request):
+        return explain_event_impl(event_id,request,False,http_request.state.user)
 
     @app.post('/api/archive/events/{event_id}/explain')
-    def explain_stream_event(event_id:str,request:EventExplainRequest):
-        return explain_event_impl(event_id,request,True)
+    def explain_stream_event(event_id:str,request:EventExplainRequest,http_request:Request):
+        return explain_event_impl(event_id,request,True,http_request.state.user)
 
-    def explain_event_impl(event_id,request,stream):
+    def explain_event_impl(event_id,request,stream,user):
         from .event_analysis import analysis_context, request_key
         from .statistics import analysis_statistics
         if not settings.qwen_configured:
@@ -456,7 +468,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         team_statistics=analysis_statistics(saved_statistics)
         archive_history=archive.history(repo,document)
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        cached = repo.event_analysis(request_key=key)
+        key=hashlib.sha256((user['id']+':'+key).encode()).hexdigest()
+        cached = repo.event_analysis(request_key=key,user_id=user['id'])
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(minutes=10):
             return {**cached, "cached": True}
         if not analysis_lock.acquire(blocking=False):
@@ -485,18 +498,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
                        "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
                        "text": text, "context": context}
-            repo.save_event_analysis(payload, key)
+            repo.save_event_analysis(payload, key,user_id=user['id'])
             return {**payload, "cached": False}
         finally:
             analysis_lock.release()
 
     @app.get("/api/analyses")
-    def analyses():
-        return {"analyses": repo.recent_event_analyses()}
+    def analyses(request:Request):
+        return {"analyses": repo.recent_event_analyses(user_id=request.state.user['id'])}
 
     @app.get("/api/analyses/{analysis_id}")
-    def analysis_detail(analysis_id: str):
-        result = repo.event_analysis(analysis_id=analysis_id)
+    def analysis_detail(analysis_id: str,request:Request):
+        result = repo.event_analysis(analysis_id=analysis_id,user_id=request.state.user['id'])
         if not result:
             raise HTTPException(404, "Разбор не найден.")
         return result

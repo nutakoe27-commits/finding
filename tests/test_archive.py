@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from account_helpers import signed_in
+
 from matchlab import archive
 from matchlab.api import create_app
 from matchlab.config import Settings
@@ -103,6 +105,7 @@ class ArchiveTests(unittest.TestCase):
             TestClient(create_app(self.settings), client=("127.0.0.1", 1000))
         )
         self.repo = Repository(self.path / "matchlab.sqlite3")
+        signed_in(self.client,self.repo)
         self.headers = {"X-Matchlab-Collector-Key": TOKEN}
 
     def tearDown(self):

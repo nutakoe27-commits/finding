@@ -58,8 +58,8 @@ async def exercise(base):
                     await page.locator('.match-card-title').first.click()
                     await page.locator('#event-header').wait_for(state='visible')
                     assert await page.locator('#ai-desk').is_visible()
-                    assert 'всем посетителям' in await page.locator('.ai-visibility').inner_text()
-                    await page.locator('#tab-analysis').click()
+                    assert 'личном аккаунте' in await page.locator('.ai-visibility').inner_text()
+                    if await page.locator('#tab-analysis').is_visible(): await page.locator('#tab-analysis').click()
                     await page.locator('#event-show-markets').click()
                     assert await page.locator('#tab-markets').get_attribute('aria-selected')=='true'
                     assert await page.locator('#market-detail').is_visible()

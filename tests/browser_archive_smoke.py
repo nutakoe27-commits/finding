@@ -18,6 +18,7 @@ from threading import Thread
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from account_helpers import signed_in_browser
 from browser_market_ui import REQUESTS, AIHandler
 from test_archive import header, result
 
@@ -76,6 +77,7 @@ async def exercise(base, repo):
                     locale="ru-RU",
                 )
                 page = await context.new_page()
+                await signed_in_browser(page, base)
                 errors = []
                 page.on(
                     "pageerror",
@@ -167,6 +169,7 @@ def main():
             env = dict(
                 os.environ,
                 MATCHLAB_DATA_DIR=folder,
+                PUBLIC_ORIGIN=f"http://127.0.0.1:{port}",
                 QWEN_BASE_URL=f"http://127.0.0.1:{ai.server_port}/v1",
                 QWEN_MODEL="archive-fixture",
                 QWEN_API_KEY="",
