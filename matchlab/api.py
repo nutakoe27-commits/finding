@@ -550,7 +550,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .event_analysis import request_key
         document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history']
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        return hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
+        return hashlib.sha256((user['id']+':'+key+':web=disabled:stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
 
     def explain_event_impl(event_id,request,stream,http_request,inputs=None,generation_settings=None):
         from .event_analysis import analysis_context
@@ -559,8 +559,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history'];preparation=inputs['preparation']
         key=event_analysis_key(user,request,inputs)
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
-        search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
-        cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
+        cache_seconds = 600
         if cached and cached.get('context',{}).get('ai_generation',{}).get('state') in ('unavailable','partial'):
             cache_seconds=min(cache_seconds,30)
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
@@ -587,8 +586,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     context['statistics_preparation']={'state':preparation['statistics_state'],'requested_at':preparation['requested_at']}
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            from .web_research import research
-            context['web_research'] = research(settings, context['event'])
+            context['web_research'] = {'state':'disabled','sources':[]}
             from .chances import assess
             context['probability_assessment']=assess(repo,document,context)
             # Public context contains predictions, never fitted parameters or tuning.

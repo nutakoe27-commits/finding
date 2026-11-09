@@ -126,6 +126,65 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(diag['state'],'unavailable')
         self.assertEqual(diag['model_calls'],1)
 
+    def test_unknown_quote_source_is_not_misreported_as_context_overflow(self):
+        model=FakeModel(limit=131072)
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),
+                       lambda *args:'{"observations":[{"text":"Факт","quotes":[{"source":"missing","quote":"invented"}]}]}',model.request)
+        self.assertEqual(diag['reason'],'quotation_mismatch')
+        self.assertEqual(diag['model_calls'],1)
+        self.assertNotIn('context_limit',diag['errors'])
+        self.assertEqual(diag['attempts'][0]['validation'],'quotation_mismatch')
+
+    def test_bad_quote_gets_one_small_repair_without_resending_all_markets(self):
+        model=FakeModel(limit=131072);payloads=[];timeouts=[]
+        def complete(settings,messages):
+            payload=json.loads(messages[1]['content']);payloads.append(payload);timeouts.append(settings.qwen_timeout)
+            if payload['stage']=='evidence':
+                return json.dumps({'observations':[{'text':'Аргумент требует сверки','quotes':[{'source':payload['records'][0]['id'],'quote':'несуществующая цитата'}]}]})
+            return json.dumps(reply({**payload,'stage':'evidence'}),ensure_ascii=False)
+        arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
+        self.assertEqual(diag['state'],'ready',diag['errors'])
+        self.assertEqual([p['stage'] for p in payloads],['evidence','evidence_repair'])
+        self.assertEqual(diag['model_calls'],2);self.assertEqual((diag['parts_completed'],diag['parts_total']),(1,1))
+        self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
+        self.assertEqual(len(payloads[1]['records']),1)
+        self.assertLess(len(json.dumps(payloads[1])),len(json.dumps(payloads[0]))//10)
+        self.assertEqual(timeouts[1],60)
+        self.assertEqual([a['status'] for a in diag['attempts']],['invalid_response','validated'])
+        self.assertTrue(arguments)
+
+    def test_repair_cannot_bypass_quote_or_number_validation_or_loop(self):
+        for wrong in ('quotation','number'):
+            model=FakeModel(limit=131072);payloads=[]
+            def complete(settings,messages):
+                payload=json.loads(messages[1]['content']);payloads.append(payload)
+                if payload['stage']=='evidence' or wrong=='quotation':
+                    return json.dumps({'observations':[{'text':'Факт','quotes':[{'source':payload['records'][0]['id'],'quote':'выдумка'}]}]})
+                fixed=reply({**payload,'stage':'evidence'});fixed['observations'][0]['text']='Забито 9999 голов'
+                return json.dumps(fixed,ensure_ascii=False)
+            arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
+            self.assertIsNone(arguments)
+            self.assertEqual(diag['state'],'unavailable')
+            self.assertEqual(diag['reason'],'quotation_mismatch' if wrong=='quotation' else 'unsupported_number')
+            self.assertEqual(diag['model_calls'],2)
+
+    def test_repair_timeout_stops_without_another_full_request(self):
+        model=FakeModel(limit=131072)
+        def complete(settings,messages):
+            payload=json.loads(messages[1]['content'])
+            if payload['stage']=='evidence_repair':raise ValueError('Сервер Qwen не ответил вовремя.')
+            return json.dumps({'observations':[{'text':'Факт','quotes':[{'source':payload['records'][0]['id'],'quote':'выдумка'}]}]})
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
+        self.assertEqual(diag['reason'],'timeout');self.assertEqual(diag['model_calls'],2)
+
+    def test_only_proven_old_quote_failure_can_be_relabelled(self):
+        gen={'reason':'context_limit','attempts':[{'status':'invalid_response','validation':'quotation_mismatch'}]}
+        self.assertEqual(qwen.generation_reason(gen),'quotation_mismatch')
+        gen['attempts'].append({'status':'context_limit'})
+        self.assertEqual(qwen.generation_reason(gen),'context_limit')
+        self.assertEqual(qwen.event_error_code(ValueError('Нет обработанных частей контекста.')),'invalid_response')
+        self.assertEqual(qwen.event_error_code(ValueError('Полный контекст матча превышает лимит сервера ИИ.')),'context_limit')
+
     def test_timeout_stops_future_calls_including_final_synthesis(self):
         model=FakeModel(limit=32768);calls=[]
         def complete(settings,messages):

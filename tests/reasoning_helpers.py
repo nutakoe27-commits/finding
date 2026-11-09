@@ -4,8 +4,10 @@ import json
 
 def reply(payload):
     stage=payload['stage']
-    if stage=='evidence':
-        record=payload['records'][0]
+    if stage in ('evidence','evidence_repair'):
+        records=[r for r in payload['records'] if not isinstance(r['data'],str) or r['data'].strip()]
+        if not records:return {'observations':[]}
+        record=records[0]
         value=record['data'];literal=value if isinstance(value,str) else json.dumps(value,ensure_ascii=False,separators=(',',':'))
         return {'observations':[{'text':'Данные источника сопоставлены с условиями матча и рынка.',
             'quotes':[{'source':record['id'],'quote':literal[:160]}]}]}

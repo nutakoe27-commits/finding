@@ -18,6 +18,7 @@ class ProbeTests(unittest.TestCase):
         self.repo=Repository(self.settings.database);self.repo.initialize()
         self.repo.save_event_analysis({'id':'probe','generated_at':datetime.now(timezone.utc).isoformat(),
             'context':{'event':{'home':'A','away':'B'},'markets':[],'team_statistics':{'text':'private source text'},
+                       'web_research':{'state':'ready','sources':[{'excerpt':'old web snippet'}]},
                        'ai_generation':{'evidence':['previous runtime notes']}}},'probe-key')
 
     def test_context_measurement_does_not_generate_or_expose_source(self):
@@ -36,6 +37,8 @@ class ProbeTests(unittest.TestCase):
         text=calls[-1][2]['json']['messages'][1]['content']
         self.assertIn('private source text',text)
         self.assertNotIn('previous runtime notes',text)
+        self.assertNotIn('old web snippet',text)
+        self.assertEqual(report['input_sections_bytes']['web_research'],len('{"state":"disabled","sources":[]}'.encode()))
         self.assertEqual(json.loads(text)['stage'],'evidence')
 
     def test_probe_times_two_sequential_requests_without_printing_response_or_credentials(self):

@@ -1,5 +1,6 @@
 """Full-context reasoning with validated citations and bounded map/reduce fallback."""
 from concurrent.futures import ThreadPoolExecutor
+from copy import copy
 from dataclasses import replace
 import json
 import logging
@@ -19,6 +20,7 @@ EXTRACT=RULES+'''
 Read ALL records. Compare facts and report up to 2 important observations for this match, text <=180 characters each.
 Schema: {"observations":[{"text":"brief fact and its significance","quotes":[{"source":"S1","quote":"verbatim data excerpt"}]}]}.
 Each observation needs 1-2 exact source quotes, <=120 characters each. No invented IDs or percentages in text.
+Copy quotes from the cited record's data, never from scope or a different record. Do not translate or paraphrase quotes.
 observations=[] is allowed. A source fragment is not the whole match context.'''
 REDUCE=RULES+'''
 Select important, complementary observations for a brief final report.
@@ -34,8 +36,16 @@ Read ALL records and write final arguments for the match forecast, comparing sup
 Return {"observations":[{"text":"brief evidence-based argument","quotes":[{"source":"S1","quote":"verbatim data excerpt"}]}]}.
 Provide 1-2 arguments in Russian, text <=100 characters each, with ONE exact quote <=60 characters each.
 Every source ID must exist in records. Check periods, filters, dates and participant identities.
+Copy each quote literally from that record's data. For structured data quote an existing string or scalar;
+do not combine JSON keys and values into a sentence, change numbers, translate or paraphrase the quote.
 Do not turn a market estimate into an independent prediction. No percentages or technical IDs in public text.
 The server displays computed probabilities separately; explain the evidence without repeating those numbers.'''
+REPAIR=RULES+'''
+The earlier arguments failed quotation verification. Use ONLY the provided records to correct them.
+Return {"observations":[{"text":"brief supported argument","quotes":[{"source":"S1","quote":"exact excerpt"}]}]}.
+Provide 1-2 Russian arguments, text <=100 characters each, with ONE literal quote <=60 characters each.
+Copy a quote from the cited record's data, never scope or another record. Do not translate, round or paraphrase it.
+Drop or correct unsupported claims; invent no sources, numbers or percentages. If none are supported return observations=[].'''
 
 
 def encoded(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -224,7 +234,7 @@ def analyze(settings,context,complete,request):
     scope=build([])['match']
     single_pass=budget.fits(DIRECT,build(source_records),512)
     batches=[source_records] if single_pass else budget.batches(source_records,EXTRACT,build,768)
-    lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={}
+    lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={};repairs=0
     logger=logging.getLogger('uvicorn.error')
     def mark_valid():
         detail=getattr(current,'attempt',None)
@@ -240,7 +250,7 @@ def analyze(settings,context,complete,request):
                  'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema'}
         detail.update(status='invalid_response',validation=reasons.get(str(error),'unexpected_response'))
         logger.warning('Qwen part invalid: call=%s stage=%s validation=%s',detail['call'],detail['stage'],detail['validation'])
-    def invoke(system,payload,output=768,final=False):
+    def invoke(system,payload,output=768,final=False,timeout=None):
         nonlocal calls
         current.attempt=None
         remaining=deadline-time.monotonic()-(0 if final else 12)
@@ -250,7 +260,7 @@ def analyze(settings,context,complete,request):
             calls+=1
             call=calls
         message=encoded(payload)
-        opts=replace(settings,qwen_timeout=min(settings.qwen_timeout,remaining),qwen_max_tokens=min(settings.qwen_max_tokens,output))
+        opts=replace(settings,qwen_timeout=min(settings.qwen_timeout,remaining,timeout or settings.qwen_timeout),qwen_max_tokens=min(settings.qwen_max_tokens,output))
         detail={'call':call,'stage':payload['stage'],'status':'pending','input_bytes':len(system.encode())+len(message.encode()),
                 'input_tokens':budget.measured.get((system,message)),'timeout_seconds':round(opts.qwen_timeout,2)}
         current.attempt=detail
@@ -270,6 +280,30 @@ def analyze(settings,context,complete,request):
             detail['elapsed_ms']=int((time.monotonic()-began)*1000)
             logger.info('Qwen part finished: call=%s stage=%s status=%s elapsed_ms=%s',call,detail['stage'],detail['status'],detail['elapsed_ms'])
 
+    def repair(reply,records):
+        nonlocal repairs
+        values=reply.get('observations') if isinstance(reply,dict) else None
+        if not isinstance(values,list) or not 1<=len(values)<=3:raise ValueError('Unsupported quotation')
+        ids={q.get('source') for v in values if isinstance(v,dict) for q in (v.get('quotes') or [])
+             if isinstance(q,dict) and isinstance(q.get('source'),str)}
+        selected=[r for r in records if r['id'] in ids]
+        if not selected or len(selected)>4:raise ValueError('Unsupported quotation')
+        payload=evidence_payload(context,selected)
+        payload.update(stage='evidence_repair',claims=[v.get('text','')[:350] for v in values if isinstance(v,dict) and isinstance(v.get('text'),str)])
+        repair_budget=copy(budget)
+        repair_budget.settings=replace(settings,qwen_batch_tokens=min(8192,settings.qwen_batch_tokens))
+        if not repair_budget.fits(REPAIR,payload,512):raise ValueError('Unsupported quotation')
+        if deadline-time.monotonic()<2 or stop.is_set():raise ValueError('Unsupported quotation')
+        with lock:
+            if repairs:raise ValueError('Unsupported quotation')
+            repairs+=1
+            errors.append('quotation_mismatch')
+        result=invoke(REPAIR,payload,512,final=single_pass,timeout=60)
+        observations=verified_observations(result,selected)
+        if single_pass and not observations:raise ValueError('Invalid final analysis')
+        mark_valid()
+        return observations
+
     def extract(records):
         nonlocal single_pass
         if stop.is_set():
@@ -277,7 +311,11 @@ def analyze(settings,context,complete,request):
             return []
         try:
             reply=invoke(DIRECT if single_pass else EXTRACT,build(records),512 if single_pass else 768,final=single_pass)
-            observations=verified_observations(reply,records)
+            try:observations=verified_observations(reply,records)
+            except ValueError as error:
+                if str(error)!='Unsupported quotation':raise
+                mark_invalid(error)
+                observations=repair(reply,records)
             if single_pass and not observations:raise ValueError('Invalid final analysis')
             mark_valid()
             with lock:accepted.update(r['id'] for r in records);leaves.append(True)
@@ -335,7 +373,7 @@ def analyze(settings,context,complete,request):
     try:
         # No failed connection is retried just to generate a final paragraph.
         if stop.is_set():raise ModelStopped(stopped_reason.get('value','timeout'))
-        if not accepted:raise ValueError('Нет обработанных частей контекста.')
+        if not accepted:raise ModelStopped(errors[-1] if errors else 'invalid_response')
         if single_pass:
             arguments=[]
             for item in all_evidence:
@@ -375,7 +413,7 @@ def analyze(settings,context,complete,request):
     markets_complete=sum(ids<=accepted for ids in market_records.values())
     full=len(accepted)==len(source_records)
     state='ready' if full and final_ok else 'partial' if accepted else 'unavailable'
-    reason=None if state=='ready' else final_error if accepted and final_error else next((c for c in errors if c!='invalid_response'),'invalid_response')
+    reason=None if state=='ready' else final_error or next((c for c in errors if c!='invalid_response'),'invalid_response')
     diagnostics={'state':state,'reason':reason,'model_calls':calls,'parts_total':len(leaves),
         'parts_completed':sum(leaves),'source_records':len(source_records),'source_records_completed':len(accepted),
         'markets_total':len(context.get('markets',[])),'markets_completed':markets_complete,

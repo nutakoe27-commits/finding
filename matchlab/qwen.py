@@ -328,11 +328,23 @@ def explain_event(settings: Settings, context: dict) -> str:
 
 def event_error_code(error):
     message=str(error).lower()
-    for text,code in (('контекст','context_limit'),('вовремя','timeout'),('подключиться','connection'),
+    for text,code in (('unsupported quotation','quotation_mismatch'),('unsupported numeric claim','unsupported_number'),
+                      ('unsupported final numbers','unsupported_number'),
+                      ('полный контекст матча превышает лимит','context_limit'),('вовремя','timeout'),('подключиться','connection'),
                       ('прокси','proxy'),('лимита токенов','output_limit'),('рассуждения','reasoning_only'),
                       ('http 401','authentication'),('http 404','model_or_endpoint'),('http','provider_http')):
         if text in message:return code
     return 'invalid_response'
+
+
+def generation_reason(generation):
+    """Correct the old no-accepted-parts misclassification from saved attempt evidence."""
+    reason=generation.get('reason')
+    attempts=generation.get('attempts') or []
+    if reason=='context_limit' and isinstance(attempts,list) and attempts and all(
+        isinstance(a,dict) and a.get('status')=='invalid_response' and a.get('validation')=='quotation_mismatch' for a in attempts):
+        return 'quotation_mismatch'
+    return reason
 
 
 def explain_assessment(settings,context):
@@ -355,8 +367,10 @@ def explain_assessment(settings,context):
         if diagnostics['state']=='partial':
             extra='ИИ обработал только часть данных или не завершил итоговый анализ; полнота разбора ограничена.'
         else:
-            extra=('Не удалось передать контекст нейросети даже частями; показан расчётный отчёт.' if diagnostics['reason']=='context_limit'
-                   else 'Нейросеть недоступна или вернула некорректный ответ; показан расчётный отчёт.')
+            extra={'context_limit':'Не удалось передать контекст нейросети даже частями; показан расчётный отчёт.',
+                   'quotation_mismatch':'Ответ нейросети не прошёл проверку цитат; показан расчётный отчёт.',
+                   'unsupported_number':'Числа в ответе нейросети не подтверждены источниками; показан расчётный отчёт.'}.get(
+                       diagnostics['reason'],'Нейросеть недоступна или вернула некорректный ответ; показан расчётный отчёт.')
     if any(arg.startswith('По неподтверждённым сообщениям:') for arg in arguments or []):
         extra=(extra+' ' if extra else '')+'Сообщения интернет-источников требуют проверки.'
     logging.getLogger('uvicorn.error').info('Qwen event complete: state=%s parts=%s/%s calls=%s markets=%s/%s',diagnostics['state'],

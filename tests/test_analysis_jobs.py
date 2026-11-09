@@ -82,6 +82,15 @@ class AnalysisJobTests(unittest.TestCase):
         self.assertEqual(model.call_args.args[1]['unverified_user_notes'],'Личная заметка')
         self.assertEqual(self.status(job)['result']['event']['home'],'Спартак')
 
+    def test_configured_search_is_not_contacted_by_background_analysis(self):
+        object.__setattr__(self.settings,'wigolo_mcp_url','http://127.0.0.1:13333/mcp')
+        self.submit()
+        with patch('matchlab.web_research.research',side_effect=AssertionError('Search forbidden')) as search, \
+             patch('matchlab.api.qwen.explain_event',return_value='Разбор') as model:
+            self.jobs.run_one()
+        search.assert_not_called()
+        self.assertEqual(model.call_args.args[1]['web_research'],{'state':'disabled','sources':[]})
+
     def test_private_jobs_require_login_csrf_current_agreements_and_owner(self):
         job=self.submit()
         other=TestClient(self.app)

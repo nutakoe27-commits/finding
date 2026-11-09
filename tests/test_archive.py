@@ -281,18 +281,15 @@ class ArchiveTests(unittest.TestCase):
         for part in ("1Т 27'", 'Победитель: оценить по доступным данным нельзя', 'не применя'):
             self.assertIn(part, value['text'])
 
-    def test_web_links_alone_do_not_trigger_model_and_live_clock_stays_verbatim(self):
+    def test_search_is_not_called_and_live_clock_stays_verbatim(self):
         live = header(live=True, score='2:0')
         live['clock'] = "2Т 13'"
         self.feed([live])
-        research = {'state': 'ready', 'searched_at': datetime.now(UTC).isoformat(),
-                    'sources': [{'id': 1, 'title': 'Источник', 'url': 'https://example.org/news',
-                                 'excerpt': 'Команды провели матч 28.10.2026', 'published_at': None, 'date_inferred': False}]}
-        with patch('matchlab.web_research.research', return_value=research) as search, \
+        with patch('matchlab.web_research.research', side_effect=AssertionError('Search disabled')) as search, \
              patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
             response = self.client.post('/api/archive/events/101/explain', json={'notes': 'private note'})
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertNotIn('private note', str(search.call_args.args[1]))
+            search.assert_not_called()
             result = response.json()
             self.assertEqual(result['analysis_type'], 'limited_summary')
             self.assertIn('Счёт в снимке: 2:0', result['text'])
@@ -300,16 +297,14 @@ class ArchiveTests(unittest.TestCase):
             self.assertNotIn('13-я минута второго тайма', result['text'])
             self.assertNotIn('28.10.2026', result['text'])
             self.assertIn('по линии', result['text'])
-            self.assertEqual(result['context']['web_research'], research)
+            self.assertEqual(result['context']['web_research'], {'state':'disabled','sources':[]})
             saved = self.client.get('/api/analyses/' + result['id']).json()
-            self.assertEqual(saved['context']['web_research'], research)
+            self.assertEqual(saved['context']['web_research'], {'state':'disabled','sources':[]})
 
-    def test_research_and_confirmed_history_are_sent_to_model(self):
+    def test_confirmed_history_and_all_markets_are_sent_without_web_search(self):
         self.feed([header()])
         self.send('results', source='a' * 64, rows=[result()])
-        research = {'state': 'ready', 'sources': [{'id': 1, 'title': 'Источник',
-                    'url': 'https://example.org/news', 'excerpt': 'Новость'}]}
-        with patch('matchlab.web_research.research', return_value=research), \
+        with patch('matchlab.web_research.research', side_effect=AssertionError('Search disabled')) as search, \
              patch('matchlab.qwen._completion', side_effect=reasoning_completion) as model:
             response = self.client.post('/api/archive/events/101/explain', json={})
         self.assertEqual(response.status_code, 200, response.text)
@@ -317,7 +312,29 @@ class ArchiveTests(unittest.TestCase):
         payloads=[json.loads(call.args[1][1]['content']) for call in model.call_args_list]
         values=record_values([record for payload in payloads for record in payload.get('records',[])])
         self.assertEqual(values['/archive_history/state'],'ready')
-        self.assertEqual(values['/web_research/sources/0/title'],'Источник')
+        search.assert_not_called()
+        self.assertEqual(values['/web_research/state'],'disabled')
+        self.assertEqual(values['/web_research/sources'],[])
+        self.assertTrue(any(path.startswith('/markets/') for path in values))
+
+    def test_admin_corrects_old_quotation_error_without_rewriting_the_saved_report(self):
+        self.feed([header()]);self.send('results',source='a'*64,rows=[result()])
+        def invalid(settings,messages):
+            return '{"observations":[{"text":"Факт","quotes":[{"source":"missing","quote":"invented"}]}]}'
+        with patch('matchlab.qwen._completion',side_effect=invalid):
+            saved=self.client.post('/api/archive/events/101/explain',json={}).json()
+        self.assertEqual(saved['context']['ai_generation']['reason'],'quotation_mismatch')
+        saved['context']['ai_generation']['reason']='context_limit'
+        with self.repo.connection() as db:
+            db.execute('UPDATE event_analyses SET payload=? WHERE id=?',(json.dumps(saved),saved['id']))
+            row=db.execute('SELECT id,details FROM ai_usage ORDER BY rowid DESC LIMIT 1').fetchone()
+            details=json.loads(row['details']);details['reason']='context_limit'
+            db.execute('UPDATE ai_usage SET details=? WHERE id=?',(json.dumps(details),row['id']))
+        signed_in(self.client,self.repo,'admin_fixture','admin')
+        item=self.client.get('/api/admin/overview').json()['recent_ai'][0]
+        self.assertEqual(item['generation']['reason'],'quotation_mismatch')
+        self.assertTrue(item['generation']['corrected_from_saved'])
+        self.assertEqual(self.repo.event_analysis(analysis_id=saved['id'])['context']['ai_generation']['reason'],'context_limit')
 
     def test_independent_chances_use_only_past_same_competition_and_keep_parameters_private(self):
         self.feed([header()])

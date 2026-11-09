@@ -169,7 +169,16 @@ def referral_template(value):
 def usage_details(db,row):
     """Prefer per-request diagnostics; recover old rows only from one matching saved analysis."""
     if row['details']:
-        return json.loads(row['details'])
+        details=json.loads(row['details'])
+        if details.get('reason')=='context_limit' and details.get('analysis_id'):
+            saved=db.execute('SELECT payload FROM event_analyses WHERE id=? AND user_id=?',
+                             (details['analysis_id'],row['user_id'])).fetchone()
+            if saved:
+                from .qwen import generation_reason
+                gen=json.loads(saved['payload']).get('context',{}).get('ai_generation') or {}
+                reason=generation_reason(gen)
+                if reason=='quotation_mismatch':details.update(reason=reason,corrected_from_saved=True)
+        return details
     match=re.fullmatch(r'/api/(?:bookmakers|archive)/events/(\d+)/explain',row['target'])
     if not match or row['status']!='limited':return None
     candidates=db.execute('''SELECT payload FROM event_analyses WHERE user_id=?
@@ -180,7 +189,8 @@ def usage_details(db,row):
     if len(candidates)!=1:return None
     saved=json.loads(candidates[0]['payload']);gen=saved.get('context',{}).get('ai_generation') or {}
     if not gen.get('state'):return None
-    return {key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')} | {'analysis_id':saved['id'],'derived_from_saved':True}
+    from .qwen import generation_reason
+    return {key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')} | {'reason':generation_reason(gen),'analysis_id':saved['id'],'derived_from_saved':True}
 
 
 def overview(repo, days):

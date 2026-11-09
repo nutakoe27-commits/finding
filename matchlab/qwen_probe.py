@@ -14,7 +14,10 @@ def saved_context(settings):
     with sqlite3.connect('file:'+quote(str(settings.database.resolve()))+'?mode=ro',uri=True) as db:
         row=db.execute('SELECT payload FROM event_analyses ORDER BY generated_at DESC LIMIT 1').fetchone()
     if not row:return None
-    return {key:value for key,value in (json.loads(row[0]).get('context') or {}).items() if key!='ai_generation'}
+    context={key:value for key,value in (json.loads(row[0]).get('context') or {}).items() if key!='ai_generation'}
+    # Probes mirror new match requests; archived search snippets are not resent.
+    context['web_research']={'state':'disabled','sources':[]}
+    return context
 
 
 def inspect_context(settings):
@@ -23,6 +26,8 @@ def inspect_context(settings):
             'parallelism':settings.qwen_parallelism,'request_timeout_seconds':settings.qwen_timeout}
     context=saved_context(settings)
     if context is None:return result|{'sample':'no_saved_analysis'}
+    result['input_sections_bytes']={key:len(encoded(context.get(key)).encode()) for key in
+                                   ('markets','team_statistics','archive_history','web_research','probability_assessment')}
     records=records_for(context,limit=record_limit(budget))
     for label,payload in (('raw_context',context),('single_evidence_request',evidence_payload(context,records))):
         messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
