@@ -24,6 +24,14 @@ class RedactionTests(unittest.TestCase):
         for value in ('hidden-value','hidden-token','private-name','private-value','token'):
             self.assertNotIn(value,encoded)
 
+    def test_provider_doc_shape_keeps_structure_without_values(self):
+        result=shape({'doc':[{'event':'private-event', 'data':{'statistics':{'teams':[{'name':'private-name'}]}}}]})
+        encoded=json.dumps(result)
+        self.assertIn('statistics',encoded)
+        self.assertIn('teams',encoded)
+        self.assertNotIn('private-event',encoded)
+        self.assertNotIn('private-name',encoded)
+
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(shutil.which('chromium'), 'Chromium is required')
@@ -41,11 +49,12 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                     elif '/winline/ru/match/' in request.url:
                         html='''<div data-testid="match-header">Private team name</div><h3>Statistics</h3>
                         <script>window.__NEXT_DATA__={props:{token:'private-next'}};
-                        fetch('/api/v1/match/123?secret=private-query');</script>'''
+                        fetch('https://sh.fn.yunai.tech/api/v1/match/123?secret=private-query');</script>'''
                         await route.fulfill(status=200,content_type='text/html',body=html)
                     elif '/api/v1/match/' in request.url:
                         body=json.dumps({'data':{'match':{'token':'private-value','score':2}}})
-                        await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(body))},body=body)
+                        await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(body)),
+                                                               'access-control-allow-origin':'*'},body=body)
                     else:
                         raise AssertionError('Unexpected request: '+request.url)
                 await context.route('**/*',fixture)
@@ -58,6 +67,9 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                 encoded=json.dumps(result)
                 for value in ('private-value','private-query','private-next','Private team name','token='):
                     self.assertNotIn(value,encoded)
+                provider_result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True)
+                self.assertTrue(provider_result['responses'])
+                self.assertTrue(all(item['endpoint'].startswith('sh.fn.yunai.tech/') for item in provider_result['responses']))
                 await context.close()
             finally:
                 await browser.close()

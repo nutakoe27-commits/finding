@@ -14,7 +14,7 @@ from playwright.async_api import async_playwright
 MAX_BODY = 1024 * 1024
 MAX_RESPONSES = 80
 PATH_WORDS = frozenset('winline www ru en match matches stats statistics sport sports api v1 v2 v3 graphql data events event results result scores score teams team players player standings table season seasons competitions competition leagues league fixtures fixture live report overview h2h form head-to-head'.split())
-JSON_KEYS = frozenset('data result results response payload content props pageProps dehydratedState queries items edges node nodes page pageInfo total count status error errors message type id event eventId match matchId matches events fixture fixtures sport competition league season teams team participants home away homeTeam awayTeam players player score scores statistics stats standings table rows columns name title sections period periods rounds date time kickoffAt played won lost form games sets goals points'.split())
+JSON_KEYS = frozenset('doc _doc _maxage code data result results response payload content props pageProps dehydratedState queries items edges node nodes page pageInfo total count status error errors message type id event eventId match matchId matches events fixture fixtures sport competition league season teams team participants home away homeTeam awayTeam players player score scores statistics stats standings table rows columns name title sections period periods rounds date time kickoffAt played won lost form games sets goals points'.split())
 SENSITIVE = re.compile(r'token|secret|auth|password|passwd|cookie|session|email|phone|address|key|signature', re.I)
 
 
@@ -43,27 +43,30 @@ def endpoint(value: str) -> str | None:
 
 def shape(value) -> dict:
     """Report only a bounded whitelist of schema keys and structural types, never values."""
+    remaining = [30]
     def describe(obj, depth=0):
+        remaining[0]-=1
         if isinstance(obj, dict):
             names = [key for key in obj if isinstance(key, str) and key in JSON_KEYS and not SENSITIVE.search(key)]
             result = {'type': 'object', 'keys': sorted(names)[:30], 'other_keys': len(obj)-len(names)}
-            if depth < 1:
-                result['children'] = {key: describe(obj[key], depth+1) for key in sorted(names)[:8] if isinstance(obj[key], (dict, list))}
+            if depth < 5 and remaining[0] > 0:
+                result['children'] = {key: describe(obj[key], depth+1) for key in sorted(names)[:8] if isinstance(obj[key], (dict, list)) and remaining[0] > 0}
             return result
         if isinstance(obj, list):
             result = {'type': 'array', 'count': len(obj)}
-            if obj and depth < 2: result['first'] = describe(obj[0], depth+1)
+            if obj and depth < 5 and remaining[0] > 0: result['first'] = describe(obj[0], depth+1)
             return result
         return {'type': 'null' if obj is None else 'boolean' if isinstance(obj, bool) else 'number' if isinstance(obj, (float, int)) else 'string' if isinstance(obj, str) else 'other'}
     return describe(value)
 
 
-async def inspect_page(page, url: str, seconds: int) -> dict:
+async def inspect_page(page, url: str, seconds: int, *, provider_only=False) -> dict:
     responses = []
     sockets = []
     def on_response(response):
         safe = endpoint(response.url)
-        if safe and response.request.resource_type in ('fetch', 'xhr', 'document') and len(responses) < MAX_RESPONSES:
+        host = urlsplit(response.url).hostname
+        if safe and (not provider_only or host == 'sh.fn.yunai.tech') and response.request.resource_type in ('fetch', 'xhr', 'document') and len(responses) < MAX_RESPONSES:
             responses.append((response, safe))
     def on_socket(socket):
         safe = endpoint(socket.url)
@@ -111,11 +114,18 @@ async def inspect_page(page, url: str, seconds: int) -> dict:
         except Exception as error:
             item['inspection_error'] = type(error).__name__
         entries.append(item)
+    if provider_only:
+        grouped = {}
+        for item in entries:
+            identity = json.dumps(item, sort_keys=True, ensure_ascii=False)
+            if identity not in grouped: grouped[identity] = {**item, 'count': 0}
+            grouped[identity]['count'] += 1
+        entries = list(grouped.values())[:30]
     return {'page_status': document.status if document else None, 'frames': frames,
             'responses': entries, 'websockets': sockets, 'responses_limit': MAX_RESPONSES}
 
 
-async def run(url: str, seconds: int) -> dict:
+async def run(url: str, seconds: int, *, provider_only=False) -> dict:
     # Never pass local service secrets to a browser launched for diagnostics.
     environment = {key: value for key, value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN', 'QWEN_API_KEY')}
     async with async_playwright() as playwright:
@@ -127,7 +137,7 @@ async def run(url: str, seconds: int) -> dict:
                 else: await route.continue_()
             await context.route('**/*', resources)
             page = await context.new_page()
-            return await inspect_page(page, url, seconds)
+            return await inspect_page(page, url, seconds, provider_only=provider_only)
         finally:
             await browser.close()
 
@@ -136,12 +146,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--url', required=True, help='Public Winline statistics link')
     parser.add_argument('--seconds', type=int, default=20)
+    parser.add_argument('--provider-only', action='store_true', help='Summarize provider responses only')
     args = parser.parse_args()
     if not widget_url(args.url): parser.error('Нужна ссылка https://winline.ru/stats/match/ID без параметров.')
     if not 1 <= args.seconds <= 40: parser.error('Ожидание должно быть от 1 до 40 секунд.')
     os.umask(0o077)
     try:
-        print(json.dumps(asyncio.run(run(args.url, args.seconds)), ensure_ascii=False, indent=2), flush=True)
+        print(json.dumps(asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only)), ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)
         raise SystemExit(1)
