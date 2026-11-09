@@ -117,7 +117,7 @@ sudo bash scripts/install_server_statistics.sh
 |---|---|---|
 | POST | `/api/bookmakers/events/ID/statistics/request` | Запрос статистики выбранного матча авторизованным пользователем |
 | GET | `/api/bookmakers/events/ID/statistics/request/JOB` | Состояние задания |
-| POST | `/api/bookmakers/statistics-requests/claim`, `/finish` | Приём и завершение задания службой |
+| POST | `/api/bookmakers/refresh/claim`, `/finish` | Приём и завершение задания службой (`kind=statistics`) |
 | GET | `/api/bookmakers/statistics/queue` | Совместимость со старой службой; очередь всегда пуста |
 | POST | `/api/bookmakers/statistics/ingest` | Защищённая доставка снимка/статуса |
 | GET | `/api/bookmakers/events/ID/statistics` | Сохранённая статистика и состояние ссылки |

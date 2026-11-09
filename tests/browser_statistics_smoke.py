@@ -191,7 +191,7 @@ async def exercise(base,repo):
                 await page.evaluate('''() => renderTeamStatistics({statistics:null,link_status:'found',source_blocked_until:new Date(Date.now()+3600000).toISOString()})''')
                 assert 'Источник временно ограничил доступ' in await page.locator('#team-statistics-note').inner_text()
                 await page.evaluate('''() => renderTeamStatistics({statistics:null,link_status:'missing',source_blocked_until:new Date(Date.now()+3600000).toISOString()})''')
-                assert 'пока недоступна' in await page.locator('#team-statistics-note').inner_text()
+                assert 'запросим при запуске ИИ-разбора' in await page.locator('#team-statistics-note').inner_text()
                 assert not await page.evaluate('document.documentElement.scrollWidth>window.innerWidth')
                 assert not errors,errors
                 await page.close()

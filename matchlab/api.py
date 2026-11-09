@@ -371,19 +371,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def stream_statistics_request_status(event_id: str,job_id: str,request: Request):
         return match_statistics_request(event_id,job_id,request)
 
-    @app.post('/api/bookmakers/statistics-requests/claim')
-    async def claim_statistics_request(request: Request):
-        await worker_body(request,1024)
-        return {'job':repo.claim_statistics_request()}
-
-    @app.post('/api/bookmakers/statistics-requests/finish')
-    async def finish_statistics_request(request: Request):
-        body=await worker_body(request,4096)
-        try: done=repo.finish_statistics_request(body.get('job_id',''),body.get('lease_id',''),body.get('statistics_state',''))
-        except ValueError as error: raise HTTPException(422,str(error)) from error
-        if not done: raise HTTPException(409,'Задание устарело или уже завершено.')
-        return {'finished':True}
-
     @app.post('/api/bookmakers/statistics/ingest')
     async def statistics_ingest(request: Request):
         body=await worker_body(request,512*1024)
@@ -393,14 +380,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post('/api/bookmakers/refresh/claim')
     async def claim_refresh(request: Request):
-        await worker_body(request,1024)
+        body=await worker_body(request,1024)
+        if body.get('kind')=='statistics': return {'job':repo.claim_statistics_request()}
+        if body.get('kind') is not None: raise HTTPException(422,'Неизвестный тип задания.')
         return {'job':repo.claim_event_refresh()}
 
     @app.post('/api/bookmakers/refresh/finish')
     async def finish_refresh(request: Request):
         body=await worker_body(request,4096)
         try:
-            done=repo.finish_event_refresh(body.get('job_id',''),body.get('lease_id',''),body.get('market_state',''),body.get('statistics_state',''))
+            if body.get('kind')=='statistics':
+                done=repo.finish_statistics_request(body.get('job_id',''),body.get('lease_id',''),body.get('statistics_state',''))
+            elif body.get('kind') is None:
+                done=repo.finish_event_refresh(body.get('job_id',''),body.get('lease_id',''),body.get('market_state',''),body.get('statistics_state',''))
+            else: raise ValueError('Неизвестный тип задания.')
         except ValueError as error:
             raise HTTPException(422,str(error)) from error
         if not done: raise HTTPException(409,'Задание устарело или уже завершено.')

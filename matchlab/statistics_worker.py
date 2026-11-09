@@ -217,8 +217,8 @@ async def statistics_request_job(context,client,job):
         await asyncio.wait_for(fetch(),timeout=180)
     except Exception as error:
         LOG.warning('Requested statistics for event %s did not complete (%s)',event.get('source_event_id'),type(error).__name__)
-    response=await client.post('/api/bookmakers/statistics-requests/finish',json={
-        'job_id':job['job_id'],'lease_id':job['lease_id'],'statistics_state':state})
+    response=await client.post('/api/bookmakers/refresh/finish',json={
+        'kind':'statistics','job_id':job['job_id'],'lease_id':job['lease_id'],'statistics_state':state})
     response.raise_for_status()
     return {'source_event_id':event['source_event_id'],'statistics_state':state}
 
@@ -252,7 +252,7 @@ async def run(args):
                 while not stopped.is_set():
                     operation='statistics_request_claim'
                     try:
-                        response=await client.post('/api/bookmakers/statistics-requests/claim',json={})
+                        response=await client.post('/api/bookmakers/refresh/claim',json={'kind':'statistics'})
                         response.raise_for_status(); job=response.json().get('job')
                         if job:
                             operation='statistics_request_delivery'

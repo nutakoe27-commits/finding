@@ -154,7 +154,9 @@ class RetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(key, json.dumps(reports))
         context.new_page.assert_not_awaited()
         self.assertEqual([call.args[0] for call in client.post.await_args_list][-2:],
-                         ['/api/bookmakers/statistics-requests/claim','/api/bookmakers/refresh/claim'])
+                         ['/api/bookmakers/refresh/claim','/api/bookmakers/refresh/claim'])
+        self.assertEqual([call.kwargs['json'] for call in client.post.await_args_list][-2:],
+                         [{'kind':'statistics'},{}])
         client.get.assert_not_awaited()
         browser.close.assert_awaited_once()
 

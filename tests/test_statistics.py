@@ -86,14 +86,14 @@ class StatisticsTests(unittest.TestCase):
         response=self.client.post(url,json={}); self.assertEqual(response.status_code,202,response.text)
         job=response.json()
         self.assertEqual(self.client.post(url,json={}).json()['job_id'],job['job_id'])
-        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/claim',json={}).status_code,401)
-        claim=self.client.post('/api/bookmakers/statistics-requests/claim',json={},headers=self.headers).json()['job']
+        self.assertEqual(self.client.post('/api/bookmakers/refresh/claim',json={'kind':'statistics'}).status_code,401)
+        claim=self.client.post('/api/bookmakers/refresh/claim',json={'kind':'statistics'},headers=self.headers).json()['job']
         self.assertEqual(claim['event']['source_event_id'],'123')
         self.assertIsNone(self.repo.claim_statistics_request())
         self.assertEqual(self.client.get(f"/api/bookmakers/events/124/statistics/request/{job['job_id']}").status_code,404)
-        body={'job_id':job['job_id'],'lease_id':claim['lease_id'],'statistics_state':'ok'}
-        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/finish',json={**body,'lease_id':'f'*32},headers=self.headers).status_code,409)
-        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/finish',json=body,headers=self.headers).status_code,200)
+        body={'kind':'statistics','job_id':job['job_id'],'lease_id':claim['lease_id'],'statistics_state':'ok'}
+        self.assertEqual(self.client.post('/api/bookmakers/refresh/finish',json={**body,'lease_id':'f'*32},headers=self.headers).status_code,409)
+        self.assertEqual(self.client.post('/api/bookmakers/refresh/finish',json=body,headers=self.headers).status_code,200)
         status=self.client.get(f"/api/bookmakers/events/123/statistics/request/{job['job_id']}").json()
         self.assertEqual((status['state'],status['statistics_state']),('finished','ok'))
         self.assertEqual(self.client.post(url,json={}).json()['job_id'],job['job_id'])
