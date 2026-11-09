@@ -2,9 +2,9 @@
 import json
 import shutil
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
-from scripts.inspect_statistics_network import direct_request, endpoint, inspect_page, shape, widget_url
+from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, shape, widget_url
 
 
 class RedactionTests(unittest.TestCase):
@@ -49,6 +49,12 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn('private',json.dumps(result))
         self.assertEqual(direct_request('https://evil.example/path',original)['state'],'invalid_source')
 
+    def test_detects_provider_denial_inside_http_200(self):
+        value={'doc':[{'event':'exception','data':{'_doc':'exception','code':403,'message':'private message'}}]}
+        result=compare_response(value,200,{'team':{},'matches':[]})
+        self.assertEqual(result,{'state':'provider_error','http_status':200,'provider_code':403})
+        self.assertNotIn('private message',json.dumps(result))
+
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(shutil.which('chromium'), 'Chromium is required')
@@ -84,12 +90,19 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                 encoded=json.dumps(result)
                 for value in ('private-value','private-query','private-next','Private team name','token='):
                     self.assertNotIn(value,encoded)
-                with patch('scripts.inspect_statistics_network.direct_request',return_value={'state':'ok','same_matches':True}):
+                with patch('scripts.inspect_statistics_network.direct_request',return_value={'state':'ok','same_matches':True}), \
+                     patch('scripts.inspect_statistics_network.session_request',new_callable=AsyncMock,return_value={'state':'ok','same_matches':True}):
                     provider_result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True,test_direct=True)
                 self.assertTrue(provider_result['responses'])
                 self.assertTrue(all(item['endpoint'].startswith('sh.fn.yunai.tech/') for item in provider_result['responses']))
                 self.assertEqual(provider_result['direct_test']['state'],'ok')
                 self.assertEqual(provider_result['direct_test']['browser_match_count'],1)
+                self.assertEqual(provider_result['session_test']['state'],'ok')
+                with patch('scripts.inspect_statistics_network.direct_request',return_value={'state':'provider_error','provider_code':403}), \
+                     patch('scripts.inspect_statistics_network.session_request',new_callable=AsyncMock) as session:
+                    denied=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True,test_direct=True)
+                self.assertEqual(denied['session_test']['state'],'skipped_source_denied')
+                session.assert_not_awaited()
                 await context.close()
             finally:
                 await browser.close()

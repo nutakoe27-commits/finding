@@ -71,6 +71,23 @@ def recent_matches(value):
     return None
 
 
+def compare_response(value, status: int, original: dict) -> dict:
+    if isinstance(value,dict) and isinstance(value.get('doc'),list):
+        for item in value['doc']:
+            if not isinstance(item,dict): continue
+            data=item.get('data') if isinstance(item.get('data'),dict) else {}
+            if item.get('event')=='exception' or data.get('_doc')=='exception':
+                result={'state':'provider_error','http_status':status}
+                code=data.get('code')
+                if type(code) is int and 400<=code<=599: result['provider_code']=code
+                return result
+    result=recent_matches(value)
+    if result is None: return {'state':'different_response','http_status':status,'schema':shape(value)}
+    return {'state':'ok','http_status':status,'match_count':len(result['matches']),
+            'same_team':result['team']==original['team'],
+            'same_matches':result['matches']==original['matches']}
+
+
 def direct_request(url: str, original: dict) -> dict:
     """One plain GET to the observed provider URL; don't print URL, headers or body."""
     parsed=urlsplit(url)
@@ -85,18 +102,35 @@ def direct_request(url: str, original: dict) -> dict:
             status=response.status
             body=response.read(MAX_BODY+1)
         if len(body)>MAX_BODY: return {'state':'too_large','http_status':status}
-        value=json.loads(body)
-        result=recent_matches(value)
-        if result is None: return {'state':'different_response','http_status':status}
-        return {'state':'ok','http_status':status,'match_count':len(result['matches']),
-                'same_team':result['team']==original['team'],
-                'same_matches':result['matches']==original['matches']}
+        return compare_response(json.loads(body),status,original)
     except urllib.error.HTTPError as error:
         return {'state':'http_error','http_status':error.code}
     except (ValueError,UnicodeError):
         return {'state':'invalid_json'}
     except Exception as error:
         return {'state':'request_error','error_type':type(error).__name__}
+
+
+async def session_request(context, url: str, original: dict) -> dict:
+    """Try the same observed GET using only the temporary browser's session."""
+    parsed=urlsplit(url)
+    if parsed.scheme!='https' or parsed.hostname!='sh.fn.yunai.tech' or parsed.username or parsed.password:
+        return {'state':'invalid_source'}
+    response=None
+    try:
+        response=await context.request.get(url,max_redirects=0,timeout=15000)
+        if response.status in (401,403,429): return {'state':'http_error','http_status':response.status}
+        length=response.headers.get('content-length','')
+        if length.isdecimal() and int(length)>MAX_BODY: return {'state':'too_large','http_status':response.status}
+        body=await response.body()
+        if len(body)>MAX_BODY: return {'state':'too_large','http_status':response.status}
+        return compare_response(json.loads(body),response.status,original)
+    except (ValueError,UnicodeError):
+        return {'state':'invalid_json'}
+    except Exception as error:
+        return {'state':'request_error','error_type':type(error).__name__}
+    finally:
+        if response is not None: await response.dispose()
 
 
 async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False) -> dict:
@@ -176,8 +210,11 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
         if candidate is None:
             result['direct_test']={'state':'candidate_not_found'}
         else:
+            direct=await asyncio.to_thread(direct_request,*candidate)
             result['direct_test']={'category':'recent_matches','browser_match_count':len(candidate[1]['matches']),
-                                   **await asyncio.to_thread(direct_request,*candidate)}
+                                   **direct}
+            denied=direct.get('http_status') in (401,403,429) or direct.get('provider_code') in (401,403,429)
+            result['session_test']={'state':'skipped_source_denied'} if denied else await session_request(page.context,*candidate)
     return result
 
 
@@ -210,7 +247,7 @@ def main():
     os.umask(0o077)
     try:
         result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct))
-        if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test')}
+        if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test','session_test') if key in result}
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)
