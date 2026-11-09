@@ -92,6 +92,26 @@ def public_label(value, depth=0):
     return None
 
 
+def public_sports_ids(value):
+    if not isinstance(value,dict): return {}
+    result={}
+    for key in ('_id','id','teamId','team_id','competitorId','competitor_id'):
+        raw=value.get(key)
+        if type(raw) not in (str,int): continue
+        number=str(raw).rsplit(':',1)[-1]
+        if re.fullmatch(r'\d{1,20}',number): result[key]=number
+    return result
+
+
+def preview_feed_result(feed):
+    if not feed: return {'state':'unavailable'}
+    count=sum(bool(feed['participants'][side]) for side in ('home','away'))
+    return {'state':'ready' if count==2 else 'partial' if count==1 else 'bound_without_team_lists',
+            'binding':feed['binding'],'truncated':feed['truncated'],
+            'list_sizes':{side:[len(item['matches']) for item in feed['participants'][side]] for side in ('home','away')},
+            'encoded_bytes':len(json.dumps(feed,ensure_ascii=False).encode())}
+
+
 def passive_details(documents, header, expected_id):
     lines=[]
     for line in header.splitlines():
@@ -110,6 +130,7 @@ def passive_details(documents, header, expected_id):
                 value=match.get(key)
                 if isinstance(value,(str,int)) and str(value).rsplit(':',1)[-1]==expected_id: identifiers.append(key)
             matches.append({'home_name':names[0],'away_name':names[1],
+                            'home_ids':public_sports_ids(home),'away_ids':public_sports_ids(away),
                             'home_name_type':type(home.get('name')).__name__,
                             'away_name_type':type(away.get('name')).__name__,
                             'home_name_in_header':bool(participant_key(home.get('name')) and participant_key(home.get('name')) in header_key),
@@ -118,6 +139,7 @@ def passive_details(documents, header, expected_id):
         team=data.get('team')
         if isinstance(team,dict) and isinstance(data.get('matches'),list):
             teams.append({'name':public_label(team.get('name')),'name_type':type(team.get('name')).__name__,
+                          'team_ids':public_sports_ids(team),
                           'match_count':len(data['matches'])})
     return {'header_lines':lines,'match_candidates':matches[:5],'team_match_lists':teams[:6]}
 
@@ -154,6 +176,8 @@ def passive_summary(documents, header, expected_id=None):
             if side not in result['recent_match_counts']:
                 result['recent_match_counts'][side]=len(data['matches'])
                 timestamps.append(elapsed)
+            else:
+                result['recent_match_counts'][side]=max(result['recent_match_counts'][side],len(data['matches']))
         if side and isinstance(data.get('stats'),dict): result['team_stats_found'][side]=True
         if isinstance(data.get('season'),dict) and isinstance(data.get('teams'),list): result['standings_candidates']+=1
         if isinstance(data.get('players'),list) and isinstance(data.get('season'),dict): result['player_list_candidates']+=1
@@ -321,11 +345,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
             except ModuleNotFoundError:
                 from matchlab.statistics_feed import extract_passive_feed
             feed=extract_passive_feed([data for _,data in passive_documents],expected_id)
-            result['feed_preview']={'state':'ready' if feed else 'unavailable'}
-            if feed:
-                result['feed_preview'].update(binding=feed['binding'],truncated=feed['truncated'],
-                    list_sizes={side:[len(item['matches']) for item in feed['participants'][side]] for side in ('home','away')},
-                    encoded_bytes=len(json.dumps(feed,ensure_ascii=False).encode()))
+            result['feed_preview']=preview_feed_result(feed)
     if test_direct:
         if candidate is None:
             result['direct_test']={'state':'candidate_not_found'}

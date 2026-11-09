@@ -4,7 +4,7 @@ import shutil
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, passive_details, passive_summary, public_label, shape, widget_url
+from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, passive_details, passive_summary, preview_feed_result, public_label, public_sports_ids, shape, widget_url
 
 
 class RedactionTests(unittest.TestCase):
@@ -93,6 +93,15 @@ class RedactionTests(unittest.TestCase):
         self.assertEqual(result['team_match_lists'][0]['name'],'Альфа')
         self.assertNotIn('hidden',json.dumps(result))
         self.assertIsNone(public_label('secret-token-123'))
+        self.assertEqual(public_sports_ids({'_id':'sr:team:123','id':'nonpublic-secret'}),{'_id':'123'})
+
+    def test_preview_does_not_report_ready_without_both_team_lists(self):
+        feed={'binding':'statistics_id','truncated':False,'participants':{'home':[],'away':[]}}
+        self.assertEqual(preview_feed_result(feed)['state'],'bound_without_team_lists')
+        feed['participants']['home']=[{'matches':[{}]}]
+        self.assertEqual(preview_feed_result(feed)['state'],'partial')
+        feed['participants']['away']=[{'matches':[{}]}]
+        self.assertEqual(preview_feed_result(feed)['state'],'ready')
 
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
