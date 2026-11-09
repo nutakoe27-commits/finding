@@ -27,6 +27,7 @@ GOAL_VARIANTS=json.loads((ROOT/'tests/fixtures/winline_goal_market_variants.json
 
 
 class AIHandler(BaseHTTPRequestHandler):
+    fail_context = False
     def log_message(self, *unused):
         pass
 
@@ -34,8 +35,16 @@ class AIHandler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         context = json.loads(body['messages'][1]['content'])
         REQUESTS.append(context)
+        if self.fail_context:
+            encoded=json.dumps({'error':{'message':'maximum context length exceeded'}}).encode()
+            self.send_response(400)
+            self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(encoded)))
+            self.end_headers(); self.wfile.write(encoded); return
         time.sleep(0.3)
         text = 'Qwen: **Вывод:** разбор выбранного рынка.\n\n* **Рынок:** это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
+        if 'fact_indices' in body['messages'][0]['content']:
+            text=json.dumps({'fact_indices':list(range(min(3,len(context['probability_assessment']['facts']))))})
         encoded = json.dumps({'choices':[{'message':{'content':text},'finish_reason':'stop'}]}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')

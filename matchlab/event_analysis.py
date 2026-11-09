@@ -1,4 +1,4 @@
-"""Bounded, auditable context for an AI explanation of a bookmaker snapshot."""
+"""Complete, auditable market context for an AI explanation of a bookmaker snapshot."""
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -6,7 +6,7 @@ import json
 from .bookmakers import instant
 from .markets import headline_market
 
-ANALYSIS_VERSION = 'private-full-statistics-v11'
+ANALYSIS_VERSION = 'private-chances-v12'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None,archive_history=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -22,15 +22,8 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
         0 if selected and market["key"] == selected["key"] else 1,
         priority.index(market["name"]) if market["name"] in priority else len(priority)))
     markets, count = [], 0
-    maximum_outcomes=50 if team_statistics else 80
-    maximum_markets=10 if team_statistics else 12
     for market in ordered:
-        if len(markets) >= maximum_markets or count >= maximum_outcomes:
-            break
-        outcomes = market["outcomes"][:maximum_outcomes - count]
-        # Always retain an explicitly selected outcome even in a large table.
-        if outcome and selected["key"] == market["key"] and outcome not in outcomes:
-            outcomes = [outcome, *outcomes[:-1]]
+        outcomes = market["outcomes"]
         markets.append({key: market.get(key) for key in ("key", "name", "group", "period", "parameter", "variant_id", "observed_at", "is_stale")} | {
             "outcomes_complete": len(outcomes) == len(market["outcomes"]),
             "outcomes": [{key: item.get(key) for key in ("key", "name", "parameter", "odds", "state")} for item in outcomes]})

@@ -254,8 +254,8 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.text)
             value = response.json()
             self.assertEqual(value['analysis_type'], 'limited_summary')
-            self.assertIn('модель не вызывалась', value['text'])
-            self.assertIn('1.9', value['text'])
+            self.assertIn('нейросеть не вызывалась', value['text'])
+            self.assertIn('по линии', value['text'])
             self.assertNotIn('волатильность', value['text'])
             self.assertNotIn('в момент начала', value['text'])
             cached = self.client.post('/api/archive/events/101/explain', json={}).json()
@@ -277,7 +277,7 @@ class ArchiveTests(unittest.TestCase):
         value = response.json()
         self.assertEqual(value['analysis_type'], 'limited_summary')
         self.assertTrue(value['context']['markets'][0]['outcomes_complete'])
-        for part in ("1Т 27'", '1 тайм исход 1X2', '1 — хозяева: 9,0%', 'X — ничья: 48,1%', '2 — гости: 42,9%', '11,1 п.п.'):
+        for part in ("1Т 27'", 'Победитель: оценить по доступным данным нельзя', 'не применя'):
             self.assertIn(part, value['text'])
 
     def test_web_links_alone_do_not_trigger_model_and_live_clock_stays_verbatim(self):
@@ -294,11 +294,11 @@ class ArchiveTests(unittest.TestCase):
             self.assertNotIn('private note', str(search.call_args.args[1]))
             result = response.json()
             self.assertEqual(result['analysis_type'], 'limited_summary')
-            self.assertIn('Счёт: 2:0', result['text'])
-            self.assertIn("Отметка источника: «2Т 13'»", result['text'])
+            self.assertIn('Счёт в снимке: 2:0', result['text'])
+            self.assertIn("2Т 13'", result['text'])
             self.assertNotIn('13-я минута второго тайма', result['text'])
             self.assertNotIn('28.10.2026', result['text'])
-            self.assertIn('ссылки показаны отдельно', result['text'])
+            self.assertIn('по линии', result['text'])
             self.assertEqual(result['context']['web_research'], research)
             saved = self.client.get('/api/analyses/' + result['id']).json()
             self.assertEqual(saved['context']['web_research'], research)
@@ -309,13 +309,43 @@ class ArchiveTests(unittest.TestCase):
         research = {'state': 'ready', 'sources': [{'id': 1, 'title': 'Источник',
                     'url': 'https://example.org/news', 'excerpt': 'Новость'}]}
         with patch('matchlab.web_research.research', return_value=research), \
-             patch('matchlab.qwen._completion', return_value='Разбор') as model:
+             patch('matchlab.qwen._completion', return_value='{"fact_indices":[0]}') as model:
             response = self.client.post('/api/archive/events/101/explain', json={})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['analysis_type'], 'model')
         context = json.loads(model.call_args.args[1][1]['content'])
         self.assertEqual(context['web_research'], research)
         self.assertEqual(context['archive_history']['state'], 'ready')
+
+    def test_independent_chances_use_only_past_same_competition_and_keep_parameters_private(self):
+        self.feed([header()])
+        rows=[]
+        for i in range(45):
+            item=result(cursor=i+1)
+            item['data'].update(date=(datetime.now(UTC)-timedelta(days=i+1)).isoformat(),score=f'{i%4}:{i%3}')
+            rows.append(rekey(item))
+        self.assertEqual(self.send('results',source='a'*64,rows=rows).status_code,200)
+        with patch('matchlab.qwen._completion',return_value='{"fact_indices":[0,1]}'):
+            response=self.client.post('/api/archive/events/101/explain',json={})
+        self.assertEqual(response.status_code,200,response.text)
+        saved=response.json(); assessment=saved['context']['probability_assessment']
+        self.assertEqual(assessment['winner']['basis'],'history')
+        self.assertAlmostEqual(sum(v['probability'] for v in assessment['markets']),1)
+        self.assertEqual(len(saved['text'].split('\n\n')),4)
+        for private in ('half_life','expected_goals','intensities','Gamma','Пуассон'):
+            self.assertNotIn(private,json.dumps(saved,ensure_ascii=False))
+
+    def test_qwen_failure_returns_saved_calculation_and_safe_category(self):
+        self.feed([header()])
+        self.send('results',source='a'*64,rows=[result()])
+        with patch('matchlab.qwen._completion',side_effect=ValueError('Полный контекст матча превышает лимит сервера ИИ.')):
+            response=self.client.post('/api/archive/events/101/explain',json={})
+        self.assertEqual(response.status_code,200,response.text)
+        data=response.json()
+        self.assertEqual(data['analysis_type'],'statistical_report')
+        self.assertEqual(data['context']['ai_generation']['reason'],'context_limit')
+        self.assertIn('контекст нейросети',data['text'])
+        self.assertTrue(data['text'].startswith('Победитель:'))
 
     def test_history_is_exact_and_never_uses_future_score_corrections(self):
         self.feed([header()])

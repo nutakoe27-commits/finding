@@ -172,7 +172,7 @@ class ProductTests(unittest.TestCase):
         self.assertNotIn("private-test-key", response.text)
         self.assertEqual(self.client.get("/api/analyses").json()["analyses"], [])
 
-    def test_bounded_context_keeps_selected_outcome_and_labels_truncation(self):
+    def test_full_context_keeps_all_outcomes_and_selection(self):
         value = event()
         value["markets"][0]["outcomes"] = [{"name":str(index), "odds":2.0} for index in range(150)]
         value["coverage"]["expected_outcomes"] = 150
@@ -180,9 +180,19 @@ class ProductTests(unittest.TestCase):
         market = document["markets"][0]
         selected = market["outcomes"][-1]
         context = analysis_context(document, market_key=market["key"], outcome_key=selected["key"])
-        self.assertEqual(context["coverage"]["analyzed_outcomes"], 80)
+        self.assertEqual(context["coverage"]["analyzed_outcomes"], 150)
         self.assertEqual(context["coverage"]["stored_outcomes"], 150)
         self.assertIn(selected["key"], [item["key"] for item in context["markets"][0]["outcomes"]])
+
+    def test_all_stored_markets_are_included_even_with_full_statistics(self):
+        from copy import deepcopy
+        value=event(); template=value['markets'][0]
+        value['markets']=[{**deepcopy(template),'name':f'Рынок {index}'} for index in range(25)]
+        value['coverage']['expected_outcomes']=75
+        doc=validate_event_markets(value)
+        ctx=analysis_context(doc,team_statistics={'match_phase':'prematch','sections':[]})
+        self.assertEqual(ctx['coverage']['analyzed_markets'],25)
+        self.assertEqual(ctx['coverage']['analyzed_outcomes'],75)
 
     def test_freshness_boundary_changes_analysis_cache_key(self):
         document = self.repo.event_markets("123")

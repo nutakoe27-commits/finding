@@ -61,13 +61,15 @@ class SportContracts(unittest.TestCase):
         self.assertEqual(len(preview['outcomes']),3)
         self.assertEqual(analysis_context(value)['coverage']['analyzed_outcomes'],4)
 
-    def test_large_winner_market_is_not_normalized_from_only_a_partial_context(self):
+    def test_large_winner_market_is_sent_in_full_without_inventing_1x2(self):
         value = document(PROJECTIONS[3])
         value['markets'][0]['outcomes']=[{'name':f'Участник {i}','odds':5+i} for i in range(100)]
         value['coverage']['expected_outcomes']=100
         context = analysis_context(validate_event_markets(value))
-        self.assertEqual(context['coverage']['analyzed_outcomes'],80)
-        self.assertIsNone(context['market_implied'])
+        self.assertEqual(context['coverage']['analyzed_outcomes'],100)
+        self.assertEqual(len(context['market_implied']['probabilities']),100)
+        self.assertAlmostEqual(sum(context['market_implied']['probabilities'].values()),1)
+        self.assertEqual(context['market_implied']['basis'],'bookmaker_market_prices')
 
 
 class SportReceiver(unittest.TestCase):

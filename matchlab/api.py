@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
 import json
+import logging
 import hashlib
 import math
 import secrets
@@ -22,6 +23,7 @@ from .storage import Repository, utc_now
 from .winline_browser import statistics_id_from_url
 
 STATIC = Path(__file__).parent / "static"
+LOG = logging.getLogger(__name__)
 
 
 class ForecastRequest(BaseModel):
@@ -73,6 +75,13 @@ def public_ai_error(error: ValueError) -> str:
     if "лимита токенов" in str(error):
         return "Разбор не удалось завершить. Выберите конкретный рынок и повторите запрос."
     return "Не удалось получить разбор ИИ. Попробуйте позже или проверьте подключение в состоянии сервиса."
+
+
+def public_prediction(value):
+    result={k:v for k,v in value.items() if k!='model_version'}
+    if isinstance(result.get('training'),dict):
+        result['training']={k:v for k,v in result['training'].items() if k!='half_life_days'}
+    return result
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -182,7 +191,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload.update(quote_id=quote["id"], kickoff_at=quote["kickoff_at"], home_label=quote["home"], away_label=quote["away"])
             payload["market"].update(parser_version=quote["parser_version"], provenance="captured public DOM", is_stale=(datetime.now(timezone.utc) - instant(quote["observed_at"])).total_seconds() > 300)
         repo.save_forecast(payload)
-        return payload
+        return public_prediction(payload)
 
     @app.get("/api/bookmakers")
     def bookmakers(include_started: bool = False, source: str | None = None):
@@ -491,7 +500,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/forecasts")
     def forecasts():
-        return {"forecasts": repo.recent_forecasts()}
+        return {"forecasts": [public_prediction(value) for value in repo.recent_forecasts()]}
 
     @app.post("/api/bookmakers/events/{event_id}/explain")
     def explain_event(event_id: str, request: EventExplainRequest,http_request:Request):
@@ -530,8 +539,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
         search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
         cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
+        if cached and cached.get('context',{}).get('ai_generation',{}).get('state')=='unavailable':
+            cache_seconds=min(cache_seconds,30)
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
-            http_request.state.limited_summary = cached.get('analysis_type') == 'limited_summary'
+            http_request.state.limited_summary = cached.get('analysis_type') in ('limited_summary','statistical_report')
             return {**cached, "cached": True}
         if not analysis_lock.acquire(blocking=False):
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
@@ -555,17 +566,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(422, str(exc)) from exc
             from .web_research import research
             context['web_research'] = research(settings, context['event'])
+            from .chances import assess
+            context['probability_assessment']=assess(repo,document,context)
+            # Public context contains predictions, never fitted parameters or tuning.
+            if context.get('statistical_model'):
+                context['statistical_model']={'probabilities':context['statistical_model']['probabilities']}
             try:
                 text = qwen.explain_event(settings, context)
             except ValueError as exc:
+                LOG.warning('Qwen event unavailable: %s',qwen.event_error_code(exc))
                 raise HTTPException(502, public_ai_error(exc)) from exc
             selected = next((market for market in context["markets"] if market["key"] == request.market_key), None)
             payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
                        "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
                        "text": text, "context": context,
-                       "analysis_type": "limited_summary" if qwen.limited_event_summary(context) is not None else "model"}
+                       "analysis_type": {'unavailable':'statistical_report','skipped':'limited_summary'}.get(context.get('ai_generation',{}).get('state'),'model')}
             repo.save_event_analysis(payload, key,user_id=user['id'])
-            http_request.state.limited_summary = payload['analysis_type'] == 'limited_summary'
+            http_request.state.limited_summary = payload['analysis_type'] in ('limited_summary','statistical_report')
             return {**payload, "cached": False}
         finally:
             analysis_lock.release()
@@ -591,7 +608,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(503, "Не удалось прочитать отчёт проверки.") from exc
         if report.get("dataset_revision") != repo.revision():
             return {"available": False, "reason": "Данные обновлены. Историческую проверку нужно повторить."}
-        return {"available": True, "report": report}
+        return {"available": True, "report": public_prediction(report)}
 
     @app.post("/api/explain")
     def explain(request: ExplainRequest):
@@ -601,7 +618,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if saved is None:
             raise HTTPException(404, "Прогноз не найден.")
         try:
-            text = qwen.explain(settings, saved, request.notes)
+            text = qwen.explain(settings, public_prediction(saved), request.notes)
         except ValueError as exc:
             raise HTTPException(502, public_ai_error(exc)) from exc
         return {"forecast_id": saved["id"], "text": text, "notes_verified": False}

@@ -126,6 +126,20 @@ async def exercise(base, repo):
                 await expect(page.locator("#account-button")).to_have_text(username)
                 assert MARKER in REQUESTS[-1]["team_statistics"]["sections"][0]["text"]
                 assert REQUESTS[-1]['statistics_preparation']['state']=='ok'
+                text=await page.locator('#explanation').inner_text()
+                assert text.startswith('Победитель:') and 'Победные рынки (оценка):' in text and 'Аргументы:' in text,text
+                assert await page.locator('#explanation p').count() in (3,4)
+                assert 'Пуассон' not in text and 'half_life' not in text
+                if index==0:
+                    AIHandler.fail_context=True
+                    try:
+                        await page.locator('details').filter(has=page.locator('#notes')).locator('summary').click()
+                        await page.locator('#notes').fill('Проверка недоступного контекста')
+                        await page.locator('#explain-button').click()
+                        await expect(page.locator('#explanation')).to_contain_text('не поместились в контекст нейросети')
+                        await expect(page.locator('#ai-analysis-meta')).to_contain_text('Расчётный разбор')
+                        assert await page.locator('#ai-request-error').is_hidden()
+                    finally: AIHandler.fail_context=False
                 await page.locator("#team-statistics > summary").click()
                 assert MARKER not in await page.locator("#team-statistics").inner_text()
                 assert (
