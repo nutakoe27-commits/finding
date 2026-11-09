@@ -47,6 +47,27 @@ class ProductTests(unittest.TestCase):
             self.assertIn('prognozich ai',prompt)
             self.assertNotIn('Matchlab',prompt)
 
+    def test_quote_summary_does_not_infer_team_strength_or_match_status(self):
+        settings = Settings(self.path, 'http://127.0.0.1:9/v1', 'fixture-model')
+        ctx = {'team_statistics': None, 'statistical_model': None, 'archive_history': {'state': 'empty'},
+               'web_research': {'state': 'unavailable'}, 'selection': {'market_key': 'double'},
+               'snapshot': {'is_stale': False}, 'request_time': {'kickoff_passed': True},
+               'event': {'phase': 'unknown'}, 'markets': [
+                   {'key': 'double', 'name': 'Двойной шанс', 'is_stale': False,
+                    'outcomes': [{'name': '1X', 'odds': 1.49, 'state': 'open'},
+                                 {'name': 'X2', 'odds': 1.49, 'state': 'open'}]}]}
+        with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
+            result = qwen.explain_event(settings, ctx)
+        self.assertIn('1X: 1.49', result)
+        self.assertIn('X2: 1.49', result)
+        self.assertIn('текущая стадия матча не подтверждена', result)
+        self.assertNotIn('повышенная волатильность', result)
+        self.assertNotIn('матч начался', result)
+        ctx['archive_history'] = {'state': 'ready'}
+        with patch('matchlab.qwen._completion', return_value='Обычный разбор') as model:
+            self.assertEqual(qwen.explain_event(settings, ctx), 'Обычный разбор')
+            model.assert_called_once()
+
     def test_catalogue_searches_all_pages_with_cyrillic_and_filters(self):
         self.repo.import_event_markets(event("124", home="Динамо", competition="Беларусь. Высшая лига"))
         self.repo.import_event_markets(event("125", home="Крылья Советов", phase="live"))

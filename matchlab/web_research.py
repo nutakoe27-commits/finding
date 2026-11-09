@@ -200,7 +200,7 @@ async def _search(url, token_file, queries):
                     async def one(query):
                         result = await session.call_tool("search", {
                             "query": query, "category": "news", "time_range": "week",
-                            "max_results": 4, "max_fetches": 2, "search_depth": "balanced",
+                            "max_results": 4, "max_fetches": 0, "search_depth": "fast",
                             "max_tokens_out": 3000, "force_refresh": True,
                         })
                         if result.isError:

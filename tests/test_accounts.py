@@ -300,6 +300,21 @@ class AccountTests(unittest.TestCase):
             self.client.get("/api/account/usage").json()["bonus_analyses"], 1
         )
 
+    def test_limited_summary_returns_reserved_promotional_credit(self):
+        object.__setattr__(self.settings, "ai_daily_limit", 1)
+        user = self.register()
+        with self.repo.connection() as db:
+            db.execute("UPDATE users SET bonus_analyses=1 WHERE id=?", (user["id"],))
+            db.execute("INSERT INTO ai_usage(id,user_id,at,kind,target,status,used_bonus) VALUES ('used',?,?, 'event','123','success',0)",
+                       (user['id'], datetime.now(UTC).isoformat()))
+        with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
+            result = self.client.post('/api/bookmakers/events/123/explain', json={})
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()['analysis_type'], 'limited_summary')
+        self.assertEqual(self.client.get('/api/account/usage').json()['bonus_analyses'], 1)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM ai_usage WHERE status='limited'").fetchone()[0], 1)
+
     def test_referral_rule_uses_stored_event_and_does_not_accept_open_redirects(self):
         self.admin()
         self.elevate()

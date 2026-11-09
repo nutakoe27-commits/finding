@@ -1,4 +1,5 @@
 import json
+import math
 import re
 
 import httpx
@@ -123,6 +124,9 @@ EVENT_SYSTEM = """archive_history — накопленные результат�
 У события outright нет пары хозяева/гости: это соревнование или долгосрочный рынок с несколькими участниками.
 market_implied — оценки явно указанного рынка из коэффициентов с нормировкой маржи, а НЕ независимый прогноз ИИ.
 Одинаковые коэффициенты означают одинаковые котировки исходов, но не доказывают равенство реальной силы команд.
+Равные цены на чёт и нечёт не характеризуют силу соперников и не позволяют оценить ожидаемое число голов.
+Не утверждай, что турнир волатильнее других или что его линия менее точна, без конкретных сравнительных данных во входе.
+Время начала матча и время наблюдения коэффициентов — разные величины, не приравнивай их.
 Не выдавай их за свою вероятность победы. Не обещай прибыль, надёжную ставку или гарантированный исход.
 statistical_model, если есть, — отдельная футбольная оценка по историческим голам: используй готовые числа,
 не изменяй их; укажи дату последних обучающих результатов, особенно если они старые.
@@ -165,7 +169,48 @@ web_research — непроверенные выдержки из поиска; 
 Без скрытых рассуждений, самопрезентации и упоминаний поставщика ИИ."""
 
 
+def limited_event_summary(context: dict) -> str | None:
+    """Use only captured quotes when no supporting facts are available."""
+    archive = context.get('archive_history') or {}
+    web = context.get('web_research') or {}
+    if (context.get('team_statistics') or context.get('statistical_model') or
+        archive.get('state') == 'ready' or (web.get('state') == 'ready' and web.get('sources'))):
+        return None
+
+    def plain(value):
+        return re.sub(r'[\x00-\x1f\x7f*_`\\]', ' ', str(value or '')).strip()[:150]
+
+    text = ('**Сводка по доступным данным**\n'
+            'Подтверждённых сведений о форме и личных встречах участников для этого матча '
+            'недостаточно. По одним коэффициентам нельзя обоснованно оценить исход. '
+            'Это автоматическая сводка по сохранённым данным; модель не вызывалась.\n')
+    selection = context.get('selection') or {}
+    markets = context.get('markets') or []
+    selected = next((m for m in markets if m.get('key') == selection.get('market_key')), None)
+    if selected is None and not selection.get('market_key') and markets:
+        selected = markets[0]
+    if selected:
+        quotes = []
+        for item in selected.get('outcomes', []):
+            odds = item.get('odds')
+            if (item.get('state') == 'open' and isinstance(odds, (int, float)) and
+                    not isinstance(odds, bool) and math.isfinite(odds) and odds > 0 and plain(item.get('name'))):
+                quotes.append(f"- {plain(item['name'])}: {odds:g}")
+        if quotes:
+            text += f"\n**Коэффициенты в сохранённом снимке**\n{plain(selected.get('name'))}\n\n" + '\n'.join(quotes)
+            text += '\n\nКоэффициенты описывают рынок и сами по себе не доказывают равенство сил команд.'
+            if selected.get('is_stale') or (context.get('snapshot') or {}).get('is_stale'):
+                text += ' Снимок мог устареть.'
+    if ((context.get('request_time') or {}).get('kickoff_passed') and
+            (context.get('event') or {}).get('phase') not in ('live', 'finished')):
+        text += '\n\nВремя начала прошло, но текущая стадия матча не подтверждена.'
+    return text
+
+
 def explain_event(settings: Settings, context: dict) -> str:
+    summary = limited_event_summary(context)
+    if summary is not None:
+        return summary
     text = _completion(settings, [{"role": "system", "content": EVENT_SYSTEM},
                                   {"role": "user", "content": json.dumps(context, ensure_ascii=False)}])
     return re.sub(r"\bQwen[\w.\-]*", "ИИ", text, flags=re.I)

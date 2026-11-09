@@ -233,6 +233,23 @@ class ArchiveTests(unittest.TestCase):
             self.assertIsNone(context["statistical_model"])
             self.assertNotIn("current_score_and_match_clock", context["missing_data"])
 
+    def test_missing_evidence_returns_quote_summary_without_model_or_usage_charge(self):
+        self.feed([header()])
+        with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
+            response = self.client.post('/api/archive/events/101/explain', json={})
+            self.assertEqual(response.status_code, 200, response.text)
+            value = response.json()
+            self.assertEqual(value['analysis_type'], 'limited_summary')
+            self.assertIn('модель не вызывалась', value['text'])
+            self.assertIn('1.9', value['text'])
+            self.assertNotIn('волатильность', value['text'])
+            self.assertNotIn('в момент начала', value['text'])
+            cached = self.client.post('/api/archive/events/101/explain', json={}).json()
+            self.assertTrue(cached['cached'])
+        with self.repo.connection() as db:
+            statuses = [row[0] for row in db.execute('SELECT status FROM ai_usage ORDER BY rowid')]
+        self.assertEqual(statuses, ['limited', 'limited'])
+
     def test_research_is_attached_to_private_analysis_and_sent_to_qwen(self):
         self.feed([header()])
         research = {'state': 'ready', 'searched_at': datetime.now(UTC).isoformat(),

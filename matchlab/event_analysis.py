@@ -6,7 +6,7 @@ import json
 from .bookmakers import instant
 from .markets import headline_market
 
-ANALYSIS_VERSION = 'private-full-statistics-v7'
+ANALYSIS_VERSION = 'private-full-statistics-v8'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None,archive_history=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None

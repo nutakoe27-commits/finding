@@ -391,7 +391,7 @@ def install(app, repo, settings):
             finish_usage(
                 repo,
                 usage,
-                "success" if response.status_code < 400 else "failed",
+                ("limited" if getattr(request.state, "limited_summary", False) else "success") if response.status_code < 400 else "failed",
                 int((time.monotonic() - started) * 1000),
             )
         response.headers["X-Content-Type-Options"] = "nosniff"

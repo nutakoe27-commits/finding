@@ -443,15 +443,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/bookmakers/events/{event_id}/explain")
     def explain_event(event_id: str, request: EventExplainRequest,http_request:Request):
-        return explain_event_impl(event_id,request,False,http_request.state.user)
+        return explain_event_impl(event_id,request,False,http_request)
 
     @app.post('/api/archive/events/{event_id}/explain')
     def explain_stream_event(event_id:str,request:EventExplainRequest,http_request:Request):
-        return explain_event_impl(event_id,request,True,http_request.state.user)
+        return explain_event_impl(event_id,request,True,http_request)
 
-    def explain_event_impl(event_id,request,stream,user):
+    def explain_event_impl(event_id,request,stream,http_request):
         from .event_analysis import analysis_context, request_key
         from .statistics import analysis_statistics
+        user = http_request.state.user
         if not settings.qwen_configured:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if not event_id.isdigit() or len(event_id) > 20:
@@ -473,6 +474,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
         cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
+            http_request.state.limited_summary = cached.get('analysis_type') == 'limited_summary'
             return {**cached, "cached": True}
         if not analysis_lock.acquire(blocking=False):
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
@@ -501,8 +503,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             selected = next((market for market in context["markets"] if market["key"] == request.market_key), None)
             payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
                        "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
-                       "text": text, "context": context}
+                       "text": text, "context": context,
+                       "analysis_type": "limited_summary" if qwen.limited_event_summary(context) is not None else "model"}
             repo.save_event_analysis(payload, key,user_id=user['id'])
+            http_request.state.limited_summary = payload['analysis_type'] == 'limited_summary'
             return {**payload, "cached": False}
         finally:
             analysis_lock.release()

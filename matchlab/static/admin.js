@@ -5,7 +5,7 @@ window.Admin = (() => {
   const format=value=>Number(value||0).toLocaleString("ru-RU");
   const when=value=>value ? new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
   let tab="overview",userOffset=0,auditOffset=0,request=0,elevatedUntil=0,resolvePassword=null,pushPreview=null,lastOverview=null;
-  const statuses={draft:"Черновик",active:"Активен",paused:"Приостановлен",queued:"В очереди",sending:"Отправляется",complete:"Завершена",cancelled:"Отменена",success:"Успешно",failed:"Ошибка",pending:"В работе"};
+  const statuses={draft:"Черновик",active:"Активен",paused:"Приостановлен",queued:"В очереди",sending:"Отправляется",complete:"Завершена",cancelled:"Отменена",success:"Успешно",limited:"Сводка",failed:"Ошибка",pending:"В работе"};
   const actions={"admin.bootstrap":"Создан администратор","admin.reauth":"Подтверждён доступ","admin.reauth_failed":"Неверный пароль администратора","account.password_changed":"Изменён пароль","user.enabled":"Включён аккаунт","user.disabled":"Ограничен аккаунт","promo.created":"Создан промокод","promo.active":"Включён промокод","promo.paused":"Приостановлен промокод","promo.draft":"Промокод возвращён в черновики","promo.redeemed":"Активирован промокод","links.updated":"Изменены партнёрские ссылки","push.draft":"Создан черновик уведомления","push.queued":"Запланирована отправка уведомления","push.cancelled":"Отменена отправка"};
   function message(value,error=false){$("admin-message").textContent=value;$("admin-message").classList.toggle("is-error",error);}
   function table(headers,rows){
