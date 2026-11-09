@@ -78,6 +78,50 @@ def participant_key(value):
     return ''.join(char for char in unicodedata.normalize('NFKC',value).casefold() if char.isalnum())
 
 
+def public_label(value, depth=0):
+    """Only short public match/team labels; never URLs, addresses or secrets."""
+    if isinstance(value,str):
+        value=' '.join(value.split())
+        if (0<len(value)<=100 and not SENSITIVE.search(value) and
+            not re.search(r'https?://|www\.|@|[?=&]|\d{13,}',value,re.I) and
+            all(char.isprintable() for char in value)):
+            return value
+    if isinstance(value,dict) and depth<2:
+        return {key:label for key in ('ru','en','name','short','full','default')
+                if (label:=public_label(value.get(key),depth+1)) is not None}
+    return None
+
+
+def passive_details(documents, header, expected_id):
+    lines=[]
+    for line in header.splitlines():
+        value=public_label(line)
+        if value: lines.append(value)
+        if len(lines)>=20: break
+    matches=[]; teams=[]; header_key=participant_key(header)
+    for _,data in documents:
+        match=data.get('match') if isinstance(data.get('match'),dict) else data
+        members=match.get('teams') if isinstance(match,dict) else None
+        if isinstance(members,dict) and isinstance(members.get('home'),dict) and isinstance(members.get('away'),dict):
+            home,away=members['home'],members['away']
+            names=[public_label(home.get('name')),public_label(away.get('name'))]
+            identifiers=[]
+            for key in ('id','_id','matchId','match_id','eventId','event_id'):
+                value=match.get(key)
+                if isinstance(value,(str,int)) and str(value).rsplit(':',1)[-1]==expected_id: identifiers.append(key)
+            matches.append({'home_name':names[0],'away_name':names[1],
+                            'home_name_type':type(home.get('name')).__name__,
+                            'away_name_type':type(away.get('name')).__name__,
+                            'home_name_in_header':bool(participant_key(home.get('name')) and participant_key(home.get('name')) in header_key),
+                            'away_name_in_header':bool(participant_key(away.get('name')) and participant_key(away.get('name')) in header_key),
+                            'matching_id_fields':identifiers})
+        team=data.get('team')
+        if isinstance(team,dict) and isinstance(data.get('matches'),list):
+            teams.append({'name':public_label(team.get('name')),'name_type':type(team.get('name')).__name__,
+                          'match_count':len(data['matches'])})
+    return {'header_lines':lines,'match_candidates':matches[:5],'team_match_lists':teams[:6]}
+
+
 def passive_summary(documents, header):
     """Count already received public documents, binding team results to the displayed match."""
     header_key=participant_key(header)
@@ -177,7 +221,7 @@ async def session_request(context, url: str, original: dict) -> dict:
         if response is not None: await response.dispose()
 
 
-async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False) -> dict:
+async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False) -> dict:
     responses = []
     sockets = []
     started=time.monotonic()
@@ -267,6 +311,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
             'responses': entries, 'websockets': sockets, 'responses_limit': MAX_RESPONSES}
     if test_passive:
         result['passive_test']=passive_summary(passive_documents,header)
+        if show_labels: result['passive_details']=passive_details(passive_documents,header,expected_id)
     if test_direct:
         if candidate is None:
             result['direct_test']={'state':'candidate_not_found'}
@@ -279,7 +324,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     return result
 
 
-async def run(url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False) -> dict:
+async def run(url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False) -> dict:
     # Never pass local service secrets to a browser launched for diagnostics.
     environment = {key: value for key, value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN', 'QWEN_API_KEY')}
     async with async_playwright() as playwright:
@@ -291,7 +336,7 @@ async def run(url: str, seconds: int, *, provider_only=False, test_direct=False,
                 else: await route.continue_()
             await context.route('**/*', resources)
             page = await context.new_page()
-            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct, test_passive=test_passive)
+            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct, test_passive=test_passive, show_labels=show_labels)
         finally:
             await browser.close()
 
@@ -303,15 +348,17 @@ def main():
     parser.add_argument('--provider-only', action='store_true', help='Summarize provider responses only')
     parser.add_argument('--test-direct', action='store_true', help='Repeat one observed public request without browser session')
     parser.add_argument('--test-passive', action='store_true', help='Measure already received data only; no replay requests')
+    parser.add_argument('--show-match-labels', action='store_true', help='Show public match header and team labels')
     args = parser.parse_args()
     if not widget_url(args.url): parser.error('Нужна ссылка https://winline.ru/stats/match/ID без параметров.')
     if not 1 <= args.seconds <= 40: parser.error('Ожидание должно быть от 1 до 40 секунд.')
     if args.test_direct and args.test_passive: parser.error('Выберите только один режим проверки.')
+    if args.show_match_labels and not args.test_passive: parser.error('Для имён команд укажите --test-passive.')
     os.umask(0o077)
     try:
-        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct, test_passive=args.test_passive))
+        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct, test_passive=args.test_passive, show_labels=args.show_match_labels))
         if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test','session_test') if key in result}
-        if args.test_passive: result={key:result[key] for key in ('page_status','frames','passive_test')}
+        if args.test_passive: result={key:result[key] for key in ('page_status','frames','passive_test','passive_details') if key in result}
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)

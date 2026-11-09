@@ -4,7 +4,7 @@ import shutil
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, passive_summary, shape, widget_url
+from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, passive_details, passive_summary, public_label, shape, widget_url
 
 
 class RedactionTests(unittest.TestCase):
@@ -70,6 +70,16 @@ class RedactionTests(unittest.TestCase):
         rejected=passive_summary(documents,'Unrelated match')
         self.assertFalse(rejected['match_bound_to_header'])
         self.assertEqual(rejected['recent_match_counts'],{})
+
+    def test_optional_match_labels_are_bounded_and_do_not_expose_secrets(self):
+        documents=[(1,{'match':{'id':123,'teams':{'home':{'name':{'ru':'Альфа'}},'away':{'name':'Бета'}}}}),
+                   (2,{'team':{'name':'Альфа'},'matches':[{}]})]
+        result=passive_details(documents,'Альфа\nБета\nhttps://example.test/?token=hidden','123')
+        self.assertEqual(result['match_candidates'][0]['home_name'],{'ru':'Альфа'})
+        self.assertEqual(result['match_candidates'][0]['matching_id_fields'],['id'])
+        self.assertEqual(result['team_match_lists'][0]['name'],'Альфа')
+        self.assertNotIn('hidden',json.dumps(result))
+        self.assertIsNone(public_label('secret-token-123'))
 
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
