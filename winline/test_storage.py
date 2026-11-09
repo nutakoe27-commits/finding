@@ -64,6 +64,36 @@ class StorageTests(unittest.TestCase):
             "2026-01-01T02:00:00+00:00",
         )
 
+    def test_light_observation_preserves_unrelated_markets_and_chunked_identity_lookups(
+        self,
+    ):
+        expanded = copy.deepcopy(self.data)
+        expanded["events"].append(
+            {"id": 200, "idSport": 1, "isLive": 0, "members": ["В", "Г"]}
+        )
+        expanded["lines"].extend(
+            dict(self.data["lines"][0], idEvent=200, id=i) for i in range(600)
+        )
+        save_snapshot(self.db, self.capture, expanded, "2026-01-01T01:00:00+00:00")
+        histories = self.count("line_history")
+        current = copy.deepcopy(self.data)
+        current["lines"][0]["V"] = [1.5, 2.5]
+        save_snapshot(self.db, self.capture, current, "2026-01-01T02:00:00+00:00")
+        self.assertEqual(self.count("lines"), 601)
+        self.assertEqual(self.count("line_history"), histories + 1)
+        self.assertEqual(
+            self.db.execute(
+                "SELECT last_seen FROM lines WHERE event_id=200 LIMIT 1"
+            ).fetchone()[0],
+            "2026-01-01T01:00:00+00:00",
+        )
+        self.assertEqual(
+            self.db.execute(
+                "SELECT count(*) FROM latest_odds WHERE present_in_latest_snapshot"
+            ).fetchone()[0],
+            1,
+        )
+
     def test_live_transition_and_price_change_are_preserved(self):
         save_snapshot(self.db, self.capture, self.data)
         data = copy.deepcopy(self.data)

@@ -84,6 +84,11 @@ def main():
     parser.add_argument(
         "--snapshot-files", action=argparse.BooleanOptionalAction, default=True
     )
+    parser.add_argument(
+        "--light-snapshots",
+        action="store_true",
+        help="Частые снимки: события, основные рынки и запрошенные дополнительные рынки",
+    )
     args = parser.parse_args()
     if (
         not 0 <= args.seconds <= 86400
@@ -128,6 +133,14 @@ def main():
                 opts["proxy"] = {"server": proxy}
             browser = p.chromium.launch(**opts)
             page = browser.new_page(ignore_https_errors=args.ignore_https_errors)
+            page.route(
+                "**/*",
+                lambda route: (
+                    route.abort()
+                    if route.request.resource_type in ("image", "media", "font")
+                    else route.continue_()
+                ),
+            )
             if args.raw_frames:
 
                 def on_socket(ws):
@@ -162,11 +175,18 @@ def main():
             # Allow the initial prematch and live packets to finish independently.
             page.wait_for_timeout(3000)
 
-            session = SourceSession(page, db, capture, args.database, args.interval)
+            session = SourceSession(
+                page,
+                db,
+                capture,
+                args.database,
+                args.interval,
+                light=args.light_snapshots,
+            )
 
-            def snapshot(force=True):
+            def snapshot(force=True, event_ids=()):
                 nonlocal last_data, snapshot_count
-                value = session.tick(force=force)
+                value = session.tick(force=force, event_ids=event_ids)
                 if value is None:
                     return
                 last_data = value
@@ -190,56 +210,6 @@ def main():
                 (str(last_data.get("sdkVersion")), capture),
             )
             db.commit()
-            if args.expand_markets:
-                events = [
-                    e
-                    for e in last_data["events"]
-                    if not e.get("isLive") and e.get("count_add_line") != 0
-                ]
-                if args.event_limit:
-                    events = events[: args.event_limit]
-                db.execute(
-                    "UPDATE collection_runs SET planned_market_requests=? WHERE capture_id=?",
-                    (len(events), capture),
-                )
-                db.commit()
-                for offset in range(0, len(events), args.market_batch_size):
-                    batch = events[offset : offset + args.market_batch_size]
-                    replies = page.evaluate(
-                        PLUS_BATCH,
-                        {
-                            "events": [e["id"] for e in batch],
-                            "timeout": 12000,
-                            "delay": args.request_delay * 1000,
-                        },
-                    )
-                    for reply in replies:
-                        error = reply.get("error")
-                        failed = failed or bool(error)
-                        db.execute(
-                            "INSERT OR REPLACE INTO market_requests VALUES (?,?,?,?,?,?)",
-                            (
-                                capture,
-                                reply["event"],
-                                "ordinary",
-                                now(),
-                                reply.get("count"),
-                                error,
-                            ),
-                        )
-                        if error:
-                            print(
-                                f"Рынки {reply['event']}: {error}",
-                                file=sys.stderr,
-                                flush=True,
-                            )
-                    db.commit()
-                    page.wait_for_timeout(args.request_delay * 1000)
-                    done = min(offset + len(batch), len(events))
-                    snapshot(force=False)
-                    if done % 100 == 0 or done == len(events):
-                        print(f"Дополнительные рынки: {done}/{len(events)}", flush=True)
-                snapshot(force=False)
             if args.history_days:
                 page.evaluate("window.apiWlb.getService('ResultService').getPreData()")
                 page.wait_for_function(
@@ -289,6 +259,56 @@ def main():
                     if i % 50 == 0 or i == len(pairs):
                         print(f"Архив: {i}/{len(pairs)} запросов", flush=True)
                     page.wait_for_timeout(args.request_delay * 1000)
+            if args.expand_markets:
+                events = [
+                    e
+                    for e in last_data["events"]
+                    if not e.get("isLive") and e.get("count_add_line") != 0
+                ]
+                if args.event_limit:
+                    events = events[: args.event_limit]
+                db.execute(
+                    "UPDATE collection_runs SET planned_market_requests=? WHERE capture_id=?",
+                    (len(events), capture),
+                )
+                db.commit()
+                for offset in range(0, len(events), args.market_batch_size):
+                    batch = events[offset : offset + args.market_batch_size]
+                    replies = page.evaluate(
+                        PLUS_BATCH,
+                        {
+                            "events": [e["id"] for e in batch],
+                            "timeout": 12000,
+                            "delay": args.request_delay * 1000,
+                        },
+                    )
+                    for reply in replies:
+                        error = reply.get("error")
+                        failed = failed or bool(error)
+                        db.execute(
+                            "INSERT OR REPLACE INTO market_requests VALUES (?,?,?,?,?,?)",
+                            (
+                                capture,
+                                reply["event"],
+                                "ordinary",
+                                now(),
+                                reply.get("count"),
+                                error,
+                            ),
+                        )
+                        if error:
+                            print(
+                                f"Рынки {reply['event']}: {error}",
+                                file=sys.stderr,
+                                flush=True,
+                            )
+                    db.commit()
+                    page.wait_for_timeout(args.request_delay * 1000)
+                    done = min(offset + len(batch), len(events))
+                    snapshot(force=False, event_ids=[e["id"] for e in batch])
+                    if done % 100 == 0 or done == len(events):
+                        print(f"Дополнительные рынки: {done}/{len(events)}", flush=True)
+                snapshot()
             end = time.monotonic() + args.seconds
             while time.monotonic() < end:
                 page.wait_for_timeout(min(args.interval, end - time.monotonic()) * 1000)
@@ -314,7 +334,11 @@ def main():
             browser.close()
         print(
             f"Сбор {capture} завершён; база {args.database}; "
-            + (f"исходный снимок {save_path}" if args.snapshot_files else "сырые поля сохранены в SQLite"),
+            + (
+                f"исходный снимок {save_path}"
+                if args.snapshot_files
+                else "сырые поля сохранены в SQLite"
+            ),
             flush=True,
         )
         return 1 if failed else 0

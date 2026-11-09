@@ -155,9 +155,19 @@ def _save_snapshot(db, capture_id, data, observed_at=None):
         "INSERT INTO snapshots(capture_id,observed_at,events_count,lines_count) VALUES (?,?,?,?)",
         (capture_id, at, len(data["events"]), len(data["lines"])),
     ).lastrowid
-    old_events = {
-        r["id"]: r for r in db.execute("SELECT id,content_hash,first_seen FROM events")
-    }
+    old_events = {}
+    event_ids = [e["id"] for e in data["events"]]
+    for offset in range(0, len(event_ids), 200):
+        batch = event_ids[offset : offset + 200]
+        old_events.update(
+            (r["id"], r)
+            for r in db.execute(
+                "SELECT id,content_hash,first_seen FROM events WHERE id IN ("
+                + ",".join("?" for _ in batch)
+                + ")",
+                batch,
+            )
+        )
     for e in data["events"]:
         raw = encode(e)
         h = digest(raw)
@@ -195,12 +205,23 @@ def _save_snapshot(db, capture_id, data, observed_at=None):
                 h,
             ),
         )
-    old_lines = {
-        (r["event_id"], r["line_id"], r["is_live"]): r
-        for r in db.execute(
-            "SELECT event_id,line_id,is_live,first_seen,content_hash FROM lines"
+    old_lines = {}
+    line_keys = [
+        (l["idEvent"], l["id"], int(bool(l.get("isLive")))) for l in data["lines"]
+    ]
+    for offset in range(0, len(line_keys), 200):
+        batch = line_keys[offset : offset + 200]
+        # Drive the composite primary-key lookup from this observation's keys.
+        # Reading every historical line makes a small live tick grow with the archive.
+        query = (
+            "SELECT l.event_id,l.line_id,l.is_live,l.first_seen,l.content_hash FROM (VALUES "
+            + ",".join("(?,?,?)" for _ in batch)
+            + ") AS wanted CROSS JOIN lines l WHERE l.event_id=wanted.column1 AND l.line_id=wanted.column2 AND l.is_live=wanted.column3"
         )
-    }
+        old_lines.update(
+            ((r["event_id"], r["line_id"], r["is_live"]), r)
+            for r in db.execute(query, [value for key in batch for value in key])
+        )
     for line in data["lines"]:
         e_id, l_id, live = line["idEvent"], line["id"], int(bool(line.get("isLive")))
         raw = encode(line)

@@ -13,6 +13,7 @@ from test_archive import TOKEN, header, result
 
 from matchlab.api import create_app
 from matchlab.config import Settings
+from winline.browser import SNAPSHOT
 from winline.session import SourceSession
 from winline.storage import connect, now, save_results, save_snapshot
 from winline.sync import cycle
@@ -141,3 +142,41 @@ class ArchiveSyncTests(unittest.TestCase):
         self.assertEqual(
             self.db.execute("SELECT count(*) FROM snapshots").fetchone()[0], 3
         )
+
+    def test_light_ticks_preserve_pending_market_batches_until_the_next_observation(
+        self,
+    ):
+        self.root.joinpath("requests.json").write_text(
+            json.dumps({"at": 1000, "events": [101]})
+        )
+        page = Mock()
+        options = []
+
+        def evaluate(script, *args):
+            if script == SNAPSHOT:
+                options.append(args[0])
+                return json.dumps(self.data)
+            return None
+
+        page.evaluate.side_effect = evaluate
+        session = SourceSession(page, self.db, self.capture, self.path, light=True)
+        with (
+            patch("winline.session.time.monotonic", return_value=100),
+            patch("winline.session.time.time", return_value=1001),
+        ):
+            session.tick(event_ids=[102])
+        with patch("winline.session.time.monotonic", return_value=105):
+            self.assertIsNone(session.tick(event_ids=[103, 104]))
+        with (
+            patch("winline.session.time.monotonic", return_value=111),
+            patch("winline.session.time.time", return_value=1011),
+        ):
+            session.tick()
+        self.assertEqual(
+            options,
+            [
+                {"all_lines": False, "event_ids": [101, 102]},
+                {"all_lines": False, "event_ids": [101, 103, 104]},
+            ],
+        )
+        self.assertEqual(session.pending, set())

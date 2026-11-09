@@ -60,6 +60,22 @@ def report(args,value):
     print(json.dumps(value,ensure_ascii=False),flush=True)
 
 
+def receiver_failure(error,operation,latest_attempt,failures):
+    """Safe diagnostics without exception text, request headers or response bodies."""
+    delay=min(60,5*2**max(0,min(failures-1,4)))
+    value={'state':'receiver_unavailable','latest_attempt':latest_attempt,
+           'operation':operation,'error_type':type(error).__name__,
+           'retry_in_seconds':delay,
+           'hint':'Проверьте локальный SSH-туннель, обновление приложения на VPS и настройку сборщика.'}
+    if isinstance(error,httpx.HTTPStatusError):value['http_status']=error.response.status_code
+    return value
+
+
+async def wait_or_stop(stopped,seconds):
+    try:await asyncio.wait_for(stopped.wait(),timeout=seconds)
+    except asyncio.TimeoutError:pass
+
+
 async def refresh_market(context,client,event):
     """Use the same public, feed-verified extraction as the regular crawler."""
     page=await context.new_page()
@@ -172,24 +188,29 @@ async def run(args):
                 page=await context.new_page()
                 latest_attempt=None
                 next_regular=0.0
+                receiver_failures=0
                 while not stopped.is_set():
-                    started=time.monotonic(); states={}; linked=0; source_blocked=False
+                    started=time.monotonic(); states={}; linked=0; source_blocked=False; blocked_until=None
+                    operation='refresh_claim'
                     try:
                         response=await client.post('/api/bookmakers/refresh/claim',json={})
                         response.raise_for_status(); job=response.json().get('job')
                         if job:
+                            operation='refresh_delivery'
                             if not page.is_closed():
                                 try: await page.goto('about:blank',timeout=5000)
                                 except Exception: pass
                             result=await refresh_job(context,client,job)
+                            receiver_failures=0
                             report(args,{'state':'refresh','refresh':result})
                             continue
                         if not args.once and time.monotonic()<next_regular:
                             try: await asyncio.wait_for(stopped.wait(),timeout=min(5,next_regular-time.monotonic()))
                             except asyncio.TimeoutError: pass
                             continue
+                        operation='statistics_queue'
                         response=await client.get('/api/bookmakers/statistics/queue',params={'limit':args.batch_size})
-                        response.raise_for_status(); queue=response.json(); linked=queue.get('linked_events',0); source_blocked=bool(queue.get('blocked_until'))
+                        response.raise_for_status(); queue=response.json(); linked=queue.get('linked_events',0); blocked_until=queue.get('blocked_until'); source_blocked=bool(blocked_until)
                         for job in queue['jobs']:
                             if stopped.is_set(): break
                             if not browser.is_connected():
@@ -201,17 +222,25 @@ async def run(args):
                             if not browser.is_connected():
                                 print('Окно сборщика закрыто. Запустите сборщик снова.',flush=True)
                                 return 2
+                            operation='statistics_ingest'
                             response=await client.post('/api/bookmakers/statistics/ingest',json=snapshot)
                             response.raise_for_status()
                             latest_attempt={'state':snapshot['state'],'at':snapshot['attempted_at'],'source_event_id':job['source_event_id']}
                             states[snapshot['state']]=states.get(snapshot['state'],0)+1
                             if snapshot['state']=='blocked': break
-                    except (httpx.HTTPError,ValueError,KeyError):
-                        report(args,{'state':'receiver_unavailable','latest_attempt':latest_attempt,'hint':'Проверьте локальный SSH-туннель, обновление приложения на VPS и настройку сборщика.'})
+                    except (httpx.HTTPError,ValueError,KeyError) as error:
+                        receiver_failures+=1
+                        failure=receiver_failure(error,operation,latest_attempt,receiver_failures)
+                        report(args,failure)
                         if args.once: return 2
+                        # Claim polling runs before next_regular, so a failed
+                        # receiver must pause here instead of immediately looping.
+                        await wait_or_stop(stopped,failure['retry_in_seconds'])
+                        continue
                     else:
+                        receiver_failures=0
                         state='ok' if states.get('ok') and len(states)==1 else 'partial' if states.get('ok') else 'blocked' if states.get('blocked') or source_blocked else 'unavailable' if states else 'idle' if linked else 'waiting_links'
-                        report(args,{'state':state,'linked_events':linked,'statistics':states,'latest_attempt':latest_attempt,'cycle_seconds':round(time.monotonic()-started,2)})
+                        report(args,{'state':state,'linked_events':linked,'statistics':states,'latest_attempt':latest_attempt,'source_blocked_until':blocked_until,'cycle_seconds':round(time.monotonic()-started,2)})
                     if args.once: return 0 if states.get('ok') else 2
                     next_regular=time.monotonic()+max(0,args.interval-(time.monotonic()-started))
             finally:

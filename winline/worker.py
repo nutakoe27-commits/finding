@@ -52,6 +52,7 @@ def command(database, kind, chromium=None, initial=False, seconds=300):
     ]
     if kind != "supplemental":
         args += ["--no-snapshot-files"]
+    args += ["--light-snapshots"]
     if chromium:
         args += ["--chromium", chromium]
     if kind == "fast":

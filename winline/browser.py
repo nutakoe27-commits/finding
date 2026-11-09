@@ -5,12 +5,13 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-SNAPSHOT = r"""() => {
+SNAPSHOT = r"""options => {
  const a=window.apiWlb;
  if(!a?.getEvents || !a?.getService) throw Error('Winline public SDK unavailable');
  if(a.client.websocket.readyState!==1) throw Error('Winline stream disconnected');
  const svc=a.getService('LineService'),formatter=a.getService('StringFormatService');
  const events=a.getEvents().toArray(),byId=new Map(events.map(e=>[e.id,e]));
+ const requested=new Set(options?.event_ids||[]),full=options?.all_lines!==false;
  const cache=window.__displayCache ||= new Map();
  const render=line=>{
    const event=byId.get(line.idEvent),sport=event&&a.getSports().byId(event.idSport);
@@ -34,9 +35,13 @@ SNAPSHOT = r"""() => {
    }
    return {...line,_display:{name:display.name,labels:display.labels,valid:display.valid}};
  };
- const all=[...svc.query({isLive:0,query:{}}),...svc.query({isLive:1,query:{}})].map(render);
+ const raw=[...svc.query({isLive:0,query:{}}),...svc.query({isLive:1,query:{}})];
+ const mainByEvent=new Map(events.map(e=>[e.id,svc.getEventMainLine(e.id,e.isLive,e.idSport)]));
+ const key=line=>[line.idEvent,line.id,line.isLive].join(':');
+ const picked=full?raw:[...new Map([...raw.filter(l=>requested.has(l.idEvent)),...[...mainByEvent.values()].filter(Boolean)].map(l=>[key(l),l])).values()];
+ const all=picked.map(render);
  const mapped=new Map(all.map(l=>[[l.idEvent,l.id,l.isLive].join(':'),l]));
- const enriched=events.map(e=>{const main=svc.getEventMainLine(e.id,e.isLive,e.idSport);
+ const enriched=events.map(e=>{const main=mainByEvent.get(e.id);
    return {...e,_main_line:main?mapped.get([e.id,main.id,e.isLive].join(':'))||render(main):null}});
  return JSON.stringify({sdkVersion:a.version,events:enriched,sports:a.getSports().serialize(),
    countries:a.getCountries().serialize(),championships:a.getChampionships().serialize(),lines:all},

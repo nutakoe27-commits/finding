@@ -13,13 +13,16 @@ except ImportError:
 
 
 class SourceSession:
-    def __init__(self, page, db, capture, database, interval=10):
+    def __init__(self, page, db, capture, database, interval=10, light=False):
         self.page, self.db, self.capture = page, db, capture
         self.requests = Path(database).parent / "requests.json"
         self.interval, self.last = interval, 0
         self.data = None
+        self.light = light
+        self.pending = set()
 
-    def tick(self, force=False):
+    def tick(self, force=False, event_ids=()):
+        self.pending.update(event_ids)
         if not force and time.monotonic() - self.last < self.interval:
             return None
         try:
@@ -38,7 +41,16 @@ class SourceSession:
             ids = []
         if ids:
             self.page.evaluate(REFRESH_WATCHES, ids)
-        self.data = json.loads(self.page.evaluate(SNAPSHOT))
+        if self.light:
+            self.data = json.loads(
+                self.page.evaluate(
+                    SNAPSHOT,
+                    {"all_lines": False, "event_ids": sorted(self.pending | set(ids))},
+                )
+            )
+        else:
+            self.data = json.loads(self.page.evaluate(SNAPSHOT))
         save_snapshot(self.db, self.capture, self.data)
+        self.pending.clear()
         self.last = time.monotonic()
         return self.data

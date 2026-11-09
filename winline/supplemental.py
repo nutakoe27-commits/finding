@@ -45,6 +45,7 @@ def main():
     p.add_argument("--proxy-ca", help="PEM сертификат доверенного прокси")
     p.add_argument("--limit", type=int, default=0, help="0 = все объявленные запросы")
     p.add_argument("--delay", type=float, default=0.35)
+    p.add_argument("--light-snapshots", action="store_true")
     args = p.parse_args()
     if args.delay < 0.1 or args.limit < 0:
         p.error("Неверный предел или интервал")
@@ -58,7 +59,14 @@ def main():
         "INSERT INTO collection_runs(capture_id,settings_json,status) VALUES (?,?,?)",
         (
             capture,
-            encode({"mode": "supplemental", "limit": args.limit, "delay": args.delay}),
+            encode(
+                {
+                    "mode": "supplemental",
+                    "limit": args.limit,
+                    "delay": args.delay,
+                    "light_snapshots": args.light_snapshots,
+                }
+            ),
             "running",
         ),
     )
@@ -80,6 +88,14 @@ def main():
         with sync_playwright() as p:
             b = p.chromium.launch(**opts)
             page = b.new_page()
+            page.route(
+                "**/*",
+                lambda route: (
+                    route.abort()
+                    if route.request.resource_type in ("image", "media", "font")
+                    else route.continue_()
+                ),
+            )
             page.goto(
                 "https://winline.ru/", wait_until="domcontentloaded", timeout=45000
             )
@@ -88,7 +104,9 @@ def main():
             )
             page.wait_for_timeout(3000)
             page.evaluate(INSTALL)
-            session = SourceSession(page, db, capture, args.database)
+            session = SourceSession(
+                page, db, capture, args.database, light=args.light_snapshots
+            )
             session.tick(force=True)
             jobs = page.evaluate("""() => window.apiWlb.getEvents().toArray().flatMap(e=>{
               if(e.isLive) return [];
