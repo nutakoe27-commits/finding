@@ -55,6 +55,99 @@ def private_write(path, data):
         os.unlink(temporary)
 
 
+def command_shape(command, depth=0):
+    """Report structure, never unselected argument or environment values."""
+    variables = sorted(set(re.findall(r'\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))', command)))
+    result = {'variable_names': sorted({a or b for a, b in variables})}
+    try:
+        argv = shlex.split(re.sub(r'\\\r?\n', ' ', command), comments=True)
+    except ValueError:
+        return result | {'parse': 'requires_manual_review'}
+    if not argv:
+        return result | {'parse': 'empty'}
+    program = argv[0].lstrip('-+!@:')
+    if re.fullmatch(r'[A-Za-z0-9_./@%+:-]+', program):
+        result['program'] = program
+    else:
+        result['program'] = 'expression'
+    known_options = {'--model', '--served-model-name', '--max-model-len', '--tensor-parallel-size', '--quantization',
+                     '--dtype', '--gpu-memory-utilization', '--kv-cache-dtype', '--max-num-seqs', '--api-key',
+                     '--port', '--host', '--config', '--enable-chunked-prefill', '--max-num-batched-tokens'}
+    result['option_names'] = sorted({token.split('=', 1)[0] for token in argv if token.split('=', 1)[0] in known_options})
+    if program.startswith('/') and re.fullmatch(r'/[A-Za-z0-9_./@%+-]+\.sh', program):
+        result['launch_script'] = program
+    lengths = []
+    for index, token in enumerate(argv):
+        value = None
+        if token == '--max-model-len':
+            value = argv[index + 1] if index + 1 < len(argv) else ''
+        elif token.startswith('--max-model-len='):
+            value = token.split('=', 1)[1]
+        if value is not None:
+            if re.fullmatch(r'[0-9]{1,9}', value):
+                lengths.append({'kind': 'literal', 'tokens': int(value)})
+            elif re.fullmatch(r'\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})', value):
+                lengths.append({'kind': 'variable', 'name': value.strip('${}')})
+            else:
+                lengths.append({'kind': 'expression'})
+    result['context_arguments'] = lengths
+    if depth < 2 and Path(program).name in ('sh', 'bash', 'dash', 'zsh'):
+        for index, token in enumerate(argv[1:], 1):
+            if re.fullmatch(r'-[A-Za-z]*c[A-Za-z]*', token) and index + 1 < len(argv):
+                result['shell_command'] = command_shape(argv[index + 1], depth + 1)
+                break
+        else:
+            if len(argv) > 1 and re.fullmatch(r'/[A-Za-z0-9_./@%+-]+\.sh', argv[1]):
+                result['launch_script'] = argv[1]
+    return result
+
+
+def inspect(unit, call=run):
+    """Read the unit and referenced absolute shell scripts; no system mutations."""
+    values = properties(unit_name(unit), call)
+    files = [Path(values['FragmentPath'])] + [Path(p) for p in shlex.split(values.get('DropInPaths', ''))]
+    result = {'state': 'inspection_only', 'unit': unit, 'restart_performed': False, 'files': []}
+    scripts = set()
+    for path in files:
+        text = re.sub(r'\\\r?\n', ' ', path.read_text())
+        summary = {'path': str(path), 'environment_names': [], 'environment_files': [], 'starts': []}
+        section = ''
+        for line in text.splitlines():
+            if line.strip().startswith('['):
+                section = line.strip()
+            if section != '[Service]' or '=' not in line or line.lstrip().startswith(('#', ';')):
+                continue
+            key, value = line.strip().split('=', 1); key = key.strip()
+            if key in ('Environment', 'EnvironmentFile'):
+                try: items = shlex.split(value)
+                except ValueError: continue
+                if key == 'Environment':
+                    summary['environment_names'] += [item.split('=', 1)[0] for item in items if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*=.*', item, re.S)]
+                else:
+                    summary['environment_files'] += [item for item in items if re.fullmatch(r'-?/[A-Za-z0-9_./@%+:-]+', item)]
+            elif key == 'ExecStart' and value.strip():
+                shape = command_shape(value); summary['starts'].append(shape)
+                # Read only the executable script or bash's explicit script operand.
+                while shape:
+                    if shape.get('launch_script'):
+                        scripts.add(Path(shape['launch_script']))
+                    shape = shape.get('shell_command')
+        summary['environment_names'] = sorted(set(summary['environment_names']))
+        result['files'].append(summary)
+    result['launch_scripts'] = []
+    for path in sorted(scripts)[:4]:
+        item = {'path': str(path)}
+        try:
+            if not path.is_file() or path.stat().st_size > 65536:
+                item['read'] = 'unavailable_or_too_large'
+            else:
+                item['shape'] = command_shape(path.read_text())
+        except (OSError, UnicodeDecodeError):
+            item['read'] = 'unavailable'
+        result['launch_scripts'].append(item)
+    return result
+
+
 def changed_start(source, target):
     """Handle a single literal ExecStart; refuse wrappers, variables and ambiguity."""
     text = source.decode('utf-8')
@@ -195,6 +288,7 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     first = sub.add_parser('prepare'); first.add_argument('--unit', default='vllm.service', type=unit_name)
     first.add_argument('--tokens', type=int, default=131072)
+    sub.add_parser('inspect').add_argument('--unit', default='vllm.service', type=unit_name)
     for command in ('apply', 'rollback'):
         sub.add_parser(command).add_argument('--plan', type=Path, required=True)
     args = parser.parse_args()
@@ -202,7 +296,12 @@ def main():
         parser.exit(1, 'Запустите через sudo: планы могут содержать закрытые параметры unit-файла.\n')
     os.umask(0o077)
     try:
-        result = prepare(args.unit, args.tokens) if args.command == 'prepare' else globals()[args.command](args.plan)
+        if args.command == 'prepare':
+            result = prepare(args.unit, args.tokens)
+        elif args.command == 'inspect':
+            result = inspect(args.unit)
+        else:
+            result = globals()[args.command](args.plan)
     except (OSError, ValueError, KeyError, TypeError) as error:
         message = str(error) if isinstance(error, ValueError) and not isinstance(error, (json.JSONDecodeError, UnicodeDecodeError)) else 'Не удалось выполнить действие; содержимое unit-файла и ключи не выводятся.'
         parser.exit(1, message + '\n')

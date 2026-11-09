@@ -46,6 +46,38 @@ class ContextDeploymentTests(unittest.TestCase):
     def plan(self):
         return deploy.prepare('vllm.service', 131072, self.call)
 
+    def test_inspection_reads_shape_and_names_without_installing_or_exposing_secrets(self):
+        script = self.root / 'start-model.sh'
+        script.write_text('#!/bin/bash\nexec /srv/python -m vllm --api-key private-script-key --max-model-len 32768\n')
+        self.fragment.write_text('[Service]\nEnvironment="API_KEY=private-env-key" "MODEL_CONTEXT=32768"\n'
+            'EnvironmentFile=-/etc/private-model.env\nExecStart=/bin/bash -lc "' + str(script) + ' --api-key=private-cli-key"\n')
+        result = deploy.inspect('vllm.service', self.call)
+        self.assertEqual(result['state'], 'inspection_only')
+        self.assertEqual(result['files'][0]['environment_names'], ['API_KEY', 'MODEL_CONTEXT'])
+        self.assertEqual(result['files'][0]['environment_files'], ['-/etc/private-model.env'])
+        self.assertEqual(result['files'][0]['starts'][0]['program'], '/bin/bash')
+        self.assertEqual(result['launch_scripts'][0]['shape']['context_arguments'], [{'kind': 'literal', 'tokens': 32768}])
+        for secret in ('private-script-key', 'private-env-key', 'private-cli-key'):
+            self.assertNotIn(secret, json.dumps(result))
+        self.assertFalse(self.state.exists())
+        self.assertFalse(self.destination.exists())
+        self.assertTrue(all(command[:2] == ['systemctl', 'show'] for command in self.calls))
+
+    def test_inspection_finds_context_inside_a_shell_command_and_masks_other_values(self):
+        shape = deploy.command_shape('/bin/bash -lc \'exec /srv/python -m vllm --max-model-len ${MODEL_CONTEXT} --api-key "private-inner-key"\'')
+        self.assertEqual(shape['shell_command']['context_arguments'], [{'kind': 'variable', 'name': 'MODEL_CONTEXT'}])
+        self.assertEqual(shape['variable_names'], ['MODEL_CONTEXT'])
+        self.assertNotIn('private-inner-key', json.dumps(shape))
+
+    def test_inspection_never_reads_script_paths_passed_as_credentials(self):
+        credential = self.root / 'private-credential.sh'
+        credential.write_text('this is confidential, not a launch script')
+        self.fragment.write_text('[Service]\nExecStart=/srv/python -m vllm --api-key ' + str(credential) + ' --max-model-len 32768\n')
+        result = deploy.inspect('vllm.service', self.call)
+        self.assertEqual(result['launch_scripts'], [])
+        self.assertNotIn(str(credential), json.dumps(result))
+        self.assertNotIn('confidential', json.dumps(result))
+
     def test_prepare_keeps_running_configuration_and_protects_private_backups(self):
         result = self.plan(); path = Path(result['plan'])
         self.assertEqual(self.fragment.read_bytes(), SOURCE)
