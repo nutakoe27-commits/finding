@@ -1,5 +1,6 @@
 """Context rollout must preserve the shared model and refuse stale or foreign changes."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -25,7 +26,7 @@ WantedBy=multi-user.target
 '''
 
 
-class ContextDeploymentTests(unittest.TestCase):
+class ContextFixture:
     def setUp(self):
         folder = tempfile.TemporaryDirectory(); self.addCleanup(folder.cleanup)
         self.root = Path(folder.name)
@@ -46,6 +47,8 @@ class ContextDeploymentTests(unittest.TestCase):
     def plan(self):
         return deploy.prepare('vllm.service', 131072, self.call)
 
+
+class ContextDeploymentTests(ContextFixture, unittest.TestCase):
     def test_inspection_reads_shape_and_names_without_installing_or_exposing_secrets(self):
         script = self.root / 'start-model.sh'
         script.write_text('#!/bin/bash\nexec /srv/python -m vllm --api-key private-script-key --max-model-len 32768\n')
@@ -171,6 +174,114 @@ class ContextDeploymentTests(unittest.TestCase):
             old, candidate, _ = deploy.changed_start(source, 131072)
             self.assertEqual(old, 32768)
             self.assertEqual(candidate, source.replace(b'32768', b'131072'))
+
+
+class LaunchScriptDeploymentTests(ContextFixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.script = self.root / 'start_vllm38.sh'
+        # Match the real 1Cat launcher shape: setup first, then a continued exec.
+        self.source = (b'#!/bin/bash\nset -euo pipefail\nexport HF_HOME="$HOME/.cache/huggingface"\n'
+            b'exec /srv/1Cat/bin/python -m vllm.entrypoints.openai.api_server \\\n'
+            b'  --model mattbucci/Qwen3.8-27B-AWQ --api-key private-script-key \\\n'
+            b'  --served-model-name QuantTrio/Qwen3.5-35B-A3B-AWQ --max-model-len 32768 \\\n'
+            b'  --gpu-memory-utilization 0.82 --tensor-parallel-size 2 --max-num-seqs 4 --port 8000\n')
+        self.script.write_bytes(self.source); self.script.chmod(0o750)
+        self.unit_source = ('[Service]\nUser=model\nEnvironment="CUDA_VISIBLE_DEVICES=0,1"\n'
+            'ExecStart=' + str(self.script) + '\n').encode()
+        self.fragment.write_bytes(self.unit_source)
+
+    def script_plan(self):
+        return deploy.prepare('vllm.service', 131072, self.call, launch_script=self.script)
+
+    def test_launcher_prepare_only_changes_the_context_in_private_candidate(self):
+        result = self.script_plan(); path = Path(result['plan'])
+        self.assertEqual(result['change_kind'], 'launch_script')
+        self.assertEqual(self.script.read_bytes(), self.source)
+        self.assertEqual(self.fragment.read_bytes(), self.unit_source)
+        self.assertFalse(self.destination.exists())
+        self.assertEqual((path.parent / 'original.sh').read_bytes(), self.source)
+        self.assertEqual((path.parent / 'candidate.sh').read_bytes(), self.source.replace(b'32768', b'131072'))
+        self.assertEqual((path.parent / 'original.sh').stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('private-script-key', json.dumps(result))
+        self.assertTrue(any('-n' in command and 'bash' in command for command in self.calls))
+        self.assertFalse(any('restart' in command or 'daemon-reload' in command for command in self.calls))
+
+    def test_launcher_apply_and_rollback_preserve_owner_mode_unit_and_other_arguments(self):
+        original_metadata = deploy.script_metadata(self.script)
+        plan = Path(self.script_plan()['plan'])
+        result = deploy.apply(plan, self.call)
+        self.assertEqual(result['state'], 'script_updated')
+        self.assertTrue(result['restart_required'])
+        self.assertEqual(self.script.read_bytes(), self.source.replace(b'32768', b'131072'))
+        self.assertEqual(deploy.script_metadata(self.script), original_metadata)
+        self.assertEqual(self.fragment.read_bytes(), self.unit_source)
+        self.assertFalse(self.destination.exists())
+        self.assertEqual(deploy.rollback(plan, self.call)['state'], 'script_restored')
+        self.assertEqual(self.script.read_bytes(), self.source)
+        self.assertEqual(deploy.script_metadata(self.script), original_metadata)
+        self.assertEqual(deploy.rollback(plan, self.call)['state'], 'script_already_restored')
+        self.assertFalse(any('restart' in c or 'daemon-reload' in c for c in self.calls))
+
+    def test_launcher_manual_edits_block_apply_and_rollback(self):
+        plan = Path(self.script_plan()['plan'])
+        self.script.write_bytes(self.source + b'\n# manual edit\n')
+        with self.assertRaises(ValueError): deploy.apply(plan, self.call)
+        self.assertTrue(self.script.read_bytes().endswith(b'# manual edit\n'))
+        self.script.write_bytes(self.source)
+        deploy.apply(plan, self.call)
+        self.script.write_bytes(self.script.read_bytes() + b'\n# another edit\n')
+        with self.assertRaises(ValueError): deploy.rollback(plan, self.call)
+        self.assertTrue(self.script.read_bytes().endswith(b'# another edit\n'))
+
+    def test_launcher_unit_changes_or_wrong_script_block_preparation_or_apply(self):
+        other = self.root / 'other-project.sh'; other.write_bytes(self.source)
+        with self.assertRaises(ValueError): deploy.prepare('vllm.service', 131072, self.call, launch_script=other)
+        self.assertFalse(self.state.exists())
+        plan = Path(self.script_plan()['plan'])
+        self.fragment.write_bytes(self.unit_source + b'\n# changed unit\n')
+        with self.assertRaises(ValueError): deploy.apply(plan, self.call)
+        self.assertEqual(self.script.read_bytes(), self.source)
+
+    def test_launcher_mode_or_candidate_changes_do_not_overwrite_the_script(self):
+        plan = Path(self.script_plan()['plan'])
+        self.script.chmod(0o700)
+        with self.assertRaises(ValueError): deploy.apply(plan, self.call)
+        self.script.chmod(0o750)
+        (plan.parent / 'candidate.sh').write_bytes(b'#!/bin/bash\necho unexpected\n')
+        with self.assertRaises(ValueError): deploy.apply(plan, self.call)
+        self.assertEqual(self.script.read_bytes(), self.source)
+
+    def test_launcher_failed_atomic_replace_keeps_original_script(self):
+        plan = Path(self.script_plan()['plan'])
+        with patch.object(deploy.os, 'replace', side_effect=OSError('fixture failure')):
+            with self.assertRaises(OSError): deploy.apply(plan, self.call)
+        self.assertEqual(self.script.read_bytes(), self.source)
+        self.assertEqual(list(self.script.parent.glob('.matchlab-context-*')), [])
+
+    def test_real_bash_validation_does_not_execute_launcher_or_shell_startup(self):
+        marker = self.root / 'launcher-was-executed'
+        startup_marker = self.root / 'startup-was-executed'
+        startup = self.root / 'unsafe-bash-env.sh'
+        startup.write_text('touch ' + str(startup_marker) + '\n')
+        self.script.write_bytes(self.source.replace(b'set -euo pipefail', ('touch ' + str(marker) + '\nset -euo pipefail').encode()))
+        def validate(args):
+            return deploy.run(args) if args[0] == 'env' else self.call(args)
+        with patch.dict(os.environ, {'BASH_ENV': str(startup), 'ENV': str(startup)}):
+            deploy.prepare('vllm.service', 131072, validate, launch_script=self.script)
+        self.assertFalse(marker.exists())
+        self.assertFalse(startup_marker.exists())
+
+    def test_launcher_keeps_extended_attributes_during_update_and_restore(self):
+        try:
+            os.setxattr(self.script, 'user.matchlab_fixture', b'preserved')
+        except (AttributeError, OSError):
+            self.skipTest('Filesystem does not support user extended attributes')
+        plan = Path(self.script_plan()['plan'])
+        deploy.apply(plan, self.call)
+        self.assertEqual(os.getxattr(self.script, 'user.matchlab_fixture'), b'preserved')
+        deploy.rollback(plan, self.call)
+        self.assertEqual(os.getxattr(self.script, 'user.matchlab_fixture'), b'preserved')
 
 
 if __name__ == '__main__':

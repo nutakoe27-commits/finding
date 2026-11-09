@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a private, reversible systemd context override; never restart the model."""
+"""Prepare reversible context changes for a unit or its launch script; never restart."""
 import argparse
 import hashlib
 import json
@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
+import stat
 import subprocess
 import tempfile
 
@@ -14,6 +16,7 @@ import tempfile
 STATE = Path('/var/lib/matchlab-qwen-context')
 SYSTEM = Path('/etc/systemd/system')
 DROPIN = '90-matchlab-context.conf'
+CONTEXT_NUMBER = r'''(?<![\w-])--max-model-len(?:[ \t]+|\\\r?\n|=)+["']?(?P<number>\d+)(?=["'\s\\]|$)'''
 
 
 def digest(data):
@@ -182,8 +185,7 @@ def changed_start(source, target):
             values.append(token.split('=', 1)[1])
     if len(values) != 1 or not values[0].isdigit():
         raise ValueError('В ExecStart нет одного числового --max-model-len; переменные и обёртки требуют ручной проверки.')
-    pattern = r'''(?<![\w-])--max-model-len(?:[ \t]+|\\\r?\n|=)+["']?(?P<number>\d+)(?=["'\s\\]|$)'''
-    matches = list(re.finditer(pattern, directive))
+    matches = list(re.finditer(CONTEXT_NUMBER, directive))
     if len(matches) != 1 or matches[0]['number'] != values[0]:
         raise ValueError('Нельзя однозначно изменить только --max-model-len; unit не изменён.')
     old = int(values[0])
@@ -196,7 +198,9 @@ def changed_start(source, target):
     return old, candidate, override
 
 
-def prepare(unit, target, call=run):
+def prepare(unit, target, call=run, launch_script=None):
+    if launch_script is not None:
+        return prepare_script(unit, target, launch_script, call)
     unit_name(unit)
     values = properties(unit, call)
     if values.get('DropInPaths'):
@@ -235,21 +239,25 @@ def load_plan(path):
     for folder in (STATE, path.parent):
         if folder.is_symlink() or folder.stat().st_uid != os.geteuid() or folder.stat().st_mode & 0o077:
             raise ValueError('Каталог плана должен принадлежать текущему пользователю и иметь права 700.')
-    for item in (path, path.parent / 'dropin.conf'):
-        if item.is_symlink() or not item.is_file() or item.stat().st_uid != os.geteuid() or item.stat().st_mode & 0o077:
-            raise ValueError('Файлы плана должны быть обычными закрытыми файлами текущего пользователя.')
+    check_private_file(path)
     manifest = json.loads(path.read_bytes())
-    if manifest.get('format') != 'matchlab.qwen-context.v1':
+    formats = {'matchlab.qwen-context.v1': ('dropin.conf', 'override_sha256'),
+               'matchlab.qwen-script-context.v1': ('candidate.sh', 'candidate_sha256')}
+    if manifest.get('format') not in formats:
         raise ValueError('Неизвестный формат плана.')
     unit_name(manifest['unit'])
-    override = (path.parent / 'dropin.conf').read_bytes()
-    if digest(override) != manifest['override_sha256']:
-        raise ValueError('Подготовленный drop-in изменён; действие остановлено.')
+    artifact, checksum = formats[manifest['format']]
+    check_private_file(path.parent / artifact)
+    override = (path.parent / artifact).read_bytes()
+    if digest(override) != manifest[checksum]:
+        raise ValueError('Подготовленный файл изменён; действие остановлено.')
     return manifest, override
 
 
 def apply(path, call=run):
     plan, override = load_plan(path)
+    if plan['format'] == 'matchlab.qwen-script-context.v1':
+        return apply_script(plan, override, call)
     unit = plan['unit']; values = properties(unit, call)
     if values.get('DropInPaths') or values['FragmentPath'] != plan['fragment']:
         raise ValueError('Конфигурация службы изменилась после подготовки; действие остановлено.')
@@ -272,6 +280,16 @@ def apply(path, call=run):
 
 def rollback(path, call=run):
     plan, override = load_plan(path)
+    if plan['format'] == 'matchlab.qwen-script-context.v1':
+        check_private_file(path.parent / 'original.sh')
+        original = (path.parent / 'original.sh').read_bytes()
+        if digest(original) != plan['script_sha256']:
+            raise ValueError('Резервная копия скрипта изменена; откат остановлен.')
+        script = Path(plan['launch_script'])
+        if not script.is_symlink() and script.is_file() and script.read_bytes() == original:
+            return {'state': 'script_already_restored', 'unit': plan['unit'], 'restart_required': True, 'restart_performed': False}
+        replace_script(script, plan['candidate_sha256'], original, plan['metadata'])
+        return {'state': 'script_restored', 'unit': plan['unit'], 'restart_required': True, 'restart_performed': False}
     destination = SYSTEM / (plan['unit'] + '.d') / DROPIN
     if destination.parent.is_symlink() or destination.is_symlink():
         raise ValueError('Путь drop-in изменён; откат остановлен.')
@@ -283,11 +301,107 @@ def rollback(path, call=run):
     return {'state': 'override_removed', 'unit': plan['unit'], 'restart_required': True, 'restart_performed': False}
 
 
+def check_private_file(path):
+    if path.is_symlink() or not path.is_file() or path.stat().st_uid != os.geteuid() or path.stat().st_mode & 0o077:
+        raise ValueError('Файлы плана должны быть обычными закрытыми файлами текущего пользователя.')
+
+
+def script_binding(source, script):
+    """Only support a unit directly executing this exact, argument-free script."""
+    section = ''; starts = []
+    for line in re.sub(r'\\\r?\n', ' ', source.decode('utf-8')).splitlines():
+        if line.strip().startswith('['): section = line.strip()
+        if section == '[Service]' and re.match(r'^\s*ExecStart\s*=', line):
+            value = line.split('=', 1)[1].strip()
+            if value: starts.append(shlex.split(value))
+    if len(starts) != 1 or len(starts[0]) != 1 or starts[0][0].lstrip('-+!@:') != str(script):
+        raise ValueError('Unit должен напрямую запускать указанный скрипт без дополнительных аргументов.')
+
+
+def script_metadata(script):
+    info = script.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValueError('Нужен обычный скрипт без символических и жёстких ссылок.')
+    return {'uid': info.st_uid, 'gid': info.st_gid, 'mode': stat.S_IMODE(info.st_mode)}
+
+
+def prepare_script(unit, target, script, call=run):
+    unit_name(unit); script = Path(script)
+    if not script.is_absolute() or script.suffix != '.sh':
+        raise ValueError('Нужен абсолютный путь к запускаемому .sh-файлу.')
+    values = properties(unit, call)
+    if values.get('DropInPaths'):
+        raise ValueError('У службы есть drop-in: требуется отдельная проверка приоритетов.')
+    fragment = Path(values['FragmentPath'])
+    if fragment.is_symlink() or not fragment.is_file():
+        raise ValueError('Нужен обычный unit-файл, без символической ссылки.')
+    unit_source = fragment.read_bytes(); script_binding(unit_source, script)
+    metadata = script_metadata(script); source = script.read_bytes()
+    if len(source) > 65536 or not source.startswith(b'#!'):
+        raise ValueError('Требуется shell-скрипт с shebang размером не более 64 КБ.')
+    text = source.decode('utf-8'); arguments = command_shape(text).get('context_arguments', [])
+    matches = list(re.finditer(CONTEXT_NUMBER, text))
+    if len(arguments) != 1 or arguments[0].get('kind') != 'literal' or len(matches) != 1:
+        raise ValueError('В скрипте требуется один однозначный числовой --max-model-len.')
+    old = arguments[0]['tokens']; match = matches[0]
+    if int(match['number']) != old or not old < target <= 262144:
+        raise ValueError('Нельзя однозначно увеличить окно скрипта до указанного значения.')
+    candidate = (text[:match.start('number')] + str(target) + text[match.end('number'):]).encode()
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if STATE.is_symlink() or STATE.stat().st_uid != os.geteuid() or STATE.stat().st_mode & 0o077:
+        raise ValueError('Каталог планов должен принадлежать текущему пользователю и иметь права 700.')
+    folder = Path(tempfile.mkdtemp(prefix=unit + '-script-', dir=STATE))
+    private_write(folder / 'original.service', unit_source)
+    private_write(folder / 'original.sh', source); private_write(folder / 'candidate.sh', candidate)
+    call(['env', '-u', 'BASH_ENV', '-u', 'ENV', 'bash', '--noprofile', '--norc', '-n', str(folder / 'candidate.sh')])
+    manifest = {'format': 'matchlab.qwen-script-context.v1', 'unit': unit, 'fragment': str(fragment),
+                'source_sha256': digest(unit_source), 'launch_script': str(script), 'script_sha256': digest(source),
+                'candidate_sha256': digest(candidate), 'metadata': metadata, 'previous_tokens': old, 'target_tokens': target}
+    private_write(folder / 'plan.json', json.dumps(manifest).encode())
+    executable = shlex.quote(str(Path(__file__).resolve())); plan = shlex.quote(str(folder / 'plan.json'))
+    return {'state': 'prepared', 'change_kind': 'launch_script', 'unit': unit, 'launch_script': str(script),
+            'changes': {'--max-model-len': [old, target]}, 'plan': str(folder / 'plan.json'),
+            'restart_performed': False, 'kv_capacity_verified': False, 'all_other_script_bytes_preserved': True,
+            'apply_command': f'sudo python3 {executable} apply --plan {plan}',
+            'rollback_command': f'sudo python3 {executable} rollback --plan {plan}'}
+
+
+def replace_script(script, expected_hash, replacement, metadata):
+    if script_metadata(script) != metadata or digest(script.read_bytes()) != expected_hash:
+        raise ValueError('Скрипт, его владелец или права изменились; действие остановлено.')
+    descriptor, temporary = tempfile.mkstemp(prefix='.matchlab-context-', dir=script.parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(replacement); output.flush(); os.fsync(output.fileno())
+            os.fchown(output.fileno(), metadata['uid'], metadata['gid'])
+            os.fchmod(output.fileno(), metadata['mode'])
+        shutil.copystat(script, temporary, follow_symlinks=False)
+        if script_metadata(script) != metadata or digest(script.read_bytes()) != expected_hash:
+            raise ValueError('Скрипт изменился во время подготовки записи; действие остановлено.')
+        os.replace(temporary, script)
+    finally:
+        if os.path.exists(temporary): os.unlink(temporary)
+
+
+def apply_script(plan, candidate, call):
+    values = properties(plan['unit'], call)
+    if values.get('DropInPaths') or values['FragmentPath'] != plan['fragment']:
+        raise ValueError('Конфигурация службы изменилась после подготовки; действие остановлено.')
+    fragment = Path(plan['fragment'])
+    if fragment.is_symlink() or digest(fragment.read_bytes()) != plan['source_sha256']:
+        raise ValueError('Исходный unit изменился после подготовки; действие остановлено.')
+    script = Path(plan['launch_script']); script_binding(fragment.read_bytes(), script)
+    replace_script(script, plan['script_sha256'], candidate, plan['metadata'])
+    return {'state': 'script_updated', 'unit': plan['unit'], 'launch_script': str(script),
+            'restart_required': True, 'restart_performed': False}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     first = sub.add_parser('prepare'); first.add_argument('--unit', default='vllm.service', type=unit_name)
     first.add_argument('--tokens', type=int, default=131072)
+    first.add_argument('--launch-script', type=Path, help='Exact absolute .sh path executed directly by this unit')
     sub.add_parser('inspect').add_argument('--unit', default='vllm.service', type=unit_name)
     for command in ('apply', 'rollback'):
         sub.add_parser(command).add_argument('--plan', type=Path, required=True)
@@ -297,7 +411,7 @@ def main():
     os.umask(0o077)
     try:
         if args.command == 'prepare':
-            result = prepare(args.unit, args.tokens)
+            result = prepare(args.unit, args.tokens, launch_script=args.launch_script)
         elif args.command == 'inspect':
             result = inspect(args.unit)
         else:
