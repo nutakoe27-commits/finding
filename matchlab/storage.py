@@ -110,6 +110,9 @@ class Repository:
                 CREATE INDEX IF NOT EXISTS bookmaker_market_sport ON bookmaker_event_markets(json_extract(metadata, '$.sport'), kickoff_at);
             """)
 
+            from .archive import SCHEMA
+            db.executescript(SCHEMA)
+
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:
         if not rows:
             raise ValueError("В файле нет завершённых матчей; существующие данные сохранены.")

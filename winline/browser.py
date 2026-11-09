@@ -5,15 +5,53 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-SNAPSHOT = """() => {
+SNAPSHOT = r"""() => {
  const a=window.apiWlb;
- if (!a?.getEvents || !a?.getService) throw Error('Winline public SDK is unavailable');
- const lines=a.getService('LineService');
- const raw={sdkVersion:a.version,events:a.getEvents().toArray(),
-   sports:a.getSports().serialize(),countries:a.getCountries().serialize(),
-   championships:a.getChampionships().serialize(),
-   lines:[...lines.query({isLive:0,query:{}}),...lines.query({isLive:1,query:{}})]};
- return JSON.stringify(raw,(k,v)=>k==='meta'||k==='$loki'?undefined:v);
+ if(!a?.getEvents || !a?.getService) throw Error('Winline public SDK unavailable');
+ if(a.client.websocket.readyState!==1) throw Error('Winline stream disconnected');
+ const svc=a.getService('LineService'),formatter=a.getService('StringFormatService');
+ const events=a.getEvents().toArray(),byId=new Map(events.map(e=>[e.id,e]));
+ const cache=window.__displayCache ||= new Map();
+ const render=line=>{
+   const event=byId.get(line.idEvent),sport=event&&a.getSports().byId(event.idSport);
+   const tip=line.tipLine||{},parts=String(line.koef||'').split('/');
+   const key=[line.idEvent,line.id,line.isLive].join(':');
+   const signature=JSON.stringify([line.idTipMarket,line.koef,tip.freeTextR,tip.R,event?.members,sport?.strings]);
+   let display=cache.get(key);
+   if(!display || display.signature!==signature){
+     const format=str=>{
+       str=String(str||'').replace(/\[([a-z])\]/g,(_,letter)=>parts[letter.charCodeAt(0)-97]??'');
+       str=formatter.formatGameSegments({sourceStr:str,sport,withAt:true});
+       str=formatter.formatString({sourceStr:str,sport,event});
+       return formatter.formatClearScore({sourceStr:str,members:event?.members||[],tipMarket:tip});
+     };
+     try {
+       const name=format(tip.freeTextR),labels=(tip.R||[]).map(format);
+       display={signature,name,labels,valid:!!name&&!/@|\[[a-z]\]/i.test(name)&&
+         labels.slice(0,(line.V||[]).length).every(x=>!!x&&!/@|\[[a-z]\]/i.test(x))};
+     }catch{display={signature,name:'',labels:[],valid:false}}
+     cache.set(key,display);
+   }
+   return {...line,_display:{name:display.name,labels:display.labels,valid:display.valid}};
+ };
+ const all=[...svc.query({isLive:0,query:{}}),...svc.query({isLive:1,query:{}})].map(render);
+ const mapped=new Map(all.map(l=>[[l.idEvent,l.id,l.isLive].join(':'),l]));
+ const enriched=events.map(e=>{const main=svc.getEventMainLine(e.id,e.isLive,e.idSport);
+   return {...e,_main_line:main?mapped.get([e.id,main.id,e.isLive].join(':'))||render(main):null}});
+ return JSON.stringify({sdkVersion:a.version,events:enriched,sports:a.getSports().serialize(),
+   countries:a.getCountries().serialize(),championships:a.getChampionships().serialize(),lines:all},
+   (key,value)=>key==='meta'||key==='$loki'?undefined:value);
+}"""
+
+REFRESH_WATCHES = """ids=>{
+ const a=window.apiWlb,last=window.__watchRefresh ||= new Map();
+ for(const id of ids.slice(0,4)){
+   const e=a.getEvents().byId(id);
+   if(!e || Date.now()-(last.get(id)||0)<20000)continue;
+   last.set(id,Date.now());
+   if(e.isLive)a.getService('LiveService').getPlus(id);
+   else a.getService('EventService').getPluses(id);
+ }
 }"""
 
 INSTALL = """() => {

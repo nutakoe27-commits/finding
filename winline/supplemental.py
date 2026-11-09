@@ -13,9 +13,11 @@ from playwright.sync_api import Error, sync_playwright
 
 try:
     from .browser import proxy_ca_args
+    from .session import SourceSession
     from .storage import DEFAULT_DB, connect, digest, encode, now
 except ImportError:
     from browser import proxy_ca_args
+    from session import SourceSession
     from storage import DEFAULT_DB, connect, digest, encode, now
 
 INSTALL = """() => {
@@ -86,6 +88,8 @@ def main():
             )
             page.wait_for_timeout(3000)
             page.evaluate(INSTALL)
+            session = SourceSession(page, db, capture, args.database)
+            session.tick(force=True)
             jobs = page.evaluate("""() => window.apiWlb.getEvents().toArray().flatMap(e=>{
               if(e.isLive) return [];
               const out=[];
@@ -137,10 +141,12 @@ def main():
                             None,
                         ),
                     )
+                session.tick()
                 current_job = None
                 if i % 50 == 0 or i == len(jobs):
                     print(f"Дополнительные режимы: {i}/{len(jobs)}", flush=True)
                 page.wait_for_timeout(args.delay * 1000)
+            session.tick(force=True)
             b.close()
         with db:
             db.execute("UPDATE captures SET finished_at=? WHERE id=?", (now(), capture))

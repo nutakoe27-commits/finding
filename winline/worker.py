@@ -50,13 +50,15 @@ def command(database, kind, chromium=None, initial=False, seconds=300):
         "--database",
         str(database),
     ]
+    if kind != "supplemental":
+        args += ["--no-snapshot-files"]
     if chromium:
         args += ["--chromium", chromium]
     if kind == "fast":
         args += [
             "--no-expand-markets",
             "--history-days",
-            "0",
+            "1",
             "--seconds",
             str(seconds),
         ]

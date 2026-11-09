@@ -72,7 +72,7 @@ install -d -m 755 "$target" "$target/winline"
 install -d -m 700 -o winline-archive -g winline-archive "$state"
 touch "$target/.winline-archive-managed" "$state/.winline-archive-managed"
 chown winline-archive:winline-archive "$state/.winline-archive-managed"
-for name in __init__ browser collect supplemental storage query audit backup worker team_context; do
+for name in __init__ browser collect supplemental storage query audit backup worker team_context session; do
   install -m 644 "winline/$name.py" "$target/winline/"
 done
 install -m 644 winline/requirements.txt "$target/requirements.txt"

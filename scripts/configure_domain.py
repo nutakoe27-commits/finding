@@ -60,10 +60,10 @@ server {{
 
 {acme.rstrip()}
     # The worker API remains accessible only through the existing SSH tunnel.
-    location ~ ^/api/bookmakers/(ingest|worker-status|events/ingest|statistics/(queue|ingest)|refresh/(claim|finish))/?$ {{
+    location ~ ^/api/bookmakers/(ingest|worker-status|events/ingest|statistics/(queue|ingest)|refresh/(claim|finish)|archive/(ingest|watch))/?$ {{
         return 404;
     }}
-    location ~ ^/api/(explain|forecast|bookmakers/events/[0-9]+/explain)/?$ {{
+    location ~ ^/api/(explain|forecast|bookmakers/events/[0-9]+/explain|archive/events/[0-9]+/explain)/?$ {{
         limit_req zone={zone} burst=2 nodelay;
         limit_req_status 429;
 {proxy}

@@ -47,6 +47,8 @@ def main_odds(document: dict) -> dict | None:
 
 def headline_market(document: dict) -> dict | None:
     """Pick an explicit match-winner market; preserve its labels and scope."""
+    explicit = next((m for m in document.get("markets",[]) if m["key"] == document.get("primary_market_key")),None)
+    if explicit:return explicit
     winners = []
     for market in document.get("markets", []):
         name, period = market["name"], market.get("period") or ""

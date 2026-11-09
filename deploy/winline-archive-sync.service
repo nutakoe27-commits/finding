@@ -1,0 +1,35 @@
+# Managed by Winline archive sync
+[Unit]
+Description=Publish Winline live feed and participant history to Matchlab
+After=network-online.target matchlab-scraper-tunnel.service winline-archive.service
+Wants=network-online.target matchlab-scraper-tunnel.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=winline-archive
+Group=winline-archive
+WorkingDirectory=/opt/winline-archive
+EnvironmentFile=/etc/matchlab-scraper-token.env
+EnvironmentFile=/etc/winline-archive-sync.conf
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/winline-archive/.venv/bin/python -m winline.sync --api-url ${WINLINE_SYNC_API_URL}
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=30
+MemoryMax=512M
+CPUQuota=25%
+Nice=15
+TasksMax=64
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+StateDirectory=winline-archive
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

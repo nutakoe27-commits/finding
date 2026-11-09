@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .config import Settings
 from .model import GoalModel
-from . import qwen
+from . import qwen, archive
 from .bookmakers import FORMAT as BOOKMAKER_FORMAT, instant, model_teams
 from .storage import Repository, utc_now
 from .winline_browser import statistics_id_from_url
@@ -52,6 +52,7 @@ class ExplainRequest(BaseModel):
 
 
 class EventExplainRequest(BaseModel):
+    content_version: str | None = Field(default=None,pattern=r"^[a-f0-9]{32}$")
     market_key: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     outcome_key: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     observed_at: str | None = Field(default=None, max_length=50)
@@ -112,9 +113,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/status")
     def status():
+        archive_state=archive.overview(repo)
         return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured},
                 "bookmakers": repo.bookmaker_status(),
-                "live_fixtures": False, "live_odds": False}
+                "archive":archive_state, "live_fixtures": archive_state["available"] and not archive_state["source_stale"], "live_odds": archive_state["available"] and not archive_state["source_stale"]}
 
     @app.get("/api/teams")
     def teams(as_of: date | None = None):
@@ -221,6 +223,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(400, "Нужен JSON-объект.")
         return body
 
+    @app.post('/api/bookmakers/archive/ingest')
+    async def archive_ingest(request:Request):
+        body=await worker_body(request,2*1024*1024)
+        try:return archive.ingest(repo,body)
+        except (ValueError,KeyError,TypeError,AttributeError) as exc:
+            raise HTTPException(422,'Некорректный пакет архива') from exc
+
+    @app.get('/api/bookmakers/archive/watch')
+    def archive_watch_queue(request:Request):
+        require_worker(request)
+        return {'events':archive.watches(repo),'format':'matchlab.archive.v1'}
+
+    @app.get('/api/archive/status')
+    def archive_status():
+        return {'format':'matchlab.archive.v1',**archive.overview(repo)}
+
+    @app.get('/api/archive/results')
+    def archive_results(search:str='',sport:int|None=None,limit:int=50,offset:int=0):
+        if len(search)>200 or not 1<=limit<=100 or offset<0:raise HTTPException(422,'Некорректная страница архива')
+        return archive.results(repo,search,sport,limit,offset)
+
+    @app.get('/api/archive/events/{event_id}/markets')
+    def stream_detail(event_id:str):
+        document=archive.document(repo,event_id)
+        if not document:raise HTTPException(404,'Событие отсутствует в последнем потоке')
+        return document
+
+    @app.get('/api/archive/events/{event_id}/statistics')
+    def stream_statistics(event_id:str):
+        native=archive.document(repo,event_id);legacy=repo.event_markets(event_id)
+        linked=bool(native and legacy and archive.key(native['home'] or '')==archive.key(legacy.get('home') or '')
+                    and archive.key(native['away'] or '')==archive.key(legacy.get('away') or '')
+                    and archive.key(native['sport_label'])==archive.key(legacy.get('sport_label') or ''))
+        if linked:
+            linked=bool(native.get('kickoff_at') and legacy.get('kickoff_at') and
+                        abs((instant(native['kickoff_at'])-instant(legacy['kickoff_at'])).total_seconds())<=120)
+        snapshot=repo.statistics(event_id) if linked else None
+        if snapshot and snapshot['statistics_id']!=statistics_id_from_url(legacy.get('statistics_url') or ''):snapshot=None
+        return {'statistics':snapshot,'link_status':legacy.get('statistics_link_status','missing') if linked else 'missing',
+                'statistics_url':legacy.get('statistics_url') if linked else None,'source_blocked_until':repo.statistics_blocked_until()}
+
+    @app.get('/api/archive/events/{event_id}/history')
+    def archive_history(event_id:str,source:str='stream'):
+        doc=archive.document(repo,event_id) if source=='stream' else repo.event_markets(event_id)
+        if not doc:raise HTTPException(404,'Матч не найден')
+        return archive.history(repo,doc)
+
+    @app.post('/api/archive/events/{event_id}/watch')
+    def request_archive_watch(event_id:str,request:Request):
+        if request.headers.get('content-type','').split(';')[0].strip().lower()!='application/json' or request.headers.get('sec-fetch-site','') in ('cross-site','same-site'):
+            raise HTTPException(403,'Обновление доступно со страницы сервиса')
+        try:return archive.watch(repo,event_id)
+        except LookupError as exc:raise HTTPException(404,str(exc)) from exc
+
+    @app.get('/api/archive/events/{event_id}/analysis')
+    def stream_analysis(event_id:str):
+        return {'prediction_available':False,'unavailable_reason':'ИИ использует наблюдаемые рынки и историю участников. Независимая вероятностная модель для этого потока не подключена.'}
+
     @app.post("/api/bookmakers/ingest")
     async def worker_ingest(request: Request):
         body = await worker_body(request, 2 * 1024 * 1024)
@@ -313,6 +373,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 or phase not in ("", "upcoming", "live") or sort not in ("kickoff", "freshness")
                 or (event_ids is not None and (len(event_ids) > 100 or any(not item.isdigit() or len(item) > 20 for item in event_ids)))):
             raise HTTPException(422, "Некорректная страница списка событий.")
+        if archive.overview(repo)['available']:
+            return archive.catalog(repo,include_started=include_started,limit=limit,offset=offset,
+                                   search=search.strip(),competition=competition,phase=phase,
+                                   day=day.isoformat() if day else None,event_ids=event_ids,sort=sort,sport=sport)
         result = repo.market_events(include_started=include_started, limit=limit, offset=offset,
                                    search=search.strip(), competition=competition, phase=phase,
                                    day=day.isoformat() if day else None, event_ids=event_ids, sort=sort, sport=sport)
@@ -367,22 +431,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/bookmakers/events/{event_id}/explain")
     def explain_event(event_id: str, request: EventExplainRequest):
+        return explain_event_impl(event_id,request,False)
+
+    @app.post('/api/archive/events/{event_id}/explain')
+    def explain_stream_event(event_id:str,request:EventExplainRequest):
+        return explain_event_impl(event_id,request,True)
+
+    def explain_event_impl(event_id,request,stream):
         from .event_analysis import analysis_context, request_key
         from .statistics import analysis_statistics
         if not settings.qwen_configured:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if not event_id.isdigit() or len(event_id) > 20:
             raise HTTPException(422, "Некорректный ID события.")
-        document = repo.event_markets(event_id)
+        document = archive.document(repo,event_id) if stream else repo.event_markets(event_id)
         if not document:
             raise HTTPException(404, "Матч ещё не собран.")
-        if request.observed_at and request.observed_at != document["observed_at"]:
+        if ((stream and request.content_version and request.content_version!=document.get("content_version")) or
+            (not stream and request.observed_at and request.observed_at != document["observed_at"])):
             raise HTTPException(409, "Снимок матча обновился. Обновите рынки и повторите запрос.")
-        saved_statistics=repo.statistics(event_id)
-        if saved_statistics and saved_statistics['statistics_id']!=statistics_id_from_url(document.get('statistics_url') or ''):
+        saved_statistics=stream_statistics(event_id)['statistics'] if stream else repo.statistics(event_id)
+        if not stream and saved_statistics and saved_statistics['statistics_id']!=statistics_id_from_url(document.get('statistics_url') or ''):
             saved_statistics=None
         team_statistics=analysis_statistics(saved_statistics)
-        key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics)
+        archive_history=archive.history(repo,document)
+        key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
         cached = repo.event_analysis(request_key=key)
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(minutes=10):
             return {**cached, "cached": True}
@@ -391,7 +464,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             statistics = None
             canonical = model_teams(document)
-            if (canonical and document["phase"] == "prematch" and document["kickoff_at"]
+            if (not stream and canonical and document["phase"] == "prematch" and document["kickoff_at"]
                     and instant(document["kickoff_at"]) > datetime.now(timezone.utc)):
                 try:
                     model, _ = model_for(min(instant(document["capture_started_at"]).date(), date.today()))
@@ -401,7 +474,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     pass
             try:
                 context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
-                                           notes=request.notes, statistics=statistics,team_statistics=team_statistics)
+                                           notes=request.notes, statistics=statistics,team_statistics=team_statistics,archive_history=archive_history)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             try:

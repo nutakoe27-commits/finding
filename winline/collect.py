@@ -14,11 +14,13 @@ from pathlib import Path
 from playwright.sync_api import Error, sync_playwright
 
 try:
-    from .browser import INSTALL, PLUS_BATCH, RESULT_REQUEST, SNAPSHOT, proxy_ca_args
-    from .storage import DEFAULT_DB, connect, now, save_results, save_snapshot
+    from .browser import INSTALL, PLUS_BATCH, RESULT_REQUEST, proxy_ca_args
+    from .session import SourceSession
+    from .storage import DEFAULT_DB, connect, now, save_results
 except ImportError:
-    from browser import INSTALL, PLUS_BATCH, RESULT_REQUEST, SNAPSHOT, proxy_ca_args
-    from storage import DEFAULT_DB, connect, now, save_results, save_snapshot
+    from browser import INSTALL, PLUS_BATCH, RESULT_REQUEST, proxy_ca_args
+    from session import SourceSession
+    from storage import DEFAULT_DB, connect, now, save_results
 
 
 def main():
@@ -78,6 +80,9 @@ def main():
         "--raw-frames",
         action="store_true",
         help="Дополнительно сохранять бинарные сообщения",
+    )
+    parser.add_argument(
+        "--snapshot-files", action=argparse.BooleanOptionalAction, default=True
     )
     args = parser.parse_args()
     if (
@@ -157,15 +162,22 @@ def main():
             # Allow the initial prematch and live packets to finish independently.
             page.wait_for_timeout(3000)
 
-            def snapshot():
+            session = SourceSession(page, db, capture, args.database, args.interval)
+
+            def snapshot(force=True):
                 nonlocal last_data, snapshot_count
-                last_data = json.loads(page.evaluate(SNAPSHOT))
-                save_snapshot(db, capture, last_data)
+                value = session.tick(force=force)
+                if value is None:
+                    return
+                last_data = value
                 snapshot_count += 1
-                temporary = save_path.with_suffix(".tmp")
-                with gzip.open(temporary, "wt", encoding="utf-8", compresslevel=3) as f:
-                    json.dump(last_data, f, ensure_ascii=False)
-                temporary.replace(save_path)
+                if args.snapshot_files:
+                    temporary = save_path.with_suffix(".tmp")
+                    with gzip.open(
+                        temporary, "wt", encoding="utf-8", compresslevel=3
+                    ) as f:
+                        json.dump(last_data, f, ensure_ascii=False)
+                    temporary.replace(save_path)
                 print(
                     f"Снимок {snapshot_count}: событий {len(last_data['events'])}, "
                     f"линий {len(last_data['lines'])}",
@@ -224,10 +236,10 @@ def main():
                     db.commit()
                     page.wait_for_timeout(args.request_delay * 1000)
                     done = min(offset + len(batch), len(events))
+                    snapshot(force=False)
                     if done % 100 == 0 or done == len(events):
                         print(f"Дополнительные рынки: {done}/{len(events)}", flush=True)
-                        snapshot()
-                snapshot()
+                snapshot(force=False)
             if args.history_days:
                 page.evaluate("window.apiWlb.getService('ResultService').getPreData()")
                 page.wait_for_function(
@@ -273,6 +285,7 @@ def main():
                         )
                         # A late uncorrelated response must never be assigned to another sport.
                         break
+                    snapshot(force=False)
                     if i % 50 == 0 or i == len(pairs):
                         print(f"Архив: {i}/{len(pairs)} запросов", flush=True)
                     page.wait_for_timeout(args.request_delay * 1000)
@@ -300,7 +313,8 @@ def main():
             db.commit()
             browser.close()
         print(
-            f"Сбор {capture} завершён; база {args.database}; исходный снимок {save_path}",
+            f"Сбор {capture} завершён; база {args.database}; "
+            + (f"исходный снимок {save_path}" if args.snapshot_files else "сырые поля сохранены в SQLite"),
             flush=True,
         )
         return 1 if failed else 0

@@ -1003,3 +1003,25 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
   .brand-name { font-size:19px; }
   .brand-ai { font-size:12px; }
 }
+
+/* A visible distinction between observations now, accumulated results and AI output. */
+.archive-overview { display:flex;flex-wrap:wrap;gap:24px;margin:0 0 20px;align-items:center; }
+.archive-overview>div { display:grid;gap:5px;min-width:150px; }
+.archive-overview strong { font-size:28px;font-variant-numeric:tabular-nums; }
+.archive-overview span,.archive-overview p { color:var(--muted);font-size:13px; }
+.archive-overview p { flex:1;min-width:200px; }
+.archive-results { display:grid;gap:10px; }
+.archive-result-card { padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:var(--panel); }
+.archive-result-card>p { margin:0 0 9px; }
+.archive-result-row { display:grid;grid-template-columns:minmax(95px,.6fr) minmax(0,2fr) minmax(60px,.5fr);gap:10px;align-items:center;padding:10px 0; }
+.archive-result-row>* { min-width:0;overflow-wrap:anywhere; }
+.archive-result-score { text-align:right;font-variant-numeric:tabular-nums; }
+.archive-team-history { margin:20px 0; }
+.archive-team-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:16px 0; }
+.archive-team-card { min-width:0; }
+.archive-team-card h3 { margin-bottom:8px; }
+.archive-team-card .archive-result-row { font-size:12px;border-bottom:1px solid var(--line);grid-template-columns:minmax(0,1fr) minmax(40px,auto);gap:5px 10px; }
+.archive-team-card .archive-result-row time { grid-column:1/-1; }
+.live-score { display:block;color:var(--text);font-size:18px;font-variant-numeric:tabular-nums;margin:6px 0; }
+@media(max-width:750px){.archive-team-grid{grid-template-columns:1fr}.archive-overview{gap:16px}.archive-result-row{grid-template-columns:88px minmax(0,1fr) minmax(45px,.4fr);font-size:13px}}
+@media(max-width:650px){.sidebar nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px}.sidebar nav .nav-link{min-width:0;justify-content:center;font-size:11px;padding:10px 3px;gap:4px}.nav-history-long{display:none}.nav-history-short{display:inline}.archive-overview strong{font-size:23px}.archive-overview>div{min-width:110px}}
