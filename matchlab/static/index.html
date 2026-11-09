@@ -12,9 +12,9 @@
   <meta property="og:title" content="prognozich ai — спортивная аналитика" />
   <link rel="icon" href="/static/icon.svg?v=2" type="image/svg+xml" />
   <script src="/static/theme.js?v=20261109-accounts1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20261109-accounts1" />
+  <link rel="stylesheet" href="/static/style.css?v=20261109-aiwait1" />
   <script src="/static/account.js?v=20261109-accounts1" defer></script>
-  <script src="/static/app.js?v=20261109-wigolo1" defer></script>
+  <script src="/static/app.js?v=20261109-aiwait1" defer></script>
   <script src="/static/admin.js?v=20261109-accounts1" defer></script>
 </head>
 <body>
@@ -406,6 +406,11 @@
       <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
       <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
       <div id="ai-request-error" class="notice error" role="alert" hidden></div>
+      <div id="ai-wait" class="ai-wait" role="status" aria-live="polite" hidden>
+        <div class="ai-wait-top"><div class="ai-wait-orbit" aria-hidden="true"><span></span><i></i><b></b></div><div><span class="ai-wait-label">ВАШ АНАЛИТИК</span><strong>Готовим разбор<span class="ai-wait-dots" aria-hidden="true"><i></i><i></i><i></i></span></strong><p id="ai-wait-message">Проверяем доступные сведения о матче.</p></div></div>
+        <div class="ai-wait-track" aria-hidden="true"><span></span></div>
+        <p class="ai-wait-note">Обычно это занимает некоторое время. Можно оставить страницу открытой.</p>
+      </div>
       <div id="explanation" class="explanation" aria-live="polite" hidden></div><p id="ai-analysis-meta" class="small muted" hidden></p><div id="ai-analysis-sources"></div>
     </aside>
   </div>

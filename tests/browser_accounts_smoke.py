@@ -46,6 +46,12 @@ async def exercise(base):
                     locale="ru-RU",
                 )
                 page = await context.new_page()
+                search_started, release_search = asyncio.Event(), asyncio.Event()
+                async def pause_analysis(route):
+                    search_started.set()
+                    await release_search.wait()
+                    await route.continue_()
+                await page.route('**/api/archive/events/*/explain', pause_analysis)
                 errors = []
                 page.on(
                     "pageerror",
@@ -66,7 +72,22 @@ async def exercise(base):
                 await page.locator("#auth-password").fill(PASSWORD)
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#auth-dialog")).not_to_be_visible()
+                await asyncio.wait_for(search_started.wait(), timeout=10)
+                await expect(page.locator('#ai-wait')).to_be_visible()
+                await expect(page.locator('#ai-wait')).to_contain_text('Готовим разбор')
+                assert await page.locator('.ai-wait-track span').evaluate('(node) => getComputedStyle(node).animationName') == 'none'
+                assert not await page.evaluate('document.documentElement.scrollWidth > innerWidth')
+                await page.screenshot(path=f'/tmp/matchlab-ai-wait-{theme}-{width}.png', full_page=True)
+                release_search.set()
                 await page.locator("#explanation").wait_for(state="visible")
+                await expect(page.locator('#ai-wait')).to_be_hidden()
+                result = await page.evaluate('''(value) => {
+                    const target = document.createElement('div');
+                    renderAnalysis(target, value);
+                    return {text:target.textContent, items:target.querySelectorAll('ol li').length, images:target.querySelectorAll('img').length};
+                }''', r'1\. **Проверка** &#x20; \`team_statistics\` <img src=x onerror=alert(1)>')
+                assert result['items'] == 1 and result['images'] == 0, result
+                assert 'статистика участников' in result['text'] and '&#x20;' not in result['text'], result
                 await page.evaluate('''() => renderResearchSources(document.getElementById("ai-analysis-sources"), {
                     state: "ready", searched_at: new Date().toISOString(), sources: [
                       {id: 1, title: "<img src=x onerror=window.injected=1>", url: "https://example.org/news"},

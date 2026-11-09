@@ -382,21 +382,32 @@ function analysisInline(parent, text) {
   }
   parent.append(document.createTextNode(text.slice(position)));
 }
+function analysisDisplayText(value) {
+  const names = {statistical_model:"статистическая модель",team_statistics:"статистика участников",archive_history:"архив результатов",head_to_head:"личные встречи",web_research:"интернет-поиск"};
+  return String(value || "")
+    .replace(/&#(?:x([0-9a-f]+)|(\d+));/gi, (all, hex, decimal) => {
+      const code = parseInt(hex || decimal, hex ? 16 : 10);
+      return Number.isFinite(code) && code >= 32 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : all;
+    })
+    .replace(/\\([\\`*_{}\[\]()#+\-.!>])/g, "$1")
+    .replace(/`?\b(statistical_model|team_statistics|archive_history|head_to_head|web_research)\b`?/gi, (_, name) => names[name.toLowerCase()]);
+}
 function renderAnalysis(target, text) {
   const nodes = []; let paragraph = [], list = null;
   const flush = () => { if (paragraph.length) { const p=el("p"); analysisInline(p,paragraph.join("\n")); nodes.push(p); paragraph=[]; } };
-  for (const line of String(text || "").split(/\r?\n/)) {
+  for (const line of analysisDisplayText(text).split(/\r?\n/)) {
     if (!line.trim()) { flush(); list=null; continue; }
     const heading=line.match(/^\s*#{1,6}\s+(.+?)\s*#*\s*$/);
     const bullet=line.match(/^\s*[-*•]\s+(.+)$/);
+    const numbered=line.match(/^\s*\d{1,3}[.)]\s+(.+)$/);
     if (heading) { flush(); list=null; const h=el("h3"); analysisInline(h,heading[1]); nodes.push(h); }
-    else if (bullet) { flush(); if (!list) { list=el("ul"); nodes.push(list); } const item=el("li"); analysisInline(item,bullet[1]); list.append(item); }
+    else if (bullet || numbered) { flush(); const kind=numbered ? "OL" : "UL"; if (!list || list.tagName !== kind) { list=el(kind.toLowerCase()); nodes.push(list); } const item=el("li"); analysisInline(item,(bullet || numbered)[1]); list.append(item); }
     else { list=null; paragraph.push(line); }
   }
   flush(); target.replaceChildren(...nodes);
 }
 function analysisPreview(text) {
-  return String(text || "").replace(/^\s*#{1,6}\s+/gm, "").replace(/^\s*[-*•]\s+/gm, "• ").replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g, (_,a,b,c) => a || b || c);
+  return analysisDisplayText(text).replace(/^\s*#{1,6}\s+/gm, "").replace(/^\s*[-*•]\s+/gm, "• ").replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g, (_,a,b,c) => a || b || c);
 }
 function toast(message) {
   $("toast").textContent = message;
@@ -645,6 +656,7 @@ function syncPhase() {
 function clearAIOutput() {
   state.explainRequest++;
   state.aiAnalysis = null;
+  stopAIWait(); $("ai-wait").hidden = true;
   $("explanation").hidden = true; $("ai-analysis-meta").hidden = true;
   $("ai-analysis-sources").replaceChildren();
   showError("ai-request-error", "");
@@ -652,8 +664,18 @@ function clearAIOutput() {
 function syncAIButton() {
   $("explain-button").disabled = state.aiBusy || !state.ai || (!state.marketDocument && !state.forecast);
   $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : "Получить разбор ИИ";
+  $("ai-wait").hidden = !(state.aiBusy && state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest);
   $("ai-hint").textContent = !state.ai ? "Сервис ИИ пока не подключён. Рынки доступны для просмотра." : !state.marketDocument && !state.forecast ? "Сначала выберите матч или рассчитайте сценарий." : "ИИ сопоставляет рынки и доступную историю участников. Это разбор фактов, а не гарантия исхода.";
 }
+let aiWaitTimer = null;
+const aiWaitMessages = ["Проверяем доступные сведения о матче.", "Свежесть источников влияет на вывод.", "Если сведений мало, мы отметим ограничения.", "Подготовка ответа может занять некоторое время."];
+function startAIWait() {
+  clearInterval(aiWaitTimer);
+  let index = 0;
+  $("ai-wait-message").textContent = aiWaitMessages[index];
+  aiWaitTimer = setInterval(() => { index = (index + 1) % aiWaitMessages.length; $("ai-wait-message").textContent = aiWaitMessages[index]; }, 8500);
+}
+function stopAIWait() { clearInterval(aiWaitTimer); aiWaitTimer = null; }
 function selectAI(market = null, outcome = null) {
   if (!state.marketDocument) return;
   state.selection = market ? {marketKey:market.key,outcomeKey:outcome?.key || null} : null;
@@ -847,9 +869,9 @@ async function requestAI() {
   if (!document && !forecast) return;
   const request = ++state.explainRequest, selection = state.selection ? {...state.selection} : null;
   const eventId = state.eventId, forecastId = forecast?.id;
-  state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; syncAIButton(); showError("ai-request-error", "");
+  state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; startAIWait(); syncAIButton(); showError("ai-request-error", "");
   $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-analysis-sources").replaceChildren();
-  $("ai-desk").setAttribute("aria-busy", "true");
+  $("explanation").setAttribute("aria-busy", "true");
   try {
     const endpoint = document ? eventAPI(eventId)+"/explain" : "/api/explain";
     const body = document ? {content_version:document.content_version || null, observed_at:document.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value} : {forecast_id:forecastId,notes:$("notes").value};
@@ -863,7 +885,7 @@ async function requestAI() {
     if(error.status===401 && eventId===state.eventId) Account.show("login",()=>requestAI());
     else if (request === state.explainRequest) showError("ai-request-error", error.message);
   } finally {
-    state.aiBusy = false; $("ai-desk").setAttribute("aria-busy", "false"); syncAIButton();
+    state.aiBusy = false; stopAIWait(); $("explanation").setAttribute("aria-busy", "false"); syncAIButton();
   }
 }
 async function calculateEvent() {

@@ -7,20 +7,23 @@ import argparse
 import asyncio
 import ipaddress
 import json
+import logging
 import re
 import threading
 import time
+import unicodedata
 from collections import OrderedDict
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
 _cache = OrderedDict()
 _lock = threading.Lock()
 _MAX_CACHE = 128
+_log = logging.getLogger(__name__)
 
 
 def _clean(value, limit):
@@ -68,8 +71,54 @@ def _queries(event):
         return []
     # Only source match metadata, never private notes, account data or credentials.
     return [f'{home} {away} {competition} {sport} новости матч',
-            f'{home} {sport} новости травмы состав',
-            f'{away} {sport} новости травмы состав']
+            f'{home} {competition} {sport} новости травмы состав',
+            f'{away} {competition} {sport} новости травмы состав']
+
+
+async def _collect_batches(queries, search_one, deadline=18):
+    """Keep successful results if another source times out."""
+    tasks = [asyncio.create_task(search_one(query)) for query in queries]
+    try:
+        _, pending = await asyncio.wait(tasks, timeout=deadline)
+        for task in pending:
+            task.cancel()
+        batches = await asyncio.gather(*tasks, return_exceptions=True)
+        if all(isinstance(batch, BaseException) for batch in batches):
+            if pending:
+                raise TimeoutError('search deadline reached')
+            raise next(batch for batch in batches if isinstance(batch, Exception))
+        return batches
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+
+
+def _error_code(error):
+    """Return an operator-safe category; never expose exception contents."""
+    seen, queue = set(), [error]
+    while queue:
+        current = queue.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, FileNotFoundError):
+            return 'token_missing'
+        if isinstance(current, PermissionError):
+            return 'token_unreadable'
+        if isinstance(current, httpx.HTTPStatusError) and current.response.status_code in (401, 403):
+            return 'authentication_failed'
+        if isinstance(current, (TimeoutError, httpx.TimeoutException)):
+            return 'timeout'
+        if isinstance(current, (httpx.ConnectError, ConnectionRefusedError)):
+            return 'connection_failed'
+        if isinstance(current, BaseExceptionGroup):
+            queue.extend(current.exceptions)
+        if current.__cause__ is not None:
+            queue.append(current.__cause__)
+        if current.__context__ is not None:
+            queue.append(current.__context__)
+    return 'provider_or_configuration_error'
 
 
 def _extract(payload):
@@ -98,6 +147,40 @@ def _extract(payload):
         if len(sources) >= 8:
             break
     return sources
+
+
+def _relevant_sources(sources, event):
+    """Reject clearly unrelated hits without asserting that retained hits are true."""
+    def normalize(value):
+        return unicodedata.normalize('NFKC', unquote(_clean(value, 4000))).casefold()
+
+    ignored = {'команда', 'football', 'футбол', 'фк', 'club', 'клуб', 'team', 'люб', 'любители',
+               'россия', 'россии', 'russia'}
+    participants = []
+    for name in (event.get('home'), event.get('away')):
+        full = normalize(name)
+        words = {word for word in re.findall(r'[^\W_]+', re.sub(r'\([^)]*\)', ' ', full))
+                 if len(word) >= 4 and word not in ignored}
+        qualified = any(marker in full for marker in ('люб.', 'любитель', 'amateur'))
+        participants.append((words, qualified))
+    competition = normalize(event.get('competition'))
+    tournament_words = {word for word in re.findall(r'[^\W_]+', competition)
+                        if len(word) >= 5 and word not in ignored}
+    # Abbreviations are useful for identifying amateur competitions.
+    if 'лфл' in competition:
+        tournament_words.add('лфл')
+    accepted = []
+    for source in sources:
+        text = normalize(' '.join(str(source.get(field) or '') for field in ('title', 'excerpt', 'url')))
+        for words, qualified in participants:
+            if not words or not any(word in text for word in words):
+                continue
+            if qualified and not (any(marker in text for marker in ('люб.', 'любитель', 'amateur'))
+                                  or any(word in text for word in tournament_words)):
+                continue
+            accepted.append({**source, 'id': len(accepted) + 1})
+            break
+    return accepted
 
 
 async def _search(url, token_file, queries):
@@ -132,9 +215,7 @@ async def _search(url, token_file, queries):
                             raise ValueError('search provider error')
                         return _extract(payload), bool(payload.get('warning') or payload.get('engine_warnings'))
 
-                    batches = await asyncio.gather(*(one(q) for q in queries), return_exceptions=True)
-                    if all(isinstance(batch, BaseException) for batch in batches):
-                        raise ValueError("all search requests failed")
+                    batches = await _collect_batches(queries, one)
                     combined, seen = [], set()
                     partial = any(isinstance(batch, BaseException) or batch[1] for batch in batches)
                     for index in range(4):
@@ -167,12 +248,15 @@ def research(settings, event):
             return deepcopy(saved[1])
     try:
         sources, partial = asyncio.run(_search(settings.wigolo_mcp_url, settings.wigolo_mcp_token_file, queries))
+        sources = _relevant_sources(sources, event)
         value = {"state": "ready" if sources else "empty", "searched_at": datetime.now(UTC).isoformat(),
                  "partial": partial, "sources": sources}
         ttl = 300 if sources else 60
-    except Exception:  # noqa: BLE001 - MCP and network failures must not block a match analysis.
+    except Exception as exc:  # noqa: BLE001 - MCP and network failures must not block a match analysis.
         # Do not propagate service messages or third-party content into logs/API errors.
-        value = {"state": "unavailable", "searched_at": datetime.now(UTC).isoformat(), "sources": []}
+        code = _error_code(exc)
+        _log.warning('Wigolo MCP unavailable: %s', code)
+        value = {"state": "unavailable", "searched_at": datetime.now(UTC).isoformat(), "sources": [], "error_code": code}
         ttl = 30
     with _lock:
         _cache[key] = (time.monotonic() + ttl, deepcopy(value))

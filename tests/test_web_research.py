@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,7 +7,7 @@ from unittest.mock import patch
 from matchlab import web_research as web
 from matchlab.config import Settings
 
-EVENT = {'home': 'Команда A', 'away': 'Команда B', 'sport_label': 'Футбол',
+EVENT = {'home': 'Северная', 'away': 'Южная', 'sport_label': 'Футбол',
          'competition': 'Лига', 'event_kind': 'match', 'notes': 'PRIVATE'}
 
 
@@ -50,9 +51,33 @@ class ResearchTests(unittest.TestCase):
         self.assertTrue(rows[0]['date_inferred'])
         self.assertIsNone(rows[1]['published_at'])
 
+    def test_weather_and_different_amateur_or_professional_team_are_not_accepted(self):
+        event = {'home': 'Алемания (люб.)', 'away': 'Карлсруэ (люб.)',
+                 'sport_label': 'Футбол', 'competition': 'Россия. ЛФЛ. 5Х5 BudnesLiga-2'}
+        results = [
+            {'title': 'Novokuznetsk weather', 'excerpt': '14 day forecast', 'url': 'https://weather.example/news'},
+            {'title': 'Алемания Аахен в Германии', 'excerpt': 'Профессиональный футбол', 'url': 'https://sports.example/1'},
+            {'title': 'Алемания (люб.) — новости ЛФЛ', 'excerpt': 'матч 5x5', 'url': 'https://sports.example/2'},
+        ]
+        found = web._relevant_sources(results, event)
+        self.assertEqual([item['url'] for item in found], ['https://sports.example/2'])
+        self.assertEqual(found[0]['id'], 1)
+        self.assertEqual(web._relevant_sources(results[:1], EVENT), [])
+
+    def test_slow_query_does_not_discard_successful_results(self):
+        async def run():
+            async def one(query):
+                if query == 'slow':
+                    await asyncio.sleep(60)
+                return ([{'title': query}], False)
+            return await web._collect_batches(['fast', 'slow'], one, deadline=.01)
+        batches = asyncio.run(run())
+        self.assertEqual(batches[0][0][0]['title'], 'fast')
+        self.assertIsInstance(batches[1], BaseException)
+
     def test_search_is_shared_temporarily_and_failure_does_not_crash(self):
         async def succeed(url, token, queries):
-            return ([{'id': 1, 'url': 'https://example.org/a', 'title': 't', 'excerpt': 'x'}], False)
+            return ([{'id': 1, 'url': 'https://example.org/a', 'title': 'Северная', 'excerpt': 'x'}], False)
         with patch.object(web, '_search', side_effect=succeed) as search:
             first = web.research(self.settings, EVENT)
             first['sources'].clear()
