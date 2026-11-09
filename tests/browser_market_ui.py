@@ -55,6 +55,7 @@ async def run(url):
                 errors = []
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 await page.goto(url)
+                await page.locator('#age-accept').click(); await page.locator('#privacy-reject').click()
                 await page.locator('.match-card').first.wait_for()
                 await page.locator('#market-refresh').click()
                 await page.locator('#toast').filter(has_text='Список обновлён из сохранённых данных').wait_for()
@@ -237,19 +238,33 @@ def main():
             if (ROOT / '.local/matchlab.sqlite3').exists():
                 shutil.copy2(ROOT / '.local/matchlab.sqlite3',directory / 'matchlab.sqlite3')
             repo = Repository(directory / 'matchlab.sqlite3'); repo.initialize()
-            repo.import_event_markets(make_event(17006967,'Сандерленд'))
+            first=make_event(17006967,'Сандерленд');first['statistics_url']='https://winline.ru/stats/match/72334410'
+            repo.import_event_markets(first)
             document = repo.event_markets('17006967')
             repo.import_bookmakers(primary_quote(document))
             for index in range(33):
                 event=make_event(17007000+index,'Уникальная Команда' if index == 32 else f'Команда {index}',competition='Россия. Премьер-лига',start=2)
                 if index==0:
+                    event['statistics_url']='https://winline.ru/stats/match/72334411'
                     for variant_id,variant in zip(('a'*32,'b'*32),GOAL_VARIANTS['variants']):
                         event['markets'].append({'name':GOAL_VARIANTS['market'],'group':'Тотал','period':'осн.время','variant_id':variant_id,
                             'outcomes':[{'name':name,'odds':price} for name,price in variant]})
                     event['coverage']['expected_outcomes']+=8
                 repo.import_event_markets(event)
             repo.import_event_markets(make_event(18000000,'Наполи',competition='Италия. Серия А',phase='live',start=-1))
-            for projection in PROJECTIONS[1:]: repo.import_event_markets(sport_document(projection))
+            for projection in PROJECTIONS[1:]:
+                item=sport_document(projection)
+                if item['source_event_id']=='91003': item['statistics_url']='https://winline.ru/stats/match/72334412'
+                repo.import_event_markets(item)
+            # The model is deliberately skipped without verified context. Seed
+            # linked source snapshots so this test exercises the model path.
+            for event_id in ('17006967','17007000','91003'):
+                item=repo.event_markets(event_id);stamp=datetime.now(timezone.utc).isoformat()
+                stats_id=item['statistics_url'].rsplit('/',1)[-1]
+                repo.import_statistics({'format':'matchlab.event-statistics.v1','source_event_id':event_id,
+                    'event_url':item['url'],'statistics_url':item['statistics_url'],'provider_url':'https://statshub.yunai.tech/winline/ru/match/'+stats_id,
+                    'state':'ok','attempted_at':stamp,'observed_at':stamp,'header':item['home']+' — '+item['away'],
+                    'match_phase':'prematch','sections':[{'title':'Последние матчи','text':'Подтверждённые данные тестового матча.'}]})
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1',0)); port = probe.getsockname()[1]
             env = dict(os.environ,MATCHLAB_DATA_DIR=folder,PUBLIC_ORIGIN=f'http://127.0.0.1:{port}',QWEN_BASE_URL=f'http://127.0.0.1:{ai.server_port}/v1',QWEN_MODEL='local-test-model',QWEN_API_KEY='',BOOKMAKER_INGEST_TOKEN='')

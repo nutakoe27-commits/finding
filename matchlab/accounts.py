@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS user_sessions (
  token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,created_at TEXT NOT NULL,
  expires_at TEXT NOT NULL,elevated_at TEXT);
 CREATE INDEX IF NOT EXISTS sessions_user ON user_sessions(user_id);
+CREATE TABLE IF NOT EXISTS registration_agreements (
+ user_id TEXT NOT NULL,document TEXT NOT NULL,version TEXT NOT NULL,accepted_at TEXT NOT NULL,
+ PRIMARY KEY(user_id,document,version));
 CREATE TABLE IF NOT EXISTS request_limits (
  bucket TEXT PRIMARY KEY,start INTEGER NOT NULL,hits INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS ai_usage (
@@ -39,6 +42,8 @@ CREATE TABLE IF NOT EXISTS admin_audit (
  target TEXT,details TEXT NOT NULL);
 """
 HASH_SLOTS = BoundedSemaphore(3)
+LEGAL_VERSION = '2026-11-09.v2'
+LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"
 )
@@ -270,7 +275,26 @@ async def body(request, limit=16384):
     return value
 
 
-def create_user(repo, username, password, role="user"):
+def validate_agreements(data):
+    if (data.get('terms_accepted') is not True or data.get('personal_data_consent') is not True or data.get('age_confirmed') is not True or
+        data.get('legal_version') != LEGAL_VERSION):
+        raise HTTPException(422, 'Ознакомьтесь с актуальными документами и подтвердите согласие и возраст.')
+
+
+def save_agreements(db,user_id):
+    stamp=now()
+    db.executemany('INSERT OR IGNORE INTO registration_agreements VALUES (?,?,?,?)',
+                   [(user_id,document,LEGAL_VERSION,stamp) for document in LEGAL_DOCUMENTS])
+
+
+def agreements_current(repo,user_id):
+    with repo.connection() as db:
+        count=db.execute('SELECT count(DISTINCT document) FROM registration_agreements WHERE user_id=? AND version=? AND document IN (?,?,?)',
+                         (user_id,LEGAL_VERSION,*LEGAL_DOCUMENTS)).fetchone()[0]
+    return count==len(LEGAL_DOCUMENTS)
+
+
+def create_user(repo, username, password, role="user", agreements=False):
     name = validate_credentials(username, password)
     user_id = uuid4().hex
     encoded = password_hash(password)
@@ -283,6 +307,8 @@ def create_user(repo, username, password, role="user"):
             db.execute(
                 "INSERT INTO user_identities VALUES ('local',?,?)", (name, user_id)
             )
+            if agreements:
+                save_agreements(db,user_id)
             if role == "admin":
                 audit(db, user_id, "admin.bootstrap", user_id)
     except sqlite3.IntegrityError as exc:
@@ -365,6 +391,8 @@ def install(app, repo, settings):
             if AI_ROUTE.fullmatch(path) and request.method == "POST":
                 user = current_user(request)
                 mutation(request)
+                if not agreements_current(repo,user['id']):
+                    raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})
                 limited(repo, "ai:" + user["id"], 6, 60)
                 request.state.user = user
                 usage = start_usage(
@@ -401,7 +429,7 @@ def install(app, repo, settings):
             "camera=(), microphone=(), geolocation=()"
         )
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            "default-src 'self'; script-src 'self' https://mc.yandex.ru https://mc.yandex.com https://yastatic.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://mc.yandex.ru https://mc.yandex.com https://mc.webvisor.com https://mc.webvisor.org; connect-src 'self' https://mc.yandex.ru https://mc.yandex.com https://mc.webvisor.com https://mc.webvisor.org wss://mc.yandex.ru wss://mc.yandex.com wss://mc.webvisor.com wss://mc.webvisor.org; frame-src blob: https://mc.yandex.ru https://mc.yandex.com; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
@@ -421,12 +449,23 @@ def install(app, repo, settings):
         mutation(request, False)
         limited(repo, "register:" + peer(request), 5, 3600)
         data = await body(request)
+        validate_agreements(data)
         user_id = await run_in_threadpool(
-            create_user, repo, data.get("username"), data.get("password")
+            create_user, repo, data.get("username"), data.get("password"), "user", True
         )
         return authenticated_response(
             request, user_id, 201, request.cookies.get(cookie_name(request))
         )
+
+    @app.post('/api/auth/confirm-documents')
+    async def confirm_documents(request: Request):
+        user=current_user(request)
+        mutation(request)
+        data=await body(request,4096)
+        validate_agreements(data)
+        with repo.connection() as db:
+            save_agreements(db,user['id'])
+        return {'ok':True,'legal_version':LEGAL_VERSION}
 
     @app.post("/api/auth/login")
     async def login(request: Request):

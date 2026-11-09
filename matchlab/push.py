@@ -92,7 +92,7 @@ def local_url(value):
 
 
 def recipients(db, segment, actor):
-    sql = "SELECT s.id FROM push_subscriptions s JOIN users u ON u.id=s.user_id WHERE s.enabled=1 AND u.enabled=1"
+    sql = "SELECT s.id FROM push_subscriptions s JOIN users u ON u.id=s.user_id WHERE s.enabled=1 AND u.enabled=1 AND EXISTS (SELECT 1 FROM push_ad_consents a WHERE a.subscription_id=s.id AND a.user_id=s.user_id AND a.revoked_at IS NULL)"
     args = []
     if segment == "self":
         sql += " AND u.id=?"
@@ -133,7 +133,10 @@ def install(app, repo, settings):
         accounts.limited(repo, "push-sub:" + user["id"], 20, 3600)
         if not configured(settings):
             raise HTTPException(503, "Уведомления ещё не настроены.")
-        endpoint, keys = subscription(await accounts.body(request))
+        data=await accounts.body(request)
+        if data.get('advertising_consent') is not True or data.get('consent_version')!=accounts.LEGAL_VERSION:
+            raise HTTPException(422,'Для подписки подтвердите отдельное согласие на push-уведомления.')
+        endpoint, keys = subscription(data)
         sub_id = accounts.token_hash(endpoint)
         with repo.connection() as db:
             # A browser subscription belongs to its currently signed-in owner.
@@ -141,6 +144,8 @@ def install(app, repo, settings):
                 "INSERT INTO push_subscriptions VALUES (?,?,?,?,?,1,NULL) ON CONFLICT(id) DO UPDATE SET user_id=excluded.user_id,keys_json=excluded.keys_json,enabled=1,last_status=NULL",
                 (sub_id, user["id"], endpoint, json.dumps(keys), accounts.now()),
             )
+            db.execute("INSERT INTO push_ad_consents VALUES (?,?,?,?,NULL) ON CONFLICT(subscription_id,user_id) DO UPDATE SET version=excluded.version,accepted_at=excluded.accepted_at,revoked_at=NULL",
+                       (sub_id,user['id'],accounts.LEGAL_VERSION,accounts.now()))
         return {"ok": True}
 
     @app.post("/api/push/unsubscribe")
@@ -154,7 +159,18 @@ def install(app, repo, settings):
                 "UPDATE push_subscriptions SET enabled=0 WHERE id=? AND user_id=?",
                 (accounts.token_hash(endpoint), user["id"]),
             )
+            db.execute("UPDATE push_ad_consents SET revoked_at=? WHERE subscription_id=? AND user_id=? AND revoked_at IS NULL",
+                       (accounts.now(),accounts.token_hash(endpoint),user['id']))
         return {"ok": True}
+
+    @app.post('/api/push/unsubscribe-all')
+    def unsubscribe_all(request: Request):
+        user=accounts.current_user(request)
+        accounts.mutation(request)
+        with repo.connection() as db:
+            db.execute('UPDATE push_subscriptions SET enabled=0 WHERE user_id=?',(user['id'],))
+            db.execute('UPDATE push_ad_consents SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL',(accounts.now(),user['id']))
+        return {'ok':True}
 
     @app.get("/api/admin/push")
     def listing(request: Request):
@@ -392,7 +408,7 @@ def work_once(repo, settings, sender=deliver):
         return False
     with repo.connection() as db:
         eligible = db.execute(
-            "SELECT 1 FROM push_subscriptions s JOIN users u ON u.id=s.user_id JOIN push_campaigns c ON c.id=? WHERE s.id=? AND s.user_id=? AND s.enabled=1 AND u.enabled=1 AND c.status IN ('queued','sending')",
+            "SELECT 1 FROM push_subscriptions s JOIN users u ON u.id=s.user_id JOIN push_campaigns c ON c.id=? WHERE s.id=? AND s.user_id=? AND s.enabled=1 AND u.enabled=1 AND c.status IN ('queued','sending') AND EXISTS (SELECT 1 FROM push_ad_consents a WHERE a.subscription_id=s.id AND a.user_id=s.user_id AND a.revoked_at IS NULL)",
             (row["campaign_id"], row["subscription_id"], row["user_id"]),
         ).fetchone()
     status = sender(settings, row) if eligible else 410

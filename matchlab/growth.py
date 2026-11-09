@@ -1,6 +1,7 @@
 """First-party analytics, referral links, promotional credits and admin operations."""
 
 import re
+import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlsplit
 from uuid import uuid4
@@ -15,6 +16,9 @@ CREATE TABLE IF NOT EXISTS product_events (
  id INTEGER PRIMARY KEY,at TEXT NOT NULL,user_id TEXT,visitor TEXT NOT NULL,
  name TEXT NOT NULL,entity TEXT);
 CREATE INDEX IF NOT EXISTS product_events_date ON product_events(at,name);
+CREATE TABLE IF NOT EXISTS analytics_consents (
+ token_hash TEXT PRIMARY KEY,user_id TEXT,version TEXT NOT NULL,accepted_at TEXT NOT NULL,revoked_at TEXT,
+ webvisor INTEGER NOT NULL DEFAULT 0 CHECK(webvisor IN (0,1)));
 CREATE TABLE IF NOT EXISTS promo_codes (
  id TEXT PRIMARY KEY,code TEXT NOT NULL UNIQUE,title TEXT NOT NULL,
  bonus INTEGER NOT NULL CHECK(bonus>0),max_uses INTEGER NOT NULL CHECK(max_uses>0),
@@ -28,6 +32,9 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
  id TEXT PRIMARY KEY,user_id TEXT NOT NULL,endpoint TEXT NOT NULL,keys_json TEXT NOT NULL,
  created_at TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,last_status TEXT);
 CREATE INDEX IF NOT EXISTS push_users ON push_subscriptions(user_id,enabled);
+CREATE TABLE IF NOT EXISTS push_ad_consents (
+ subscription_id TEXT NOT NULL,user_id TEXT NOT NULL,version TEXT NOT NULL,accepted_at TEXT NOT NULL,revoked_at TEXT,
+ PRIMARY KEY(subscription_id,user_id));
 CREATE TABLE IF NOT EXISTS push_campaigns (
  id TEXT PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,url TEXT NOT NULL,
  segment TEXT NOT NULL,status TEXT NOT NULL,scheduled_at TEXT NOT NULL,
@@ -40,6 +47,7 @@ CREATE INDEX IF NOT EXISTS push_due ON push_outbox(status,next_at);
 CREATE TABLE IF NOT EXISTS push_worker_status (id INTEGER PRIMARY KEY CHECK(id=1),at TEXT NOT NULL,state TEXT NOT NULL,error_type TEXT);
 """
 EVENTS = {"page_view", "match_view", "ai_intent", "push_click", "outbound_click"}
+ANALYTICS_VERSION = '2026-11-09.metrika1'
 
 
 def setting(repo, key, default=""):
@@ -53,6 +61,21 @@ def setting(repo, key, default=""):
 def visitor(request):
     cookie = request.cookies.get("prognozich_visitor", "")
     return cookie if re.fullmatch(r"[a-f0-9]{32}", cookie) else uuid4().hex
+
+
+def analytics_preferences(repo, request):
+    token=request.cookies.get('prognozich_analytics','')
+    if token=='no': return {'analytics':False,'webvisor':False}
+    if not re.fullmatch(r'v1\.[A-Za-z0-9_-]{32}',token): return {'analytics':None,'webvisor':False}
+    with repo.connection() as db:
+        cutoff=(datetime.now(UTC)-timedelta(days=365)).isoformat(timespec='microseconds')
+        row=db.execute('SELECT webvisor FROM analytics_consents WHERE token_hash=? AND version=? AND revoked_at IS NULL AND accepted_at>?',
+                       (accounts.token_hash(token),ANALYTICS_VERSION,cutoff)).fetchone()
+    return {'analytics':True,'webvisor':bool(row['webvisor'])} if row else {'analytics':None,'webvisor':False}
+
+
+def analytics_allowed(repo, request):
+    return analytics_preferences(repo,request)['analytics'] is True
 
 
 def record(repo, name, entity=None, user_id=None, visitor_id="server"):
@@ -186,7 +209,7 @@ def overview(repo, days):
             "ai": usage,
             "daily": daily,
             "push_subscribers": scalar(
-                "SELECT count(DISTINCT s.user_id) FROM push_subscriptions s JOIN users u ON u.id=s.user_id WHERE s.enabled=1 AND u.enabled=1"
+                "SELECT count(DISTINCT s.user_id) FROM push_subscriptions s JOIN users u ON u.id=s.user_id JOIN push_ad_consents a ON a.subscription_id=s.id AND a.user_id=s.user_id AND a.revoked_at IS NULL WHERE s.enabled=1 AND u.enabled=1"
             ),
             "push_sent": scalar(
                 "SELECT count(*) FROM push_outbox WHERE status='sent' AND sent_at>=?",
@@ -211,6 +234,36 @@ def overview(repo, days):
 
 
 def install(app, repo, settings):
+    @app.get('/api/privacy/preferences')
+    def privacy_preferences(request: Request):
+        return analytics_preferences(repo,request)
+
+    @app.post('/api/privacy/preferences')
+    async def update_privacy_preferences(request: Request):
+        accounts.mutation(request, False)
+        accounts.limited(repo,'privacy:'+accounts.peer(request),60,60)
+        data=await accounts.body(request, 1024)
+        enabled=data.get('analytics')
+        webvisor=data.get('webvisor',False)
+        if type(enabled) is not bool or type(webvisor) is not bool or (webvisor and not enabled):
+            raise HTTPException(422,'Выберите настройку аналитики.')
+        from fastapi.responses import JSONResponse
+        response=JSONResponse({'analytics':enabled,'webvisor':webvisor})
+        old=request.cookies.get('prognozich_analytics','')
+        user=accounts.current_user(request,False) if enabled else None
+        with repo.connection() as db:
+            if re.fullmatch(r'v1\.[A-Za-z0-9_-]{32}',old):
+                db.execute('UPDATE analytics_consents SET revoked_at=? WHERE token_hash=? AND revoked_at IS NULL',(accounts.now(),accounts.token_hash(old)))
+            token='v1.'+secrets.token_urlsafe(24) if enabled else 'no'
+            if enabled:
+                db.execute('INSERT INTO analytics_consents(token_hash,user_id,version,accepted_at,revoked_at,webvisor) VALUES (?,?,?,?,NULL,?)',
+                           (accounts.token_hash(token),user['id'] if user else None,ANALYTICS_VERSION,accounts.now(),int(webvisor)))
+        response.set_cookie('prognozich_analytics',token,max_age=365*86400,
+                            httponly=True,samesite='lax',secure=accounts.origin(request).startswith('https://'),path='/')
+        if not enabled:
+            response.delete_cookie('prognozich_visitor',path='/')
+        return response
+
     @app.post("/api/telemetry")
     async def telemetry(request: Request):
         accounts.mutation(request, False)
@@ -222,6 +275,8 @@ def install(app, repo, settings):
         # Only route identifiers are collected; notes, searches, URLs and passwords are never telemetry.
         if entity and not re.fullmatch(r"[#a-zA-Z0-9_:/-]{1,100}", entity):
             raise HTTPException(422, "Некорректный идентификатор.")
+        if not analytics_allowed(repo,request):
+            return {'ok':True}
         user = accounts.current_user(request, False)
         cookie = visitor(request)
         record(repo, data["name"], entity, user["id"] if user else None, cookie)
@@ -246,14 +301,9 @@ def install(app, repo, settings):
             raise HTTPException(422, "Неизвестный источник.")
         destination = outbound(repo, event_id, source)
         accounts.limited(repo, "outbound:" + accounts.peer(request), 120, 60)
-        user = accounts.current_user(request, False)
-        record(
-            repo,
-            "outbound_click",
-            event_id,
-            user["id"] if user else None,
-            visitor(request),
-        )
+        if analytics_allowed(repo,request):
+            user = accounts.current_user(request, False)
+            record(repo,"outbound_click",event_id,user["id"] if user else None,visitor(request))
         response = RedirectResponse(destination, status_code=302)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -309,7 +359,7 @@ def install(app, repo, settings):
                 (user["id"], datetime.now(UTC).date().isoformat()),
             ).fetchone()[0]
             subscriptions = db.execute(
-                "SELECT count(*) FROM push_subscriptions WHERE user_id=? AND enabled=1",
+                "SELECT count(*) FROM push_subscriptions s WHERE s.user_id=? AND s.enabled=1 AND EXISTS (SELECT 1 FROM push_ad_consents a WHERE a.subscription_id=s.id AND a.user_id=s.user_id AND a.revoked_at IS NULL)",
                 (user["id"],),
             ).fetchone()[0]
         return {

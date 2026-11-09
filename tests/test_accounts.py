@@ -12,7 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from test_product import event
 
-from matchlab import accounts
+from matchlab import accounts, growth
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.storage import Repository
@@ -37,7 +37,7 @@ class AccountTests(unittest.TestCase):
         client = client or self.client
         response = client.post(
             "/api/auth/register",
-            json={"username": username, "password": PASSWORD, "role": "admin"},
+            json={"username": username, "password": PASSWORD, "role": "admin", "terms_accepted": True, "personal_data_consent": True, "age_confirmed": True, "legal_version": accounts.LEGAL_VERSION},
         )
         self.assertEqual(response.status_code, 201, response.text)
         client.headers["X-CSRF-Token"] = response.json()["csrf"]
@@ -107,7 +107,7 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(
             self.client.post(
                 "/api/auth/register",
-                json={"username": "READER_1", "password": PASSWORD},
+                json={"username": "READER_1", "password": PASSWORD, "terms_accepted": True, "personal_data_consent": True, "age_confirmed": True, "legal_version": accounts.LEGAL_VERSION},
             ).status_code,
             409,
         )
@@ -116,7 +116,7 @@ class AccountTests(unittest.TestCase):
         for password in ("tiny", 1234, "x" * 129):
             response = self.client.post(
                 "/api/auth/register",
-                json={"username": "reader_1", "password": password},
+                json={"username": "reader_1", "password": password, "terms_accepted": True, "personal_data_consent": True, "age_confirmed": True, "legal_version": accounts.LEGAL_VERSION},
             )
             self.assertEqual(response.status_code, 422)
             self.assertNotIn('"input"', response.text)
@@ -354,6 +354,7 @@ class AccountTests(unittest.TestCase):
     def test_real_analytics_do_not_expose_passwords_or_private_notes(self):
         self.admin()
         self.elevate()
+        self.client.post('/api/privacy/preferences',json={'analytics':True})
         self.client.post(
             "/api/telemetry", json={"name": "page_view", "entity": "#matches"}
         )
@@ -363,13 +364,99 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(overview["events"]["outbound_click"], 1)
         self.assertNotIn("password_hash", json.dumps(overview))
 
+    def test_analytics_requires_opt_in_and_stops_after_withdrawal(self):
+        self.client.get('/')
+        self.assertNotIn('prognozich_visitor',self.client.cookies)
+        self.client.post('/api/telemetry',json={'name':'page_view','entity':'#matches'})
+        self.client.get('/go/winline/123?source=legacy',follow_redirects=False)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM product_events').fetchone()[0],0)
+        self.assertEqual(self.client.post('/api/privacy/preferences',json={'analytics':True}).status_code,200)
+        self.client.post('/api/telemetry',json={'name':'page_view','entity':'#matches'})
+        self.assertIn('prognozich_visitor',self.client.cookies)
+        self.client.post('/api/privacy/preferences',json={'analytics':False})
+        self.assertNotIn('prognozich_visitor',self.client.cookies)
+        self.client.post('/api/telemetry',json={'name':'page_view','entity':'#matches'})
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM product_events').fetchone()[0],1)
+            consent=db.execute('SELECT version,revoked_at FROM analytics_consents').fetchone()
+            self.assertEqual(consent['version'],growth.ANALYTICS_VERSION)
+            self.assertIsNotNone(consent['revoked_at'])
+        self.assertFalse(self.client.get('/api/privacy/preferences').json()['analytics'])
+
+    def test_webvisor_is_separate_opt_in_and_can_be_revoked(self):
+        self.assertEqual(self.client.post('/api/privacy/preferences',json={'analytics':False,'webvisor':True}).status_code,422)
+        self.assertEqual(self.client.post('/api/privacy/preferences',json={'analytics':True}).json(),{'analytics':True,'webvisor':False})
+        self.assertEqual(self.client.post('/api/privacy/preferences',json={'analytics':True,'webvisor':True}).json(),{'analytics':True,'webvisor':True})
+        self.assertEqual(self.client.get('/api/privacy/preferences').json(),{'analytics':True,'webvisor':True})
+        self.assertEqual(self.client.post('/api/privacy/preferences',json={'analytics':True,'webvisor':False}).json(),{'analytics':True,'webvisor':False})
+        with self.repo.connection() as db:
+            rows=db.execute('SELECT webvisor,revoked_at FROM analytics_consents ORDER BY accepted_at').fetchall()
+        self.assertEqual([row['webvisor'] for row in rows],[0,1,0])
+        self.assertTrue(rows[0]['revoked_at'] and rows[1]['revoked_at'])
+        self.assertIsNone(rows[2]['revoked_at'])
+
+    def test_old_analytics_consent_does_not_authorize_new_provider(self):
+        self.client.post('/api/privacy/preferences',json={'analytics':True})
+        with self.repo.connection() as db:
+            db.execute("UPDATE analytics_consents SET version='2026-11-09.v1'")
+        self.assertIsNone(self.client.get('/api/privacy/preferences').json()['analytics'])
+        self.client.post('/api/telemetry',json={'name':'page_view','entity':'#matches'})
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM product_events').fetchone()[0],0)
+
+    def test_metrika_csp_keeps_site_protected_from_embedding(self):
+        response=self.client.get('/')
+        policy=response.headers['content-security-policy']
+        self.assertIn('https://mc.yandex.ru',policy)
+        self.assertIn("frame-ancestors 'none'",policy)
+        self.assertEqual(response.headers['x-frame-options'],'DENY')
+        scripts=next(part for part in policy.split(';') if part.strip().startswith('script-src'))
+        self.assertNotIn("'unsafe-inline'",scripts)
+
+    def test_existing_analytics_database_migrates_without_losing_records(self):
+        import sqlite3
+        path=self.root/'legacy-analytics.sqlite3'
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE analytics_consents(token_hash TEXT PRIMARY KEY,user_id TEXT,version TEXT NOT NULL,accepted_at TEXT NOT NULL,revoked_at TEXT)')
+            db.execute("INSERT INTO analytics_consents VALUES ('old',NULL,'2026-11-09.v1',?,NULL)",(accounts.now(),))
+        repository=Repository(path);repository.initialize()
+        with repository.connection() as db:
+            row=db.execute('SELECT version,webvisor FROM analytics_consents WHERE token_hash=?',('old',)).fetchone()
+        self.assertEqual(row['version'],'2026-11-09.v1')
+        self.assertEqual(row['webvisor'],0)
+
+    def test_registration_requires_all_explicit_current_confirmations(self):
+        value={'username':'legal_test','password':PASSWORD,'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':accounts.LEGAL_VERSION}
+        for key in ('terms_accepted','personal_data_consent','age_confirmed','legal_version'):
+            invalid={**value,key:False}
+            self.assertEqual(self.client.post('/api/auth/register',json=invalid).status_code,422)
+        self.assertEqual(self.client.post('/api/auth/register',json=value).status_code,201)
+        with self.repo.connection() as db:
+            rows=db.execute('SELECT document,version FROM registration_agreements ORDER BY document').fetchall()
+        self.assertEqual({row['document'] for row in rows},{'terms','personal_data_consent','age_attestation'})
+        self.assertTrue(all(row['version']==accounts.LEGAL_VERSION for row in rows))
+
+    def test_existing_account_must_confirm_before_new_ai_usage(self):
+        user_id=accounts.create_user(self.repo,'existing_reader',PASSWORD)
+        login=self.client.post('/api/auth/login',json={'username':'existing_reader','password':PASSWORD})
+        self.client.headers['X-CSRF-Token']=login.json()['csrf']
+        response=self.client.post('/api/bookmakers/events/123/explain',json={})
+        self.assertEqual(response.status_code,403)
+        self.assertEqual(response.headers.get('X-Legal-Required'),'1')
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM ai_usage WHERE user_id=?',(user_id,)).fetchone()[0],0)
+        value={'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':accounts.LEGAL_VERSION}
+        self.assertEqual(self.client.post('/api/auth/confirm-documents',json=value).status_code,200)
+        self.assertTrue(accounts.agreements_current(self.repo,user_id))
+
     def test_production_cookie_is_secure_httponly_and_host_scoped(self):
         root = self.root / "secure"
         app = create_app(Settings(root, public_origin="https://testserver"))
         with TestClient(app, base_url="https://testserver") as client:
             response = client.post(
                 "/api/auth/register",
-                json={"username": "secure_reader", "password": PASSWORD},
+                json={"username": "secure_reader", "password": PASSWORD, "terms_accepted": True, "personal_data_consent": True, "age_confirmed": True, "legal_version": accounts.LEGAL_VERSION},
             )
             cookie = response.headers["set-cookie"].lower()
             self.assertIn("__host-prognozich=", cookie)

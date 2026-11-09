@@ -9,6 +9,7 @@ window.Account = (() => {
     if (!response.ok) {
       const error = new Error(Array.isArray(body.detail) ? body.detail.map(i=>i.msg).join("; ") : body.detail || `Ошибка ${response.status}`);
       if(response.status===401 && (!url.startsWith("/api/auth/") && url!=="/api/admin/reauth" || url==="/api/auth/logout")){user=null;csrf=null;sync();}
+      if(response.headers.get('X-Legal-Required') === '1') showLegal();
       error.status = response.status; error.reauth = response.headers.get("X-Reauth-Required") === "1"; throw error;
     }
     return body;
@@ -23,6 +24,7 @@ window.Account = (() => {
     catch { user = null; csrf = null; sync(); }
   }
   const ready = refresh();
+  function showLegal() { if(!byId('legal-renewal').open) byId('legal-renewal').showModal(); }
   function show(nextMode="register", callback=null) {
     afterLogin = callback; mode = nextMode;
     byId("auth-title").textContent = mode === "register" ? "Ваш личный аналитик" : "С возвращением";
@@ -30,6 +32,8 @@ window.Account = (() => {
     byId("auth-submit").textContent = mode === "register" ? "Создать аккаунт" : "Войти";
     byId("auth-switch").textContent = mode === "register" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться";
     byId("auth-password").autocomplete = mode === "register" ? "new-password" : "current-password";
+    byId("auth-legal").hidden=mode !== "register";
+    for (const id of ["auth-terms","auth-personal-data","auth-age"]) { byId(id).required=mode === "register"; byId(id).checked=false; }
     byId("auth-error").textContent = ""; byId("auth-password").value = "";
     if (!byId("auth-dialog").open) byId("auth-dialog").showModal();
     byId("auth-username").focus();
@@ -39,10 +43,20 @@ window.Account = (() => {
   byId("auth-close").addEventListener("click",()=>{ afterLogin=null; byId("auth-dialog").close(); });
   byId("auth-dialog").addEventListener("cancel",()=>{ afterLogin=null; });
   byId("auth-switch").addEventListener("click",()=>show(mode === "register" ? "login" : "register",afterLogin));
+  byId('legal-close').addEventListener('click',()=>byId('legal-renewal').close());
+  byId('legal-form').addEventListener('submit',async event=>{
+    event.preventDefault();const button=byId('legal-submit');button.disabled=true;byId('legal-error').textContent='';
+    try {await api('/api/auth/confirm-documents',{method:'POST',body:JSON.stringify({terms_accepted:byId('legal-terms').checked,personal_data_consent:byId('legal-data').checked,age_confirmed:byId('legal-age').checked,legal_version:'2026-11-09.v2'})});byId('legal-renewal').close();}
+    catch(error){byId('legal-error').textContent=error.message;}finally{button.disabled=false;}
+  });
   byId("auth-form").addEventListener("submit",async event=>{
     event.preventDefault(); const button=byId("auth-submit"); button.disabled=true; byId("auth-error").textContent="";
     try {
-      const result=await api("/api/auth/"+(mode === "register" ? "register" : "login"),{method:"POST",body:JSON.stringify({username:byId("auth-username").value,password:byId("auth-password").value})});
+      const submittedMode=mode;
+      const credentials={username:byId("auth-username").value,password:byId("auth-password").value};
+      if(submittedMode === "register") Object.assign(credentials,{terms_accepted:byId("auth-terms").checked,personal_data_consent:byId("auth-personal-data").checked,age_confirmed:byId("auth-age").checked,legal_version:"2026-11-09.v2"});
+      const result=await api("/api/auth/"+(submittedMode === "register" ? "register" : "login"),{method:"POST",body:JSON.stringify(credentials)});
+      window.ProductAnalytics?.goal(submittedMode === 'register' ? 'registration_success' : 'login_success');
       user=result.user;csrf=result.csrf;byId("auth-password").value="";sync();
       const callback=afterLogin;afterLogin=null;byId("auth-dialog").close();
       if(callback)callback(); else if(location.hash==="#account") renderPage(); else if(location.hash==="#admin") window.Admin?.open();
@@ -63,7 +77,7 @@ window.Account = (() => {
       byId("push-enable").disabled=!push.enabled || !supported;
       byId("push-note").textContent=!push.enabled ? "Уведомления скоро появятся — сервис готовит подключение." : !window.isSecureContext ? "Уведомления доступны через защищённое подключение HTTPS." : !supported ? "Этот браузер пока не поддерживает уведомления. На iPhone добавьте сайт на главный экран и откройте его оттуда." : usage.push_devices ? `Подключённых устройств: ${usage.push_devices}. Разрешение на этом устройстве можно изменить в браузере.` : "Получайте новости сервиса и подборки матчей. Подписка добровольная, отключить можно в любой момент.";
       const registration=await navigator.serviceWorker?.getRegistration("/");const subscription=await registration?.pushManager.getSubscription();
-      byId("push-disable").hidden=!subscription;
+      byId("push-disable").hidden=false;
     }catch(error){byId("account-message").textContent=error.message;}
   }
   byId("account-login").addEventListener("click",()=>show("login",renderPage));
@@ -80,11 +94,12 @@ window.Account = (() => {
   });
   byId("promo-redeem-form").addEventListener("submit",async event=>{
     event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
-    try{const result=await api("/api/account/promo",{method:"POST",body:JSON.stringify({code:byId("promo-code").value})});byId("account-message").textContent=`Промокод активирован. Начислено бонусных разборов: ${result.bonus}.`;form.reset();await refresh();await renderPage();}
+    try{const result=await api("/api/account/promo",{method:"POST",body:JSON.stringify({code:byId("promo-code").value})});window.ProductAnalytics?.goal('promo_redeemed');byId("account-message").textContent=`Промокод активирован. Начислено бонусных разборов: ${result.bonus}.`;form.reset();await refresh();await renderPage();}
     catch(error){byId("account-message").textContent=error.message;}finally{button.disabled=false;}
   });
   function bytes(value){const raw=atob(value.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-value.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
   byId("push-enable").addEventListener("click",async()=>{
+    if(!byId('push-ad-consent').checked){byId('push-note').textContent='Чтобы подписаться, подтвердите отдельное согласие на уведомления.';return;}
     const button=byId("push-enable");button.disabled=true;
     try{
       const permissionRequest=Notification.requestPermission();
@@ -92,13 +107,13 @@ window.Account = (() => {
       const registration=await navigator.serviceWorker.register("/sw.js",{scope:"/"});await navigator.serviceWorker.ready;
       const permission=await permissionRequest;if(permission!=="granted")throw new Error("Разрешение на уведомления не получено. Его можно изменить в настройках браузера.");
       const subscription=await registration.pushManager.getSubscription() || await registration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(config.public_key)});
-      await api("/api/push/subscribe",{method:"POST",body:JSON.stringify(subscription.toJSON())});await renderPage();
+      await api("/api/push/subscribe",{method:"POST",body:JSON.stringify({...subscription.toJSON(),advertising_consent:true,consent_version:'2026-11-09.v2'})});window.ProductAnalytics?.goal('push_subscribed');await renderPage();
     }catch(error){byId("push-note").textContent=error.message;}finally{button.disabled=false;}
   });
   byId("push-disable").addEventListener("click",async()=>{
-    try{const registration=await navigator.serviceWorker.getRegistration("/");const subscription=await registration?.pushManager.getSubscription();if(subscription){await api("/api/push/unsubscribe",{method:"POST",body:JSON.stringify({endpoint:subscription.endpoint})});await subscription.unsubscribe();}await renderPage();}
+    try{await api('/api/push/unsubscribe-all',{method:'POST',body:'{}'});const registration=await navigator.serviceWorker?.getRegistration("/");const subscription=await registration?.pushManager.getSubscription();if(subscription)await subscription.unsubscribe();byId('push-ad-consent').checked=false;await renderPage();byId('push-note').textContent='Согласие отозвано, отправка на все устройства отключена.';}
     catch(error){byId("push-note").textContent=error.message;}
   });
-  function track(name,entity=""){api("/api/telemetry",{method:"POST",body:JSON.stringify({name,entity})}).catch(()=>{});}
+  function track(name,entity=""){if(window.Privacy?.analyticsAllowed)api("/api/telemetry",{method:"POST",body:JSON.stringify({name,entity})}).catch(()=>{});}
   return {get user(){return user},get csrf(){return csrf},ready,api,show,ensure,refresh,renderPage,track};
 })();

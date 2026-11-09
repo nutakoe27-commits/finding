@@ -16,6 +16,7 @@ def signed_in(client, repo, username="fixture_user", role="user"):
             "INSERT OR IGNORE INTO users(id,username,password_hash,role,created_at) VALUES (?,?,?,?,?)",
             (username, username, fixture_hash(), role, accounts.now()),
         )
+        accounts.save_agreements(db,username)
     token = accounts.make_session(repo, username)
     client.cookies.set("prognozich_session", token)
     client.headers["X-CSRF-Token"] = accounts.csrf(token)
@@ -30,6 +31,7 @@ async def signed_in_browser(page, base):
         data={
             "username": "browser_" + uuid4().hex[:16],
             "password": "browser-fixture-password-123",
+            "terms_accepted": True, "personal_data_consent": True, "age_confirmed": True, "legal_version": accounts.LEGAL_VERSION,
         },
     )
     assert result.status == 201, await result.text()

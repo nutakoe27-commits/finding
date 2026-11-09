@@ -84,9 +84,12 @@ async def exercise(base, repo):
                     lambda error, captured=errors: captured.append(str(error)),
                 )
                 live, future = header(live=True), header("102")
+                live["red_card_presence"] = {"away": True}
                 feed(repo, [live, future])
                 send(repo, "detail", event=live, markets=[live["primary"]])
                 await page.goto(base + "/#matches")
+                await page.locator('#age-accept').click()
+                await page.locator('#privacy-reject').click()
                 await page.locator('.match-card[data-event-id="102"]').wait_for()
                 await expect(page.locator(".match-card")).to_have_count(1)
                 await page.locator('[data-phase="live"]').click()
@@ -95,6 +98,7 @@ async def exercise(base, repo):
                 await card.locator(".match-card-title").click()
                 await expect(page).to_have_url(base + "/#stream/101")
                 await expect(page.locator("#event-phase")).to_contain_text("0:0")
+                await expect(page.locator("#event-red-card")).to_contain_text("Удаление: Команда Б")
                 await expect(page.locator("#archive-team-cards")).to_contain_text("1:0")
                 assert not await page.evaluate(
                     "document.documentElement.scrollWidth > innerWidth"
@@ -103,6 +107,7 @@ async def exercise(base, repo):
                 await page.locator("#explanation").wait_for(state="visible")
                 assert REQUESTS[-1]["archive_history"]["state"] == "ready"
                 assert REQUESTS[-1]["event"]["live_score"] == "0:0"
+                assert REQUESTS[-1]["event"]["red_card_presence"] == {"away": True}
                 assert not await page.evaluate("Boolean(window.analysisInjected)")
                 # The normal ten-second timer must deliver score and prices without navigation.
                 live["observed_at"] = archive.now()

@@ -58,6 +58,7 @@ async def exercise(base,repo):
             front=await browser.new_page(viewport={'width':1440,'height':900})
             errors=[]; front.on('pageerror',lambda error:errors.append(str(error)))
             await front.goto(base+'/#match/123')
+            await front.locator('#age-accept').click(); await front.locator('#privacy-reject').click()
             await front.locator('#event-refresh').wait_for(state='visible')
             await front.locator('#event-refresh').click()
             await front.locator("#event-refresh-status").filter(has_text='очереди').wait_for()

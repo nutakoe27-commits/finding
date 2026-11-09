@@ -114,6 +114,29 @@ class StatisticsTests(unittest.TestCase):
             self.assertEqual(self.post(value).status_code,422)
         self.assertIsNone(self.repo.statistics('123'))
 
+    def test_views_reject_invalid_types_or_sections_from_unvisited_tabs(self):
+        for views, view in ((['overview'], 'statistics'), ([['overview']], 'overview'), (['overview'], [])):
+            value=stats()
+            value['observed_views']=views
+            value['sections'][0]['view']=view
+            with self.subTest(views=views, view=view):
+                self.assertEqual(self.post(value).status_code,422)
+
+    def test_source_filters_and_observation_reach_model_without_reinterpretation(self):
+        value=stats()
+        value['observed_views']=['overview']
+        value['season_filters_complete']=False
+        value['sections']=[{'title':'Статистика сезона',
+                            'text':'За матч\nОбщее\n47\n%\nПобеды\n19\n%\n1.24\nЗабитые мячи\n1.25',
+                            'view':'overview','filters':['За матч','Общее'],
+                            'observed_at':value['observed_at']}]
+        response=self.post(value)
+        self.assertEqual(response.status_code,200,response.text)
+        section=analysis_statistics(self.repo.statistics('123'))['sections'][0]
+        self.assertEqual(section['filters'],['За матч','Общее'])
+        self.assertIn('1.24\nЗабитые мячи\n1.25',section['text'])
+        self.assertEqual(section['observed_at'],value['observed_at'])
+
     def test_blocked_refresh_keeps_last_good_snapshot_and_applies_backoff(self):
         self.post(stats())
         previous=self.repo.statistics('123')

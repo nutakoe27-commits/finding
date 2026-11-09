@@ -109,8 +109,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/", include_in_schema=False)
     def index(request:Request):
         response=FileResponse(STATIC / "index.html",headers={'Cache-Control':'no-store'})
-        if not request.cookies.get('prognozich_visitor'):
-            response.set_cookie('prognozich_visitor',growth.visitor(request),max_age=30*86400,httponly=True,samesite='lax',secure=accounts.origin(request).startswith('https://'),path='/')
+        if not growth.analytics_allowed(repo,request) and request.cookies.get('prognozich_visitor'):
+            response.delete_cookie('prognozich_visitor',path='/')
         return response
 
     @app.get('/sw.js',include_in_schema=False)

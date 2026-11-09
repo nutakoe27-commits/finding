@@ -35,6 +35,10 @@ if [[ ! -f "$token" || -L "$token" || $(stat -c %u "$token") != 0 || $(stat -c %
 fi
 id matchlab-scraper >/dev/null
 /opt/matchlab-crawler/.venv/bin/python -c 'import playwright.async_api, httpx'
+if [[ ! -x /usr/bin/xvfb-run ]] || ! command -v Xvfb >/dev/null || ! command -v xauth >/dev/null; then
+  echo 'Нужны Xvfb и xauth. Установите системные пакеты xvfb и xauth, затем повторите установку. Работающая служба не изменена.' >&2
+  exit 1
+fi
 # Only our separately named unit is restarted. No model or other crawler is stopped.
 if [[ -f "$unit" ]]; then systemctl stop matchlab-statistics.service; fi
 install -d -m 755 "$target" "$target/matchlab"

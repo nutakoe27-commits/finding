@@ -58,6 +58,18 @@ async def exercise(base):
                     lambda error, captured=errors: captured.append(str(error)),
                 )
                 await page.goto(base + "/#matches")
+                await expect(page.locator('#age-gate')).to_be_visible()
+                await page.locator('#age-decline').click()
+                await expect(page.locator('#age-message')).to_be_visible()
+                await page.locator('#age-accept').click()
+                await expect(page.locator('#privacy-banner')).to_be_visible()
+                await page.locator('#privacy-reject').click()
+                await expect(page.locator('#privacy-banner')).to_be_hidden()
+                assert (await (await page.request.get(base+'/api/privacy/preferences')).json())['analytics'] is False
+                for document in ('terms','privacy','consent','cookies','advertising-consent'):
+                    response=await page.request.get(base+'/static/legal/'+document+'.html')
+                    assert response.status==200 and 'Кричигин' in await response.text(), document
+                await expect(page.locator('.page-footer')).to_contain_text('510302739790')
                 await page.locator('.match-card[data-event-id="102"]').wait_for()
                 await page.locator(".match-ai-button").first.click()
                 await expect(page.locator("#auth-dialog")).to_be_visible()
@@ -70,6 +82,9 @@ async def exercise(base):
                 username = f"browser_reader_{index}"
                 await page.locator("#auth-username").fill(username)
                 await page.locator("#auth-password").fill(PASSWORD)
+                await page.locator("#auth-terms").check()
+                await page.locator("#auth-personal-data").check()
+                await page.locator("#auth-age").check()
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#auth-dialog")).not_to_be_visible()
                 await asyncio.wait_for(search_started.wait(), timeout=10)
@@ -136,6 +151,13 @@ async def exercise(base):
                 await page.locator("#auth-password").fill(PASSWORD)
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#admin-link")).to_be_visible()
+                if index == 0:
+                    await page.evaluate("Account.api('/api/bookmakers/events/102/explain',{method:'POST',body:'{}'}).catch(()=>{})")
+                    await expect(page.locator('#legal-renewal')).to_be_visible()
+                    for selector in ('#legal-terms','#legal-data','#legal-age'):
+                        await page.locator(selector).check()
+                    await page.locator('#legal-submit').click()
+                    await expect(page.locator('#legal-renewal')).to_be_hidden()
                 await page.locator("#admin-link").click()
                 await page.locator(".admin-metric").first.wait_for()
                 assert not await page.evaluate(

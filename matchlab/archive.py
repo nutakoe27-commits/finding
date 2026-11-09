@@ -118,6 +118,12 @@ def validate_event(value):
         instant(value["kickoff_at"])
     if type(value.get("is_live")) is not bool:
         raise ValueError("Некорректная фаза")
+    if "red_card_presence" in value:
+        cards = value["red_card_presence"]
+        if (value["sport_id"] != 1 or not value["is_live"] or
+            not isinstance(cards, dict) or not cards or
+            any(key not in ("home", "away") or present is not True for key, present in cards.items())):
+            raise ValueError("Некорректная отметка об удалении")
     for field in ("score", "clock", "period_scores"):
         label(value.get(field), 200, True)
     if value.get("primary"):
@@ -455,6 +461,7 @@ def project(e, markets=None):
             e["score"],
             e["clock"],
             e["period_scores"],
+            e.get("red_card_presence"),
             [(m["key"], m["name"], m["parameter"], m["outcomes"]) for m in markets],
         ]
     )
@@ -481,6 +488,7 @@ def project(e, markets=None):
         "live_score": e["score"],
         "live_clock": e["clock"],
         "period_scores": e["period_scores"],
+        "red_card_presence": e.get("red_card_presence"),
         "content_version": version,
         "source_present": True,
         "markets": markets,

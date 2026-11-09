@@ -38,6 +38,7 @@ async def exercise(base):
                     page=await context.new_page(); errors=[]
                     page.on('pageerror',lambda error:errors.append(str(error)))
                     await page.goto(base+'/#matches'); await page.locator('.match-card').first.wait_for()
+                    await page.locator('#age-accept').click(); await page.locator('#privacy-reject').click()
                     assert await page.title()=='prognozich ai — спортивная аналитика'
                     assert await page.locator('.brand').get_attribute('aria-label')=='prognozich ai, матчи'
                     assert (await page.locator('.brand').inner_text()).replace('\n','').replace(' ','')=='prognozichai'
@@ -71,6 +72,7 @@ async def exercise(base):
 
             context=await browser.new_context(viewport={'width':390,'height':900},color_scheme='light')
             page=await context.new_page(); await page.goto(base+'/#matches'); await page.locator('.match-card').first.wait_for()
+            await page.locator('#age-accept').click(); await page.locator('#privacy-reject').click()
             await page.locator('#guide-close').click()
             assert await page.locator('#quick-guide').is_hidden()
             assert await page.locator('#guide-toggle').get_attribute('aria-expanded')=='false'
@@ -89,20 +91,22 @@ async def exercise(base):
             assert await page.locator('#match-search').input_value()==''
             second=await context.new_page(); await second.goto(base+'/#matches'); await second.locator('.match-card').first.wait_for()
             await second.locator('#theme-toggle').click()
-            await page.wait_for_function("document.documentElement.dataset.theme==='light'")
+            await page.wait_for_function("() => document.documentElement.dataset.theme==='light'")
             assert await page.locator('#theme-toggle').get_attribute('aria-pressed')=='false'
             await context.close()
 
             context=await browser.new_context(viewport={'width':390,'height':900},color_scheme='dark')
             page=await context.new_page(); await page.goto(base+'/#matches'); await page.locator('.match-card').first.wait_for()
+            await page.locator('#age-accept').click(); await page.locator('#privacy-reject').click()
             await page.emulate_media(color_scheme='light')
-            await page.wait_for_function("document.documentElement.dataset.theme==='light'")
+            await page.wait_for_function("() => document.documentElement.dataset.theme==='light'")
             await context.close()
 
             context=await browser.new_context(viewport={'width':390,'height':900},color_scheme='light')
             await context.add_init_script("Storage.prototype.getItem=()=>{throw Error('storage blocked')}; Storage.prototype.setItem=()=>{throw Error('storage blocked')}")
             page=await context.new_page(); errors=[]; page.on('pageerror',lambda error:errors.append(str(error)))
             await page.goto(base+'/#matches'); await page.locator('.match-card').first.wait_for()
+            await page.locator('#age-accept').click(); await page.locator('#privacy-reject').click()
             assert await page.locator('html').get_attribute('data-theme')=='light'
             await page.locator('#theme-toggle').click(); assert await page.locator('html').get_attribute('data-theme')=='dark'
             await page.locator('#guide-close').click(); assert await page.locator('#quick-guide').is_hidden()

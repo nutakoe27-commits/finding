@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 from matchlab import push
+from matchlab import accounts
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.storage import Repository
@@ -27,6 +28,8 @@ def subscription():
     )
     return {
         "endpoint": "https://fcm.googleapis.com/fcm/send/fixture-endpoint",
+        "advertising_consent": True,
+        "consent_version": accounts.LEGAL_VERSION,
         "keys": {
             "p256dh": base64.urlsafe_b64encode(public).rstrip(b"=").decode(),
             "auth": base64.urlsafe_b64encode(b"a" * 16).rstrip(b"=").decode(),
@@ -102,6 +105,8 @@ class PushTests(unittest.TestCase):
         return campaign
 
     def test_subscription_opt_in_and_known_gateway_validation(self):
+        without_consent={key:value for key,value in self.sub.items() if key!='advertising_consent'}
+        self.assertEqual(self.client.post('/api/push/subscribe',json=without_consent).status_code,422)
         for endpoint in (
             "http://127.0.0.1/private",
             "https://fcm.googleapis.com.evil.example/send",
@@ -124,6 +129,21 @@ class PushTests(unittest.TestCase):
         self.assertEqual(
             self.client.get("/api/admin/push").json()["audiences"]["all"], 0
         )
+
+    def test_withdrawal_disables_all_devices_and_queued_delivery(self):
+        campaign=self.queue()
+        self.assertEqual(self.client.post('/api/push/unsubscribe-all',json={}).status_code,200)
+        sent=[]
+        push.work_once(self.repo,self.settings,sender=lambda *args:sent.append(args) or 201)
+        self.assertEqual(sent,[])
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM push_ad_consents WHERE revoked_at IS NULL').fetchone()[0],0)
+
+    def test_old_subscription_without_separate_consent_is_not_in_campaign_audience(self):
+        with self.repo.connection() as db:
+            db.execute('INSERT INTO push_subscriptions VALUES (?,?,?,?,?,1,NULL)',
+                       ('legacy','admin_fixture',self.sub['endpoint'],'{}',datetime.now(UTC).isoformat()))
+        self.assertEqual(self.client.get('/api/admin/push').json()['audiences']['all'],0)
 
     def test_send_requires_preview_count_and_cannot_enqueue_twice(self):
         self.client.post("/api/push/subscribe", json=self.sub)

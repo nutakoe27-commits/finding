@@ -83,7 +83,7 @@ def event(row, sports, countries, championships):
             ],
         )
     )
-    return {
+    result = {
         "event_id": str(row["id"]),
         "radar_id": row["radar_id"],
         "sport_id": row["sport_id"],
@@ -101,6 +101,17 @@ def event(row, sports, countries, championships):
         if row["is_live"]
         else raw.get("count_add_line"),
     }
+    # In Winline's football UI R1/R2 signal a red card. Other sports reuse
+    # these fields, and zero/missing values cannot establish that none occurred.
+    cards = raw.get("cards")
+    if row["sport_id"] == 1 and row["is_live"] and isinstance(cards, dict):
+        presence = {
+            side: True for side, key in (("home", "R1"), ("away", "R2"))
+            if type(cards.get(key)) is int and 1 <= cards[key] <= 11
+        }
+        if presence:
+            result["red_card_presence"] = presence
+    return result
 
 
 def age(timestamp):

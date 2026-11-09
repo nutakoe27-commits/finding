@@ -6,7 +6,7 @@ import json
 from .bookmakers import instant
 from .markets import headline_market
 
-ANALYSIS_VERSION = 'private-full-statistics-v10'
+ANALYSIS_VERSION = 'private-full-statistics-v11'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None,archive_history=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -41,7 +41,7 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
     captured_headline = next((market for market in markets if headline and market['key'] == headline['key']), None)
     prices = {item['name']:item['odds'] for item in headline['outcomes']} if headline and captured_headline and len(captured_headline['outcomes']) == len(headline['outcomes']) and all(item['state'] == 'open' for item in headline['outcomes']) else None
     total = sum(1 / value for value in prices.values()) if prices else None
-    return {"event": {key: document.get(key) for key in ("source_event_id", "source_kind", "sport", "sport_label", "event_kind", "title", "home", "away", "competition", "phase", "kickoff_at", "url", "live_score", "live_clock", "period_scores", "final_result", "source_present")},
+    return {"event": {key: document.get(key) for key in ("source_event_id", "source_kind", "sport", "sport_label", "event_kind", "title", "home", "away", "competition", "phase", "kickoff_at", "url", "live_score", "live_clock", "period_scores", "red_card_presence", "final_result", "source_present")},
             "request_time": {"at": current.isoformat(), "kickoff_passed": bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)},
             "snapshot": {"observed_at": document["observed_at"], "capture_started_at": document["capture_started_at"], "content_version":document.get("content_version"),
                          "age_seconds": age, "is_stale": age > (45 if document.get("source_kind")=="stream" else 180) or document.get("source_present") is False, "complete": document["coverage"]["complete"]},

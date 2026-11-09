@@ -1063,6 +1063,35 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
 .auth-dialog #auth-switch { display:block;margin:18px auto; }
 .auth-public-note { padding-top:16px;border-top:1px solid var(--line); }
 .auth-dialog input,.account-grid input,.admin-compose-grid input,.admin-promo-grid input,#admin-link-template { width:100%;min-width:0; }
+.auth-legal { border:0;padding:0;margin:18px 0; }
+.auth-dialog .legal-check { display:flex;align-items:flex-start;gap:10px;margin:12px 0;color:var(--text);font-size:12px;line-height:1.55; }
+.auth-dialog .legal-check input { width:18px;min-width:18px;height:18px;min-height:18px;margin:1px 0 0;accent-color:var(--lime); }
+.account-grid .push-consent { display:flex;align-items:flex-start;gap:10px;margin:14px 0;font-size:12px;line-height:1.55;color:var(--text); }
+.account-grid .push-consent input { width:18px;min-width:18px;height:18px;min-height:18px;margin:1px 0 0;padding:0;accent-color:var(--lime); }
+.push-consent a { color:var(--lime);text-decoration:underline;text-underline-offset:3px; }
+.legal-check a,.privacy-banner a,.age-gate a { color:var(--lime);text-decoration:underline;text-underline-offset:3px; }
+.page-footer { display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,1.3fr);align-items:start;gap:25px 40px;padding:32px 0;font-size:12px; }
+.footer-intro p,.footer-disclaimer { max-width:420px;line-height:1.7;color:var(--muted); }
+.footer-age,.age-badge { display:inline-flex;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:13px;font-weight:700;color:var(--text); }
+.footer-links { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px; }
+.footer-links>div { display:flex;flex-direction:column;align-items:flex-start;gap:9px; }
+.footer-links strong { color:var(--text);font-size:12px; }
+.footer-links a,.footer-links button { color:var(--muted);font-size:12px;line-height:1.45;overflow-wrap:anywhere; }
+.footer-links a:hover,.footer-links button:hover { color:var(--lime); }
+.footer-links button { border:0;padding:0;background:none;text-align:left; }
+.footer-disclaimer { grid-column:1/-1;margin:0;font-size:11px; }
+.privacy-banner { position:fixed;z-index:20;left:50%;bottom:18px;transform:translateX(-50%);width:min(860px,calc(100% - 28px));display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:0 16px 60px #0008; }
+.privacy-banner p { margin:6px 0 0;font-size:12px;line-height:1.6;color:var(--muted); }
+.privacy-replay { display:flex;align-items:flex-start;gap:9px;margin-top:10px;color:var(--muted);font-size:12px;line-height:1.5; }
+.privacy-replay input { width:17px;height:17px;min-width:17px;margin:1px 0 0;accent-color:var(--lime); }
+.privacy-actions,.age-actions { display:flex;gap:9px;flex-wrap:wrap; }
+.privacy-actions button { white-space:nowrap; }
+.age-gate { width:min(440px,calc(100vw - 28px));border:1px solid var(--line);border-radius:20px;padding:28px;background:var(--panel);color:var(--text);box-shadow:0 28px 100px #0007; }
+.age-gate::backdrop { background:#070d10df;backdrop-filter:blur(5px); }
+.age-gate h2 { font-size:25px;margin:18px 0 10px; }
+.age-gate p { line-height:1.7;color:var(--muted); }
+.age-gate>a { display:inline-block;margin-top:18px;font-size:12px; }
+@media(max-width:650px){.page-footer{grid-template-columns:1fr;gap:24px}.footer-links{grid-template-columns:1fr 1fr}.privacy-banner{align-items:stretch;flex-direction:column;gap:12px}.privacy-actions>*{flex:1}.age-actions>*{flex:1}}
 .auth-dialog input,.account-grid input,.admin-compose-grid input,.admin-promo-grid input,#admin-link-template { min-height:44px;padding:12px 13px;border:1px solid var(--line);background:var(--panel2);color:var(--text); }
 .auth-dialog label,.account-grid label,.admin-compose-grid label,#admin-link-form label { display:block;margin:17px 0 8px;font-size:12px;color:var(--muted); }
 .admin-compose-grid textarea { min-height:92px;padding:12px;border:1px solid var(--line);background:var(--panel2);color:var(--text); }
