@@ -72,6 +72,11 @@ class Repository:
                     state TEXT NOT NULL, lease_id TEXT, lease_until TEXT,
                     market_state TEXT, statistics_state TEXT
                 );
+                CREATE TABLE IF NOT EXISTS statistics_request_jobs (
+                    event_id TEXT PRIMARY KEY, job_id TEXT NOT NULL UNIQUE, requested_at TEXT NOT NULL,
+                    state TEXT NOT NULL, lease_id TEXT, lease_until TEXT,
+                    statistics_state TEXT, event_data TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS bookmaker_quotes (
                     id TEXT PRIMARY KEY,
                     event_key TEXT NOT NULL,
@@ -388,7 +393,7 @@ class Repository:
 
     def statistics_blocked_until(self) -> str | None:
         with self.connection() as db:
-            row=db.execute('SELECT last_state,last_attempt_at FROM event_statistics ORDER BY last_attempt_at DESC LIMIT 1').fetchone()
+            row=db.execute("SELECT last_state,last_attempt_at FROM event_statistics WHERE last_state='blocked' ORDER BY last_attempt_at DESC LIMIT 1").fetchone()
         if not row or row['last_state']!='blocked': return None
         until=datetime.fromisoformat(row['last_attempt_at'])+timedelta(hours=1)
         return until.isoformat() if until>datetime.now(timezone.utc) else None
@@ -434,6 +439,70 @@ class Repository:
             job_id=uuid4().hex
             db.execute('INSERT OR REPLACE INTO event_refresh_jobs VALUES (?,?,?,?,?,?,?,?)',(event_id,job_id,current,'queued',None,None,None,None))
             return {'job_id':job_id,'state':'queued','requested_at':current,'market_state':None,'statistics_state':None}
+
+    def request_statistics(self, event: dict) -> dict:
+        """Queue exactly one user-selected event; coalesce repeated requests."""
+        from .winline_browser import event_id_from_url
+        event_id=event.get('source_event_id')
+        if not isinstance(event_id,str) or not event_id.isdigit() or len(event_id)>20 or event_id_from_url(event.get('url') or '')!=event_id:
+            raise ValueError('Некорректное событие статистики.')
+        fields=('source_event_id','url','sport','sport_label','competition','home','away','title','kickoff_at','phase','statistics_url','statistics_link_status','source_kind')
+        payload={key:event.get(key) for key in fields}
+        now=datetime.now(timezone.utc); current=now.isoformat(timespec='microseconds')
+        timeout=(now-timedelta(minutes=5)).isoformat(timespec='microseconds')
+        recent=(now-timedelta(seconds=30)).isoformat(timespec='microseconds')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('DELETE FROM statistics_request_jobs WHERE requested_at<?',((now-timedelta(days=1)).isoformat(timespec='microseconds'),))
+            old=db.execute('SELECT * FROM statistics_request_jobs WHERE event_id=?',(event_id,)).fetchone()
+            previous=json.loads(old['event_data']) if old else {}
+            same_match=all(previous.get(field)==payload.get(field) for field in ('home','away','kickoff_at','source_kind'))
+            if old and same_match and ((old['requested_at']>=timeout and old['state'] in ('queued','running')) or
+                        (old['requested_at']>=recent and old['state']=='finished')):
+                return self._statistics_request_public(old,now)
+            active=db.execute("SELECT COUNT(*) FROM statistics_request_jobs WHERE state IN ('queued','running') AND requested_at>=?",(timeout,)).fetchone()[0]
+            last_minute=db.execute('SELECT COUNT(*) FROM statistics_request_jobs WHERE requested_at>=?',((now-timedelta(minutes=1)).isoformat(timespec='microseconds'),)).fetchone()[0]
+            if active>=20 or last_minute>=30: raise ValueError('Очередь статистики занята. Повторите попытку немного позже.')
+            job_id=uuid4().hex
+            db.execute('INSERT OR REPLACE INTO statistics_request_jobs VALUES (?,?,?,?,?,?,?,?)',
+                       (event_id,job_id,current,'queued',None,None,None,json.dumps(payload,ensure_ascii=False)))
+            return {'job_id':job_id,'state':'queued','requested_at':current,'statistics_state':None}
+
+    @staticmethod
+    def _statistics_request_public(row,now):
+        state=row['state']
+        if state in ('queued','running') and row['requested_at']<(now-timedelta(minutes=5)).isoformat(timespec='microseconds'):
+            state='timeout'
+        return {key:row[key] for key in ('job_id','requested_at','statistics_state')} | {'state':state}
+
+    def statistics_request(self,event_id: str,job_id: str) -> dict | None:
+        with self.connection() as db:
+            row=db.execute('SELECT * FROM statistics_request_jobs WHERE event_id=? AND job_id=?',(event_id,job_id)).fetchone()
+        return self._statistics_request_public(row,datetime.now(timezone.utc)) if row else None
+
+    def claim_statistics_request(self) -> dict | None:
+        now=datetime.now(timezone.utc); current=now.isoformat(timespec='microseconds')
+        with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute("""SELECT * FROM statistics_request_jobs
+                WHERE requested_at>=? AND (state='queued' OR (state='running' AND lease_until<?))
+                ORDER BY requested_at LIMIT 1""",((now-timedelta(minutes=5)).isoformat(timespec='microseconds'),current)).fetchone()
+            if not row: return None
+            lease=uuid4().hex
+            db.execute("UPDATE statistics_request_jobs SET state='running',lease_id=?,lease_until=? WHERE event_id=?",
+                       (lease,(now+timedelta(seconds=270)).isoformat(timespec='microseconds'),row['event_id']))
+            return {'job_id':row['job_id'],'lease_id':lease,'event':json.loads(row['event_data'])}
+
+    def finish_statistics_request(self,job_id: str,lease_id: str,statistics_state: str) -> bool:
+        if any(not isinstance(v,str) or len(v)!=32 or any(c not in '0123456789abcdef' for c in v) for v in (job_id,lease_id)):
+            raise ValueError('Некорректный идентификатор задания.')
+        if statistics_state not in ('ok','blocked','empty','unavailable','missing_link'):
+            raise ValueError('Некорректное состояние статистики.')
+        with self.connection() as db:
+            result=db.execute("""UPDATE statistics_request_jobs SET state='finished',statistics_state=?
+                WHERE job_id=? AND lease_id=? AND state='running' AND lease_until>=?""",
+                (statistics_state,job_id,lease_id,datetime.now(timezone.utc).isoformat(timespec='microseconds')))
+            return result.rowcount==1
 
     @staticmethod
     def _refresh_public(row,now):

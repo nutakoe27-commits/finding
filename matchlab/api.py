@@ -58,6 +58,7 @@ class EventExplainRequest(BaseModel):
     outcome_key: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     observed_at: str | None = Field(default=None, max_length=50)
     notes: str = Field(default="", max_length=2000)
+    statistics_job_id: str | None = Field(default=None,pattern=r"^[a-f0-9]{32}$")
 
     @model_validator(mode="after")
     def selection_requires_market(self):
@@ -274,7 +275,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         snapshot=repo.statistics(event_id) if linked else None
         if snapshot and snapshot['statistics_id']!=statistics_id_from_url(legacy.get('statistics_url') or ''):snapshot=None
         return {'statistics':snapshot,'link_status':legacy.get('statistics_link_status','missing') if linked else 'missing',
-                'statistics_url':legacy.get('statistics_url') if linked else None,'source_blocked_until':repo.statistics_blocked_until()}
+                'statistics_url':legacy.get('statistics_url') if linked else None,'source_blocked_until':repo.statistics_blocked_until(),
+                'capabilities':['statistics_feed_v1']}
 
     @app.get('/api/archive/events/{event_id}/history')
     def archive_history(event_id:str,source:str='stream'):
@@ -323,7 +325,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def statistics_queue(request: Request,limit: int=10):
         require_worker(request)
         if not 1<=limit<=50: raise HTTPException(422,'Некорректный размер очереди.')
-        return {**repo.statistics_queue(limit),'capabilities':['statistics_feed_v1']}
+        # Compatibility for older workers: no automatic provider-wide collection.
+        result=repo.statistics_queue(1)
+        return {**result,'jobs':[],'mode':'on_demand','capabilities':['statistics_feed_v1']}
+
+    def request_match_statistics(event_id: str,request: Request,stream: bool):
+        from . import accounts
+        user=accounts.current_user(request)
+        accounts.mutation(request)
+        if not accounts.agreements_current(repo,user['id']):
+            raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})
+        accounts.limited(repo,'statistics-request:'+user['id'],12,60)
+        if not event_id.isdigit() or len(event_id)>20: raise HTTPException(422,'Некорректный ID события.')
+        if not settings.bookmaker_ingest_token: raise HTTPException(503,'Получение статистики ещё не настроено.')
+        document=archive.document(repo,event_id) if stream else repo.event_markets(event_id)
+        if not document: raise HTTPException(404,'Событие не найдено.')
+        if stream and stream_statistics(event_id)['link_status']=='found':
+            document=repo.event_markets(event_id)
+        document={**document,'source_kind':'stream' if stream else 'legacy'}
+        try: return repo.request_statistics(document)
+        except ValueError as error: raise HTTPException(429,str(error)) from error
+
+    @app.post('/api/bookmakers/events/{event_id}/statistics/request',status_code=202)
+    def request_legacy_statistics(event_id: str,request: Request):
+        return request_match_statistics(event_id,request,False)
+
+    @app.post('/api/archive/events/{event_id}/statistics/request',status_code=202)
+    def request_stream_statistics(event_id: str,request: Request):
+        return request_match_statistics(event_id,request,True)
+
+    def match_statistics_request(event_id: str,job_id: str,request: Request):
+        from . import accounts
+        accounts.current_user(request)
+        if not event_id.isdigit() or len(event_id)>20 or len(job_id)!=32 or any(c not in '0123456789abcdef' for c in job_id):
+            raise HTTPException(422,'Некорректное задание статистики.')
+        job=repo.statistics_request(event_id,job_id)
+        if not job: raise HTTPException(404,'Задание статистики не найдено.')
+        return job
+
+    @app.get('/api/bookmakers/events/{event_id}/statistics/request/{job_id}')
+    def legacy_statistics_request_status(event_id: str,job_id: str,request: Request):
+        return match_statistics_request(event_id,job_id,request)
+
+    @app.get('/api/archive/events/{event_id}/statistics/request/{job_id}')
+    def stream_statistics_request_status(event_id: str,job_id: str,request: Request):
+        return match_statistics_request(event_id,job_id,request)
+
+    @app.post('/api/bookmakers/statistics-requests/claim')
+    async def claim_statistics_request(request: Request):
+        await worker_body(request,1024)
+        return {'job':repo.claim_statistics_request()}
+
+    @app.post('/api/bookmakers/statistics-requests/finish')
+    async def finish_statistics_request(request: Request):
+        body=await worker_body(request,4096)
+        try: done=repo.finish_statistics_request(body.get('job_id',''),body.get('lease_id',''),body.get('statistics_state',''))
+        except ValueError as error: raise HTTPException(422,str(error)) from error
+        if not done: raise HTTPException(409,'Задание устарело или уже завершено.')
+        return {'finished':True}
 
     @app.post('/api/bookmakers/statistics/ingest')
     async def statistics_ingest(request: Request):
@@ -463,13 +522,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if ((stream and request.content_version and request.content_version!=document.get("content_version")) or
             (not stream and request.observed_at and request.observed_at != document["observed_at"])):
             raise HTTPException(409, "Снимок матча обновился. Обновите рынки и повторите запрос.")
+        preparation=None
+        if request.statistics_job_id:
+            preparation=repo.statistics_request(event_id,request.statistics_job_id)
+            if not preparation or preparation['state']!='finished':
+                raise HTTPException(409,'Получение статистики ещё не завершено. Повторите разбор.')
         saved_statistics=stream_statistics(event_id)['statistics'] if stream else repo.statistics(event_id)
         if not stream and saved_statistics and saved_statistics['statistics_id']!=statistics_id_from_url(document.get('statistics_url') or ''):
             saved_statistics=None
         team_statistics=analysis_statistics(saved_statistics)
         archive_history=archive.history(repo,document)
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        key=hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))).encode()).hexdigest()
+        key=hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
         search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
         cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
@@ -492,6 +556,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
                                            notes=request.notes, statistics=statistics,team_statistics=team_statistics,archive_history=archive_history)
+                if preparation:
+                    context['statistics_preparation']={'state':preparation['statistics_state'],'requested_at':preparation['requested_at']}
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             from .web_research import research

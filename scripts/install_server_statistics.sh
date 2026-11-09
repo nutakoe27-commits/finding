@@ -48,6 +48,7 @@ install -m 644 deploy/matchlab-statistics.service "$unit"
 systemctl daemon-reload
 systemctl enable --now matchlab-statistics.service
 echo 'Серверная статистика включена без Mac. Это запуск службы, а не подтверждение доступа к источнику.'
+echo 'Подробная статистика запрашивается для выбранного матча по действию пользователя; массовый сбор отключён.'
 echo 'Проверка: sudo journalctl -u matchlab-statistics -n 20 --no-pager'
 echo 'Состояние: sudo cat /var/lib/matchlab-statistics/status.json'
 echo 'При Access Denied сохраняется статус blocked и пауза перед повтором; рынки продолжают обновляться.'

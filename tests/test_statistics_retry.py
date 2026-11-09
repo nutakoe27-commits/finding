@@ -14,6 +14,36 @@ from matchlab import statistics_worker as worker
 
 
 class RetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_requested_job_fetches_only_the_selected_event_and_finishes(self):
+        client=AsyncMock(); context=AsyncMock(); page=AsyncMock(); context.new_page.return_value=page
+        client.get.return_value=httpx.Response(200,request=httpx.Request('GET','http://localhost/statistics'),json={
+            'link_status':'found','statistics_url':'https://winline.ru/stats/match/1234',
+            'capabilities':['statistics_feed_v1']})
+        client.post.return_value=httpx.Response(200,request=httpx.Request('POST','http://localhost/finish'),json={'finished':True})
+        job={'job_id':'a'*32,'lease_id':'b'*32,'event':{'source_event_id':'123','source_kind':'legacy'}}
+        snapshot={'state':'ok','source_event_id':'123'}
+        with patch.object(worker,'collect_statistics',new_callable=AsyncMock,return_value=snapshot) as collect, \
+             patch.object(worker,'ingest_statistics',new_callable=AsyncMock,return_value={'updated':True}), \
+             patch.object(worker,'refresh_market',new_callable=AsyncMock) as refresh:
+            result=await worker.statistics_request_job(context,client,job)
+        self.assertEqual(result['statistics_state'],'ok')
+        collect.assert_awaited_once()
+        self.assertEqual(collect.await_args.args[1]['source_event_id'],'123')
+        refresh.assert_not_awaited()
+        page.close.assert_awaited_once()
+        self.assertEqual(client.post.await_args.kwargs['json']['statistics_state'],'ok')
+
+    async def test_provider_pause_finishes_without_opening_a_page(self):
+        from datetime import datetime,timedelta,timezone
+        client=AsyncMock(); context=AsyncMock()
+        client.get.return_value=httpx.Response(200,request=httpx.Request('GET','http://localhost/statistics'),json={
+            'source_blocked_until':(datetime.now(timezone.utc)+timedelta(minutes=20)).isoformat()})
+        client.post.return_value=httpx.Response(200,request=httpx.Request('POST','http://localhost/finish'))
+        job={'job_id':'a'*32,'lease_id':'b'*32,'event':{'source_event_id':'123'}}
+        result=await worker.statistics_request_job(context,client,job)
+        self.assertEqual(result['statistics_state'],'blocked')
+        context.new_page.assert_not_awaited()
+
     async def test_old_receiver_disables_feed_and_rejected_detailed_feed_falls_back(self):
         self.assertFalse(worker.feed_supported({}))
         self.assertFalse(worker.feed_supported({'capabilities':'statistics_feed_v1'}))
@@ -114,14 +144,18 @@ class RetryTests(unittest.IsolatedAsyncioTestCase):
             result = await worker.run(args)
         self.assertEqual(result, 0)
         self.assertEqual(waited, [5, 10])
-        self.assertEqual(trace, ["request", "pause", "request", "pause", "request"])
+        self.assertEqual(trace, ["request", "pause", "request", "pause", "request", "request"])
         self.assertEqual(
             [r["state"] for r in reports],
             ["receiver_unavailable", "receiver_unavailable", "idle"],
         )
         self.assertEqual(reports[0]["http_status"], 503)
-        self.assertEqual(reports[0]["operation"], "refresh_claim")
+        self.assertEqual(reports[0]["operation"], "statistics_request_claim")
         self.assertNotIn(key, json.dumps(reports))
+        context.new_page.assert_not_awaited()
+        self.assertEqual([call.args[0] for call in client.post.await_args_list][-2:],
+                         ['/api/bookmakers/statistics-requests/claim','/api/bookmakers/refresh/claim'])
+        client.get.assert_not_awaited()
         browser.close.assert_awaited_once()
 
     async def test_shutdown_interrupts_the_retry_wait(self):

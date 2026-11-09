@@ -148,6 +148,20 @@ class ArchiveTests(unittest.TestCase):
             self.client.get("/api/bookmakers/archive/watch").status_code, 401
         )
 
+    def test_stream_match_queues_statistics_only_when_user_requests_it(self):
+        self.feed([header('101'),header('102')])
+        self.assertIsNone(self.repo.claim_statistics_request())
+        response=self.client.post('/api/archive/events/101/statistics/request',json={})
+        self.assertEqual(response.status_code,202,response.text)
+        job=self.repo.claim_statistics_request()
+        self.assertEqual(job['event']['source_event_id'],'101')
+        self.assertEqual(job['event']['source_kind'],'stream')
+        self.assertEqual(job['event']['url'],'https://winline.ru/stavki/event/101')
+        self.assertIsNone(self.repo.claim_statistics_request())
+        self.assertTrue(self.repo.finish_statistics_request(job['job_id'],job['lease_id'],'missing_link'))
+        status=self.client.get(f"/api/archive/events/101/statistics/request/{job['job_id']}").json()
+        self.assertEqual((status['state'],status['statistics_state']),('finished','missing_link'))
+
     def test_incomplete_feed_does_not_replace_good_catalog(self):
         old = header()
         self.feed([old])

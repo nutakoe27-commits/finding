@@ -57,23 +57,76 @@ class StatisticsTests(unittest.TestCase):
 
     def post(self,value): return self.client.post('/api/bookmakers/statistics/ingest',json=value,headers=self.headers)
 
-    def test_queue_is_protected_and_returns_only_explicitly_linked_events(self):
+    def test_legacy_bulk_queue_is_protected_and_disabled(self):
         self.assertEqual(self.client.get('/api/bookmakers/statistics/queue').status_code,401)
         result=self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()
         self.assertIn('statistics_feed_v1',result['capabilities'])
         self.assertEqual(result['linked_events'],1)
-        self.assertEqual(result['jobs'][0]['statistics_url'],'https://winline.ru/stats/match/72334410')
+        self.assertEqual(result['mode'],'on_demand')
+        self.assertEqual(result['jobs'],[])
         self.repo.import_event_markets(event('124'))
-        self.assertEqual(len(self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs']),1)
+        self.assertEqual(self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs'],[])
 
     def test_each_events_statistics_url_remains_independent(self):
         second=event('124'); second['statistics_url']='https://winline.ru/stats/match/72334422'
         self.repo.import_event_markets(second)
-        jobs=self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs']
+        jobs=self.repo.statistics_queue()['jobs']
         self.assertEqual({job['source_event_id']:job['statistics_url'] for job in jobs},
             {'123':'https://winline.ru/stats/match/72334410','124':'https://winline.ru/stats/match/72334422'})
         wrong=stats(event_id='124')
         self.assertEqual(self.post(wrong).status_code,422)
+
+    def test_requested_statistics_is_authenticated_leased_and_bound_to_one_event(self):
+        self.repo.import_event_markets(event('124'))
+        self.assertIsNone(self.repo.claim_statistics_request())
+        self.client.cookies.clear()
+        url='/api/bookmakers/events/123/statistics/request'
+        self.assertEqual(self.client.post(url,json={}).status_code,401)
+        signed_in(self.client,self.repo)
+        response=self.client.post(url,json={}); self.assertEqual(response.status_code,202,response.text)
+        job=response.json()
+        self.assertEqual(self.client.post(url,json={}).json()['job_id'],job['job_id'])
+        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/claim',json={}).status_code,401)
+        claim=self.client.post('/api/bookmakers/statistics-requests/claim',json={},headers=self.headers).json()['job']
+        self.assertEqual(claim['event']['source_event_id'],'123')
+        self.assertIsNone(self.repo.claim_statistics_request())
+        self.assertEqual(self.client.get(f"/api/bookmakers/events/124/statistics/request/{job['job_id']}").status_code,404)
+        body={'job_id':job['job_id'],'lease_id':claim['lease_id'],'statistics_state':'ok'}
+        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/finish',json={**body,'lease_id':'f'*32},headers=self.headers).status_code,409)
+        self.assertEqual(self.client.post('/api/bookmakers/statistics-requests/finish',json=body,headers=self.headers).status_code,200)
+        status=self.client.get(f"/api/bookmakers/events/123/statistics/request/{job['job_id']}").json()
+        self.assertEqual((status['state'],status['statistics_state']),('finished','ok'))
+        self.assertEqual(self.client.post(url,json={}).json()['job_id'],job['job_id'])
+
+    def test_analysis_waits_for_job_and_receives_the_result(self):
+        job=self.client.post('/api/bookmakers/events/123/statistics/request',json={}).json()
+        payload={'statistics_job_id':job['job_id']}
+        self.assertEqual(self.client.post('/api/bookmakers/events/123/explain',json=payload).status_code,409)
+        self.assertEqual(self.post(stats()).status_code,200)
+        claim=self.repo.claim_statistics_request()
+        self.assertTrue(self.repo.finish_statistics_request(claim['job_id'],claim['lease_id'],'ok'))
+        with patch('matchlab.api.qwen.explain_event',return_value='Разбор.') as completion:
+            response=self.client.post('/api/bookmakers/events/123/explain',json=payload)
+        self.assertEqual(response.status_code,200,response.text)
+        context=completion.call_args.args[1]
+        self.assertEqual(context['statistics_preparation']['state'],'ok')
+        self.assertEqual(context['team_statistics']['statistics_id'],'72334410')
+
+    def test_expired_statistics_lease_cannot_be_finished_by_old_worker(self):
+        self.client.post('/api/bookmakers/events/123/statistics/request',json={})
+        first=self.repo.claim_statistics_request()
+        with self.repo.connection() as db:
+            db.execute('UPDATE statistics_request_jobs SET lease_until=? WHERE event_id=?',((datetime.now(timezone.utc)-timedelta(seconds=1)).isoformat(timespec='microseconds'),'123'))
+        second=self.repo.claim_statistics_request()
+        self.assertFalse(self.repo.finish_statistics_request(first['job_id'],first['lease_id'],'ok'))
+        self.assertTrue(self.repo.finish_statistics_request(second['job_id'],second['lease_id'],'blocked'))
+
+    def test_later_success_does_not_remove_provider_pause(self):
+        self.post(stats(state='blocked'))
+        second=event('124'); second.update(home='Спартак М',away='Акрон Тольятти',statistics_url='https://winline.ru/stats/match/72334410')
+        self.repo.import_event_markets(second)
+        self.assertEqual(self.post(stats(event_id='124')).status_code,200)
+        self.assertIsNotNone(self.repo.statistics_blocked_until())
 
     def test_new_statistics_button_survives_partial_prices_without_restamping_old_prices(self):
         previous=self.repo.event_markets('123')

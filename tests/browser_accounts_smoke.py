@@ -28,7 +28,7 @@ PASSWORD = "browser-fixture-password-123"
 MARKER = "FULL_AI_STATISTICS_END_MARKER"
 
 
-async def exercise(base):
+async def exercise(base, repo):
     from playwright.async_api import async_playwright, expect
 
     async with async_playwright() as pw:
@@ -87,6 +87,16 @@ async def exercise(base):
                 await page.locator("#auth-age").check()
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#auth-dialog")).not_to_be_visible()
+                if index == 0:
+                    job=None
+                    for _ in range(100):
+                        job=repo.claim_statistics_request()
+                        if job: break
+                        await asyncio.sleep(.1)
+                    assert job and job['event']['source_event_id']=='102', job
+                    assert not search_started.is_set(), 'Анализ запущен до завершения получения статистики'
+                    await expect(page.locator('#ai-wait-message')).to_contain_text('статистику')
+                    assert repo.finish_statistics_request(job['job_id'],job['lease_id'],'ok')
                 await asyncio.wait_for(search_started.wait(), timeout=10)
                 await expect(page.locator('#ai-wait')).to_be_visible()
                 await expect(page.locator('#ai-wait')).to_contain_text('Готовим разбор')
@@ -115,6 +125,7 @@ async def exercise(base):
                 assert not await page.evaluate('Boolean(window.injected)')
                 await expect(page.locator("#account-button")).to_have_text(username)
                 assert MARKER in REQUESTS[-1]["team_statistics"]["sections"][0]["text"]
+                assert REQUESTS[-1]['statistics_preparation']['state']=='ok'
                 await page.locator("#team-statistics > summary").click()
                 assert MARKER not in await page.locator("#team-statistics").inner_text()
                 assert (
@@ -295,7 +306,7 @@ def main():
                             time.sleep(0.1)
                     else:
                         raise AssertionError("App did not start")
-                    asyncio.run(exercise(base))
+                    asyncio.run(exercise(base,repo))
                     print(
                         "Registration, private AI, compact statistics and admin desktop/mobile: OK"
                     )

@@ -6,7 +6,7 @@ const state = {
   marketDetailRequest:0, marketDocument:null, eventId:null, selection:null,
   analysisContext:null, detailTab:"markets", route:"", phase:"upcoming", catalogReturn:"#matches",
   favorites:new Set(), historyRequest:0, statusRequest:0, explainRequest:0,
-  aiBusy:false, predicting:false, pendingSelection:null, toastTimer:null,
+  aiBusy:false, aiStage:"analysis", predicting:false, pendingSelection:null, toastTimer:null,
   sport:"football", sports:[], refreshRequest:0, streamEvent:false, catalogSource:null, archiveOffset:0, archiveRequest:0,
 };
 const themeMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
@@ -670,11 +670,13 @@ function syncAIButton() {
 }
 let aiWaitTimer = null;
 const aiWaitMessages = ["Проверяем доступные сведения о матче.", "Свежесть источников влияет на вывод.", "Если сведений мало, мы отметим ограничения.", "Подготовка ответа может занять некоторое время."];
+const statisticsWaitMessages = ["Получаем статистику выбранного матча.", "Проверяем форму и встречи участников.", "Данные источника загружаются; затем начнётся разбор."];
 function startAIWait() {
   clearInterval(aiWaitTimer);
   let index = 0;
-  $("ai-wait-message").textContent = aiWaitMessages[index];
-  aiWaitTimer = setInterval(() => { index = (index + 1) % aiWaitMessages.length; $("ai-wait-message").textContent = aiWaitMessages[index]; }, 8500);
+  const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
+  show();
+  aiWaitTimer = setInterval(() => { index++; show(); }, 8500);
 }
 function stopAIWait() { clearInterval(aiWaitTimer); aiWaitTimer = null; }
 function selectAI(market = null, outcome = null) {
@@ -713,7 +715,9 @@ function renderAIAnalysisMeta() {
   const market = context.markets.find(item => item.key === context.selection.market_key);
   const outcome = market?.outcomes.find(item => item.key === context.selection.outcome_key);
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
-  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}`;
+  const prep=context.statistics_preparation?.state;
+  const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
+  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}${prepNote}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }
@@ -811,7 +815,7 @@ function renderTeamStatistics(data) {
   const available=snapshot?.state === "ok";
   const blocked=data?.link_status === "found" && Date.parse(data?.source_blocked_until || "") > Date.now();
   $("team-statistics-status").textContent=available ? stale ? "· последнее обновление давно" : snapshot.capture_kind === "fast" ? "· предварительная сводка" : "· краткая сводка" : blocked ? "· временно недоступна" : "· пока нет данных";
-  $("team-statistics-note").textContent=available ? `Обновлено ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Включает результат этой встречи." : ""}${blocked ? " Источник временно ограничил обновление; показаны сохранённые данные." : ""}` : blocked ? "Источник временно ограничил доступ к расширенной статистике. Сборщик повторит проверку; доступная история показана ниже." : "Расширенная статистика пока недоступна. Ниже появятся последние игры из накопленной истории, когда данные будут получены.";
+  $("team-statistics-note").textContent=available ? `Обновлено ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Включает результат этой встречи." : ""}${blocked ? " Источник временно ограничил обновление; показаны сохранённые данные." : ""}` : blocked ? "Источник временно ограничил доступ к расширенной статистике. Повторный запрос будет доступен после паузы." : "Статистику этого матча запросим при запуске ИИ-разбора. Ниже показана доступная история.";
   if(available && snapshot.capture_kind === "fast") $("team-statistics-note").textContent+=" Доступна предварительная информация; подробные показатели ещё не получены.";
   if(available && Array.isArray(snapshot.observed_views) && snapshot.observed_views.length<3) $("team-statistics-note").textContent+=" Часть вкладок источника пока недоступна.";
   if(available && snapshot.sections_truncated) $("team-statistics-note").textContent+=" Часть данных не вошла в снимок.";
@@ -881,17 +885,45 @@ async function requestAI() {
   window.ProductAnalytics?.goal('ai_request_start');
   const request = ++state.explainRequest, selection = state.selection ? {...state.selection} : null;
   const eventId = state.eventId, forecastId = forecast?.id;
-  state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; startAIWait(); syncAIButton(); showError("ai-request-error", "");
+  state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; state.aiStage = document ? "statistics" : "analysis"; startAIWait(); syncAIButton(); showError("ai-request-error", "");
   $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-analysis-sources").replaceChildren();
   $("explanation").setAttribute("aria-busy", "true");
   try {
+    const current=()=>Account.user?.id === accountId && request === state.explainRequest && eventId === state.eventId;
+    let statisticsJobId=null, preparationNotice="";
+    if(document) {
+      const prefix=eventAPI(eventId);
+      try {
+        const queued=await api(prefix+"/statistics/request",{method:"POST",body:"{}",cache:"no-store"});
+        let finished=null;
+        for(let attempt=0;attempt<60 && current();attempt++) {
+          const status=await api(prefix+"/statistics/request/"+queued.job_id,{cache:"no-store"});
+          if(status.state === "finished") {finished=status; break;}
+          if(status.state === "timeout") break;
+          await new Promise(resolve=>setTimeout(resolve,2000));
+        }
+        if(!current()) return;
+        if(finished) statisticsJobId=finished.job_id;
+        else preparationNotice=" Статистику не удалось дождаться; использованы доступные данные.";
+      } catch(error) {
+        if(error.status===401 || error.status===403) throw error;
+        preparationNotice=" Статистику сейчас обновить не удалось; использованы доступные данные.";
+      }
+      if(!current()) return;
+      await loadEvent(true);
+      if(!current()) return;
+    }
+    state.aiStage="analysis"; $("ai-wait-message").textContent=aiWaitMessages[0];
+    const latest=document ? state.marketDocument : null;
+    if(document && !latest) throw new Error("Не удалось обновить матч. Повторите разбор.");
     const endpoint = document ? eventAPI(eventId)+"/explain" : "/api/explain";
-    const body = document ? {content_version:document.content_version || null, observed_at:document.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value} : {forecast_id:forecastId,notes:$("notes").value};
+    const body = document ? {content_version:latest.content_version || null, observed_at:latest.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value, statistics_job_id:statisticsJobId} : {forecast_id:forecastId,notes:$("notes").value};
     const result = await api(endpoint, {method:"POST",body:JSON.stringify(body)});
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
     renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
     window.ProductAnalytics?.goal(result.analysis_type === 'limited_summary' ? 'ai_summary_result' : 'ai_model_result');
     if (result.context) {
+      result.preparation_notice=preparationNotice;
       state.aiAnalysis = result; renderAIAnalysisMeta();
     }
   } catch (error) {
