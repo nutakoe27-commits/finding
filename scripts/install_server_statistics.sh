@@ -12,7 +12,7 @@ mem=dict(line.split(':',1) for line in Path('/proc/meminfo').read_text().splitli
 available=int(mem.get('MemAvailable','0 kB').split()[0])//1024
 if available<2048:
     raise SystemExit(f'Доступно {available} МиБ RAM. Нужен сервер сборщика с запасом не менее 2048 МиБ; установка остановлена.')
-print(f'Доступно {available} МиБ RAM; дополнительный браузер ограничен 1024 МиБ и одним ядром CPU.')
+print(f'Доступно {available} МиБ RAM; дополнительный браузер ограничен 1024 МиБ и двумя логическими ядрами CPU.')
 PY
 target=/opt/matchlab-statistics
 unit=/etc/systemd/system/matchlab-statistics.service
