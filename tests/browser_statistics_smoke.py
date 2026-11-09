@@ -23,7 +23,7 @@ from sports_fixtures import PROJECTIONS, document
 PUBLIC=json.loads((ROOT/'tests/fixtures/team_statistics_projection.json').read_text())
 
 
-def widget(blocked=False, view='overview', frozen=False, dynamic=False):
+def widget(blocked=False, view='overview', frozen=False, dynamic=False, delayed=False):
     if blocked: return '<h1>Access Denied</h1><p>You do not have permission to access this server.</p>'
     result='<body data-testid="hydrated"><div data-testid="match-header">'+escape(PUBLIC['header']).replace('\n','<br>')+'</div>'
     result+='<nav><a href="/winline/ru/match/72334410">Обзор</a><a href="/winline/ru/match/72334410/report">Отчет о матче</a><a href="/winline/ru/match/72334410/statistics">Статистика</a></nav>'
@@ -49,7 +49,11 @@ def widget(blocked=False, view='overview', frozen=False, dynamic=False):
     }</script>""".replace('FROZEN','true' if frozen else 'false')
     if dynamic:
         result+='<div id="unrelated-clock">0</div><script>setInterval(()=>document.querySelector("#unrelated-clock").textContent=String(Date.now()),100)</script>'
-    return result+'<form>private-statistics-form<input value="private-statistics-input"></form></body>'
+    result+='<form>private-statistics-form<input value="private-statistics-input"></form></body>'
+    if delayed:
+        result=result.replace('<body data-testid="hydrated">',
+            '<body data-testid="hydrated" style="display:none"><script>setTimeout(()=>document.body.style.display="block",2800)</script>',1)
+    return result
 
 
 async def exercise(base,repo):
@@ -62,6 +66,7 @@ async def exercise(base,repo):
             blocked_report=False
             frozen=False
             dynamic=False
+            delayed=False
             async def fixture(route):
                 if blocked_report and route.request.url.endswith('/report'):
                     await route.fulfill(status=403,content_type='text/html',body='Access Denied')
@@ -70,7 +75,7 @@ async def exercise(base,repo):
                     body='<iframe src="https://statshub.yunai.tech/winline/ru/match/72334410"></iframe>'
                 elif 'statshub.yunai.tech' in route.request.url:
                     view=route.request.url.rsplit('/',1)[-1]
-                    body=widget(blocked,view if view in ('report','statistics') else 'overview',frozen,dynamic)
+                    body=widget(blocked,view if view in ('report','statistics') else 'overview',frozen,dynamic,delayed)
                 elif '/stavki/sport/' in route.request.url: body='<p>Market fixture</p>'
                 else: raise AssertionError(route.request.url)
                 await route.fulfill(status=200,content_type='text/html',body='<meta charset="utf-8">'+body)
@@ -96,6 +101,10 @@ async def exercise(base,repo):
             assert ticking['state']=='ok' and ticking['season_filters_complete'] is True,ticking
             assert not any('unrelated-clock' in s['text'] for s in ticking['sections'])
             dynamic=False
+            delayed=True
+            late=await collect_statistics(page,parent,wait_seconds=3.3)
+            assert late['state']=='ok' and late['sections'],late
+            delayed=False
             frozen=True
             stale=await collect_statistics(page,parent,wait_seconds=8)
             assert stale['state']=='ok' and stale['season_filters_complete'] is False

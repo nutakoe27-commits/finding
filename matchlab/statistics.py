@@ -175,23 +175,32 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
     attempted=lambda: datetime.now(timezone.utc).isoformat()
     base={'format':FORMAT,'source_event_id':job['source_event_id'],'event_url':job['url'],
           'statistics_url':job['statistics_url'],'state':'unavailable'}
-    diagnostic={'provider_frames':0,'matching_frames':0,'samples':0,'valid_samples':0,'changes':0}
+    diagnostic={'provider_frames':0,'matching_frames':0,'samples':0,'header_samples':0,
+                'section_samples':0,'valid_samples':0,'changes':0,'evaluation_errors':0}
     try:
         response=await page.goto(job['statistics_url'],wait_until='domcontentloaded',timeout=45000)
         if response and response.status in (401,403,429):
             return {**base,'state':'blocked','attempted_at':attempted()}
         stats_id=statistics_id_from_url(job['statistics_url'])
-        async def read_stable(frame, seconds, require_sections):
-            deadline=time.monotonic()+seconds; previous=None; stable=0
+        async def read_stable(frame, seconds, require_sections, *, allow_grace=False):
+            deadline=time.monotonic()+seconds; previous=None; stable=0; grace_used=False
             while time.monotonic()<deadline:
                 try: data=await asyncio.wait_for(frame.evaluate(STATS_SCRIPT),timeout=5)
                 except Exception:
+                    diagnostic['evaluation_errors']+=1
                     await asyncio.sleep(.5); continue
                 if re.search(r'access denied|you don.t have permission|проверка безопасности',data['body'],re.I):
                     return 'blocked', None
                 diagnostic['samples']+=1
+                diagnostic['header_samples']+=bool(data['header'])
+                diagnostic['section_samples']+=bool(data['sections'])
                 if data['header'] and (data['sections'] or not require_sections):
                     diagnostic['valid_samples']+=1
+                    # If content appears just before the deadline, give it a
+                    # bounded chance to be confirmed instead of dropping it.
+                    if allow_grace and not grace_used:
+                        deadline=max(deadline,time.monotonic()+10)
+                        grace_used=True
                     # The surrounding widget may contain a ticking clock or
                     # unrelated dynamic text. Only compare what is saved.
                     signature=(data['header'],[(s['title'],s['text']) for s in data['sections']])
@@ -208,7 +217,7 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
                     re.fullmatch(r'/winline/(?:ru|en)/match/\d{1,20}/?',urlsplit(frame.url).path)]
             diagnostic['matching_frames']=max(diagnostic['matching_frames'],len(frames))
             for frame in frames:
-                status,data=await read_stable(frame,max(1,deadline-time.monotonic()),True)
+                status,data=await read_stable(frame,max(1,deadline-time.monotonic()),True,allow_grace=True)
                 if status=='blocked': return {**base,'state':'blocked','attempted_at':attempted()}
                 if status!='ok': continue
                 header=data['header']; first_at=attempted(); provider_url=frame.url
@@ -311,9 +320,10 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
                 if season_filters_complete is not None: result['season_filters_complete']=season_filters_complete
                 return result
             await asyncio.sleep(.5)
-        LOG.warning('Statistics empty for event %s: provider_frames=%d matching_frames=%d samples=%d valid_samples=%d changes=%d',
+        LOG.warning('Statistics empty for event %s: provider_frames=%d matching_frames=%d samples=%d header_samples=%d section_samples=%d valid_samples=%d changes=%d evaluation_errors=%d',
                     job['source_event_id'],diagnostic['provider_frames'],diagnostic['matching_frames'],
-                    diagnostic['samples'],diagnostic['valid_samples'],diagnostic['changes'])
+                    diagnostic['samples'],diagnostic['header_samples'],diagnostic['section_samples'],
+                    diagnostic['valid_samples'],diagnostic['changes'],diagnostic['evaluation_errors'])
         return {**base,'state':'empty','attempted_at':attempted()}
     except Exception:
         return {**base,'state':'unavailable','attempted_at':attempted()}
