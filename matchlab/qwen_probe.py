@@ -6,7 +6,7 @@ import time
 from urllib.parse import quote
 
 from . import qwen
-from .event_reasoning import Budget,EXTRACT,records_for,encoded,evidence_payload
+from .event_reasoning import Budget,EXTRACT,DIRECT,records_for,encoded,evidence_payload
 
 
 def saved_context(settings):
@@ -25,15 +25,16 @@ def inspect_context(settings):
     if context is None:return result|{'sample':'no_saved_analysis'}
     records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
     for label,payload in (('raw_context',context),('single_evidence_request',evidence_payload(context,records))):
-        messages=[{'role':'system','content':EXTRACT},{'role':'user','content':encoded(payload)}]
+        messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
         item={'input_bytes':sum(len(m['content'].encode()) for m in messages)}
         try:
             reply=qwen._request(replace(budget.token_settings,qwen_timeout=min(10,settings.qwen_timeout)),'post','/tokenize',
                 json={'model':settings.qwen_model,'messages':messages,'add_generation_prompt':True})
             count=reply.get('count')
             if type(count) is not int or count<0:raise ValueError('Invalid tokenizer count')
-            required=count+settings.qwen_max_tokens+256
-            item.update(input_tokens=count,reserved_output_tokens=settings.qwen_max_tokens,minimum_context_tokens=required,
+            output=min(settings.qwen_max_tokens,512)
+            required=count+output+256
+            item.update(input_tokens=count,reserved_output_tokens=output,minimum_context_tokens=required,
                         fits_advertised_window=required<=budget.limit)
         except (ValueError,AttributeError,TypeError) as error:
             item['tokenizer_error']=qwen.event_error_code(error)

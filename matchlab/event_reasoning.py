@@ -1,4 +1,4 @@
-"""Bounded map/reduce over all saved event data, with verbatim evidence citations."""
+"""Full-context reasoning with validated citations and bounded map/reduce fallback."""
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 import json
@@ -29,6 +29,13 @@ Return {"arguments":[{"text":"brief evidence-based conclusion","evidence_ids":["
 Provide 1-3 short arguments, each <=200 characters with 1-3 existing evidence IDs. Explain relationships, do not invent causes.
 Do not claim a market-only estimate is an independent prediction. No percentages or technical IDs in text.
 Use Russian; the server displays all computed probabilities separately.'''
+DIRECT=RULES+'''
+Read ALL records and write final arguments for the match forecast, comparing support and counterarguments.
+Return {"observations":[{"text":"brief evidence-based argument","quotes":[{"source":"S1","quote":"verbatim data excerpt"}]}]}.
+Provide 1-2 arguments in Russian, text <=100 characters each, with ONE exact quote <=60 characters each.
+Every source ID must exist in records. Check periods, filters, dates and participant identities.
+Do not turn a market estimate into an independent prediction. No percentages or technical IDs in public text.
+The server displays computed probabilities separately; explain the evidence without repeating those numbers.'''
 
 
 def encoded(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -135,6 +142,8 @@ class Budget:
         return self.counts[key]
 
     def batches(self,values,system,build,output):
+        if not values:return []
+        if self.fits(system,build(values),output):return [values]
         result=[];start=0
         while start<len(values):
             hi=min(len(values)-start,512);lo=1;best=0
@@ -207,7 +216,8 @@ def analyze(settings,context,complete,request):
     source_records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
     build=lambda records:evidence_payload(context,records)
     scope=build([])['match']
-    batches=budget.batches(source_records,EXTRACT,build,768)
+    single_pass=budget.fits(DIRECT,build(source_records),512)
+    batches=[source_records] if single_pass else budget.batches(source_records,EXTRACT,build,768)
     lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={}
     logger=logging.getLogger('uvicorn.error')
     def mark_valid():
@@ -255,12 +265,14 @@ def analyze(settings,context,complete,request):
             logger.info('Qwen part finished: call=%s stage=%s status=%s elapsed_ms=%s',call,detail['stage'],detail['status'],detail['elapsed_ms'])
 
     def extract(records):
+        nonlocal single_pass
         if stop.is_set():
             with lock:leaves.append(False)
             return []
         try:
-            reply=invoke(EXTRACT,build(records))
+            reply=invoke(DIRECT if single_pass else EXTRACT,build(records),512 if single_pass else 768,final=single_pass)
             observations=verified_observations(reply,records)
+            if single_pass and not observations:raise ValueError('Invalid final analysis')
             mark_valid()
             with lock:accepted.update(r['id'] for r in records);leaves.append(True)
             return observations
@@ -269,6 +281,7 @@ def analyze(settings,context,complete,request):
             code=error_code(error)
             with lock:errors.append(code)
             if code=='context_limit' and len(records)>1 and not stop.is_set():
+                single_pass=False
                 mid=len(records)//2
                 return extract(records[:mid])+extract(records[mid:])
             if code in ('connection','proxy','authentication','model_or_endpoint','provider_http','timeout') or (code=='context_limit' and len(records)==1):
@@ -317,23 +330,32 @@ def analyze(settings,context,complete,request):
         # No failed connection is retried just to generate a final paragraph.
         if stop.is_set():raise ModelStopped(stopped_reason.get('value','timeout'))
         if not accepted:raise ValueError('Нет обработанных частей контекста.')
-        for final_attempt in range(6):
-            for _ in range(10):
-                if budget.fits(SYNTHESIZE,final_build(evidence),512):break
-                groups=budget.batches(evidence,REDUCE,lambda group:{'stage':'reduce','selection_limit':max(1,min(3,len(group)//2)),'candidates':group},128)
-                if all(len(g)==1 for g in groups):raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
-                selected=[]
-                for group in groups:selected.extend(reduce_group(group))
-                evidence=selected
+        if single_pass:
+            arguments=[]
+            for item in all_evidence:
+                if not item['id'].startswith('E'):continue
+                text=('По неподтверждённым сообщениям: ' if item['unverified'] else '')+item['text']
+                arguments.append(text)
+                citations.append({'text':text,'evidence_ids':[item['id']]})
+            final_ok=bool(arguments)
+        else:
+            for final_attempt in range(6):
+                for _ in range(10):
+                    if budget.fits(SYNTHESIZE,final_build(evidence),512):break
+                    groups=budget.batches(evidence,REDUCE,lambda group:{'stage':'reduce','selection_limit':max(1,min(3,len(group)//2)),'candidates':group},128)
+                    if all(len(g)==1 for g in groups):raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
+                    selected=[]
+                    for group in groups:selected.extend(reduce_group(group))
+                    evidence=selected
+                else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
+                try:
+                    reply=invoke(SYNTHESIZE,final_build(evidence),512,final=True)
+                    arguments,citations=synthesis_arguments(reply,evidence);mark_valid();final_ok=True;break
+                except (ValueError,TypeError,AttributeError) as error:
+                    mark_invalid(error)
+                    if error_code(error)!='context_limit' or final_attempt==5:raise
+                    errors.append('context_limit');budget.limit=max(1024,budget.limit//2);budget.counts.clear()
             else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
-            try:
-                reply=invoke(SYNTHESIZE,final_build(evidence),512,final=True)
-                arguments,citations=synthesis_arguments(reply,evidence);mark_valid();final_ok=True;break
-            except (ValueError,TypeError,AttributeError) as error:
-                mark_invalid(error)
-                if error_code(error)!='context_limit' or final_attempt==5:raise
-                errors.append('context_limit');budget.limit=max(1024,budget.limit//2);budget.counts.clear()
-        else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
     except (ValueError,TypeError,AttributeError) as error:
         final_error=error_code(error)
         if not isinstance(error,ModelStopped):errors.append(final_error)
@@ -355,5 +377,6 @@ def analyze(settings,context,complete,request):
         'outcomes_completed':sum(len(context['markets'][index].get('outcomes',[])) for index,ids in market_records.items() if ids<=accepted),
         'context_tokens':budget.limit,'tokenizer_available':budget.tokenizer is True,'elapsed_ms':int((time.monotonic()-start)*1000),
         'batch_tokens':getattr(settings,'qwen_batch_tokens',4096),'parallelism':getattr(settings,'qwen_parallelism',1),'attempts':attempts,
+        'pipeline':'single_pass' if single_pass else 'map_reduce',
         'arguments':citations,'evidence':all_evidence,'errors':dict((c,errors.count(c)) for c in set(errors))}
     return arguments,diagnostics

@@ -13,7 +13,7 @@ from dataclasses import replace
 from matchlab.config import Settings
 from matchlab import qwen
 from matchlab.storage import Repository
-from matchlab.event_reasoning import analyze,records_for,verified_observations,synthesis_arguments
+from matchlab.event_reasoning import Budget,analyze,records_for,verified_observations,synthesis_arguments
 from reasoning_helpers import reply,leaf_values,record_values
 
 
@@ -75,8 +75,56 @@ class ReasoningTests(unittest.TestCase):
         _,diag=analyze(replace(self.settings(),qwen_batch_tokens=131072),context_large(),model.complete,model.request)
         self.assertEqual(diag['state'],'ready')
         self.assertEqual(diag['parts_total'],1)
-        self.assertEqual(diag['model_calls'],2)
+        self.assertEqual(diag['model_calls'],1)
+        self.assertEqual(diag['pipeline'],'single_pass')
         self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
+
+    def test_more_than_512_records_can_fit_in_one_source_request_without_losing_values(self):
+        model=FakeModel(limit=131072)
+        settings=replace(self.settings(),qwen_batch_tokens=128000)
+        values=[{'id':f'S{i}','path':f'/markets/{i}','data':'Данные матча '*20} for i in range(650)]
+        budget=Budget(settings,model.request)
+        groups=budget.batches(values,'Read these records.',lambda rows:{'records':rows},512)
+        self.assertEqual(groups,[values])
+
+    def test_single_pass_preserves_full_context_and_does_not_repeat_it_in_synthesis(self):
+        model=FakeModel(limit=131072);ctx=context_large()
+        arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),ctx,model.complete,model.request)
+        self.assertEqual(diag['state'],'ready')
+        self.assertEqual(len(model.payloads),1)
+        self.assertEqual(record_values(model.payloads[0]['records']),leaf_values(ctx))
+        self.assertTrue(arguments)
+        self.assertTrue(diag['arguments'][0]['evidence_ids'][0].startswith('E'))
+
+    def test_single_pass_uses_configured_timeout_and_one_token_count(self):
+        model=FakeModel(limit=131072);requests=[];timeouts=[];outputs=[]
+        def request(settings,method,path,**kwargs):
+            requests.append(path)
+            return model.request(settings,method,path,**kwargs)
+        def complete(settings,messages):
+            timeouts.append(settings.qwen_timeout);outputs.append(settings.qwen_max_tokens)
+            return model.complete(settings,messages)
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000,qwen_timeout=140,qwen_analysis_timeout=150),
+                       context_large(),complete,request)
+        self.assertEqual(diag['state'],'ready')
+        self.assertEqual(requests.count('/tokenize'),1)
+        self.assertEqual(timeouts,[140])
+        self.assertEqual(outputs,[512])
+
+    def test_single_pass_rejection_falls_back_to_validated_map_reduce(self):
+        model=FakeModel(limit=131072,hard_bytes=6500)
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),model.complete,model.request)
+        self.assertEqual(diag['state'],'ready')
+        self.assertEqual(diag['pipeline'],'map_reduce')
+        self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
+        self.assertIn('synthesis',[payload['stage'] for payload in model.payloads])
+
+    def test_empty_single_pass_is_not_reported_as_success(self):
+        model=FakeModel(limit=131072)
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),
+                       lambda *args: '{"observations":[]}',model.request)
+        self.assertEqual(diag['state'],'unavailable')
+        self.assertEqual(diag['model_calls'],1)
 
     def test_timeout_stops_future_calls_including_final_synthesis(self):
         model=FakeModel(limit=32768);calls=[]

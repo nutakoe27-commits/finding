@@ -28,8 +28,9 @@ class ProbeTests(unittest.TestCase):
             if path=='/tokenize':return {'count':60000 if json.loads(kwargs['json']['messages'][1]['content']).get('stage')=='evidence' else 50000}
             self.fail('Unexpected model generation')
         with patch('matchlab.qwen._request',side_effect=request):report=inspect_context(self.settings)
-        self.assertEqual(report['raw_context']['minimum_context_tokens'],51280)
-        self.assertEqual(report['single_evidence_request']['minimum_context_tokens'],61280)
+        self.assertEqual(report['raw_context']['minimum_context_tokens'],50768)
+        self.assertEqual(report['single_evidence_request']['minimum_context_tokens'],60768)
+        self.assertEqual(report['single_evidence_request']['reserved_output_tokens'],512)
         self.assertFalse(report['single_evidence_request']['fits_advertised_window'])
         self.assertNotIn('private',json.dumps(report))
         text=calls[-1][2]['json']['messages'][1]['content']
