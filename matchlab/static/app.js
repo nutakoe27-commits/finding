@@ -728,11 +728,13 @@ function syncAIButton() {
 }
 let aiWaitTimer = null;
 const aiWaitMessages = ["Проверяем доступные сведения о матче.", "Свежесть источников влияет на вывод.", "Если сведений мало, мы отметим ограничения.", "Подготовка ответа может занять некоторое время."];
+const jobWaitMessages = ["Модель сопоставляет сведения о матче.", "Разбор выполняется в фоне и сохранится в истории.", "Большой объём данных требует времени.", "Можно вернуться к матчу позже — повторный запрос не нужен."];
+const queueWaitMessages = ["Разбор в очереди. Ожидаем освобождения модели.", "Задание сохранено. Результат появится в истории."];
 const statisticsWaitMessages = ["Получаем статистику выбранного матча.", "Проверяем форму и встречи участников.", "Данные источника загружаются; затем начнётся разбор."];
 function startAIWait() {
   clearInterval(aiWaitTimer);
   let index = 0;
-  const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
+  const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : state.aiStage === "queued" ? queueWaitMessages : state.aiStage === "background" ? jobWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
   show();
   aiWaitTimer = setInterval(() => { index++; show(); }, 8500);
 }
@@ -933,6 +935,29 @@ function setDetailTab(tab) {
     $("tab-" + value).setAttribute("aria-selected", String(selected)); $("tab-" + value).tabIndex = selected ? 0 : -1;
   }
 }
+async function waitForAnalysisJob(job, current) {
+  let failures=0;
+  while(current()) {
+    if(job.state === "completed") {
+      if(!job.result) throw new Error("Разбор завершён. Откройте результат в истории.");
+      return job.result;
+    }
+    if(job.state === "failed") throw new Error(job.error || "Не удалось завершить разбор. Попытка не списана.");
+    const stage=job.state === "queued" ? "queued" : "background";
+    if(state.aiStage !== stage) {
+      state.aiStage=stage;
+      $("ai-wait-message").textContent=(stage === "queued" ? queueWaitMessages : jobWaitMessages)[0];
+    }
+    await new Promise(resolve=>setTimeout(resolve,2000));
+    if(!current()) return null;
+    try { job=await api("/api/analysis-jobs/"+job.id,{cache:"no-store"}); failures=0; }
+    catch(error) {
+      if([401,403,404].includes(error.status)) throw error;
+      if(++failures>=5) throw new Error("Связь с сайтом прервалась. Разбор сохранён; вернитесь к матчу или проверьте историю позже.");
+    }
+  }
+  return null;
+}
 async function requestAI() {
   if (!await Account.ensure(()=>requestAI())) return;
   const accountId=Account.user.id;
@@ -949,7 +974,10 @@ async function requestAI() {
   try {
     const current=()=>Account.user?.id === accountId && request === state.explainRequest && eventId === state.eventId;
     let statisticsJobId=null, preparationNotice="";
-    if(document) {
+    const pending=document ? (await api('/api/analysis-jobs/current',{cache:'no-store'})).job : null;
+    if(pending && (pending.event_id !== eventId || pending.source !== (state.streamEvent ? "archive" : "bookmakers")))
+      throw new Error("Для вашего аккаунта уже готовится другой разбор. Результат появится в истории.");
+    if(document && !pending) {
       const prefix=eventAPI(eventId);
       try {
         const queued=await api(prefix+"/statistics/request",{method:"POST",body:"{}",cache:"no-store"});
@@ -974,9 +1002,11 @@ async function requestAI() {
     state.aiStage="analysis"; $("ai-wait-message").textContent=aiWaitMessages[0];
     const latest=document ? state.marketDocument : null;
     if(document && !latest) throw new Error("Не удалось обновить матч. Повторите разбор.");
-    const endpoint = document ? eventAPI(eventId)+"/explain" : "/api/explain";
+    const endpoint = document ? eventAPI(eventId)+"/analysis-jobs" : "/api/explain";
     const body = document ? {content_version:latest.content_version || null, observed_at:latest.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value, statistics_job_id:statisticsJobId} : {forecast_id:forecastId,notes:$("notes").value};
-    const result = await api(endpoint, {method:"POST",body:JSON.stringify(body)});
+    const submitted=pending || await api(endpoint, {method:"POST",body:JSON.stringify(body)});
+    const result=document ? await waitForAnalysisJob(submitted,current) : submitted;
+    if(!result) return;
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
     renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
     window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');

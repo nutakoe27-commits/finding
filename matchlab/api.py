@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
+from dataclasses import replace
 import json
 import logging
 import hashlib
@@ -8,6 +9,7 @@ import math
 import secrets
 from pathlib import Path
 from threading import RLock
+from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -99,7 +101,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         repo.initialize()
-        yield
+        jobs.start()
+        try:yield
+        finally:jobs.stop()
 
     app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings
@@ -518,10 +522,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def explain_stream_event(event_id:str,request:EventExplainRequest,http_request:Request):
         return explain_event_impl(event_id,request,True,http_request)
 
-    def explain_event_impl(event_id,request,stream,http_request):
-        from .event_analysis import analysis_context, request_key
+    def event_analysis_inputs(event_id,request,stream):
         from .statistics import analysis_statistics
-        user = http_request.state.user
         if not settings.qwen_configured:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if not event_id.isdigit() or len(event_id) > 20:
@@ -542,8 +544,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             saved_statistics=None
         team_statistics=analysis_statistics(saved_statistics)
         archive_history=archive.history(repo,document)
+        return {'document':document,'team_statistics':team_statistics,'archive_history':archive_history,'preparation':preparation}
+
+    def event_analysis_key(user,request,inputs):
+        from .event_analysis import request_key
+        document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history']
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        key=hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
+        return hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
+
+    def explain_event_impl(event_id,request,stream,http_request,inputs=None,generation_settings=None):
+        from .event_analysis import analysis_context
+        user=http_request.state.user
+        inputs=inputs or event_analysis_inputs(event_id,request,stream)
+        document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history'];preparation=inputs['preparation']
+        key=event_analysis_key(user,request,inputs)
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
         search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
         cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
@@ -581,7 +595,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if context.get('statistical_model'):
                 context['statistical_model']={'probabilities':context['statistical_model']['probabilities']}
             try:
-                text = qwen.explain_event(settings, context)
+                text = qwen.explain_event(generation_settings or settings, context)
             except ValueError as exc:
                 LOG.warning('Qwen event unavailable: %s',qwen.event_error_code(exc))
                 raise HTTPException(502, public_ai_error(exc)) from exc
@@ -596,6 +610,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {**payload, "cached": False}
         finally:
             analysis_lock.release()
+
+    def execute_job(job,snapshot):
+        request=EventExplainRequest.model_validate(snapshot['request'])
+        worker_request=SimpleNamespace(state=SimpleNamespace(user={'id':job['user_id']}))
+        # Share the legacy endpoint's lock; no second model job runs alongside it.
+        with analysis_lock:
+            remaining=max(1,min(settings.qwen_job_timeout,(instant(job['deadline'])-datetime.now(timezone.utc)).total_seconds()-60))
+            opts=replace(settings,qwen_timeout=max(1,remaining-30),qwen_analysis_timeout=remaining)
+            return explain_event_impl(job['event_id'],request,job['source']=='archive',worker_request,snapshot['inputs'],opts)
+
+    from .analysis_jobs import AnalysisJobs
+    jobs=AnalysisJobs(repo,settings,execute_job)
+    app.state.analysis_jobs=jobs
+
+    def enqueue_analysis(event_id,request,stream,http_request):
+        inputs=event_analysis_inputs(event_id,request,stream)
+        user=http_request.state.user
+        key=event_analysis_key(user,request,inputs)
+        snapshot={'request':request.model_dump(),'inputs':inputs}
+        result=jobs.enqueue(user,event_id,'archive' if stream else 'bookmakers',key,snapshot)
+        return JSONResponse(result,status_code=202)
+
+    @app.post('/api/archive/events/{event_id}/analysis-jobs')
+    def enqueue_stream_analysis(event_id:str,request:EventExplainRequest,http_request:Request):
+        return enqueue_analysis(event_id,request,True,http_request)
+
+    @app.post('/api/bookmakers/events/{event_id}/analysis-jobs')
+    def enqueue_bookmaker_analysis(event_id:str,request:EventExplainRequest,http_request:Request):
+        return enqueue_analysis(event_id,request,False,http_request)
+
+    @app.get('/api/analysis-jobs/current')
+    def current_analysis_job(request:Request):
+        return {'job':jobs.current(request.state.user['id'])}
+
+    @app.get('/api/analysis-jobs/{job_id}')
+    def analysis_job(job_id:str,request:Request):
+        return jobs.get(job_id,request.state.user['id'])
 
     @app.get("/api/analyses")
     def analyses(request:Request):

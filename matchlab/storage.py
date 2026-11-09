@@ -119,6 +119,8 @@ class Repository:
             db.executescript(SCHEMA)
             from .accounts import SCHEMA as ACCOUNT_SCHEMA
             db.executescript(ACCOUNT_SCHEMA)
+            from .analysis_jobs import SCHEMA as ANALYSIS_JOB_SCHEMA
+            db.executescript(ANALYSIS_JOB_SCHEMA)
             from .growth import SCHEMA as GROWTH_SCHEMA
             db.executescript(GROWTH_SCHEMA)
             analytics_columns={row['name'] for row in db.execute('PRAGMA table_info(analytics_consents)')}

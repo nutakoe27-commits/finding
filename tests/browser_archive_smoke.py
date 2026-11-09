@@ -78,6 +78,10 @@ async def exercise(base, repo):
                 )
                 page = await context.new_page()
                 await signed_in_browser(page, base)
+                # This feed fixture has no statistics collector. Exercise the
+                # available-history fallback rather than waiting for that daemon.
+                await page.route('**/api/archive/events/*/statistics/request',
+                                 lambda route:route.fulfill(status=503,json={'detail':'Сборщик не подключён в тесте'}))
                 errors = []
                 page.on(
                     "pageerror",
@@ -105,9 +109,10 @@ async def exercise(base, repo):
                 ), (theme, width, "detail overflow")
                 await page.locator("#explain-button").click()
                 await page.locator("#explanation").wait_for(state="visible")
-                assert REQUESTS[-1]["archive_history"]["state"] == "ready"
-                assert REQUESTS[-1]["event"]["live_score"] == "0:0"
-                assert REQUESTS[-1]["event"]["red_card_presence"] == {"away": True}
+                saved=await page.evaluate('state.aiAnalysis.context')
+                assert saved["archive_history"]["state"] == "ready"
+                assert saved["event"]["live_score"] == "0:0"
+                assert saved["event"]["red_card_presence"] == {"away": True}
                 assert not await page.evaluate("Boolean(window.analysisInjected)")
                 # The normal ten-second timer must deliver score and prices without navigation.
                 live["observed_at"] = archive.now()

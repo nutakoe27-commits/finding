@@ -29,6 +29,8 @@ GOAL_VARIANTS=json.loads((ROOT/'tests/fixtures/winline_goal_market_variants.json
 
 class AIHandler(BaseHTTPRequestHandler):
     fail_context = False
+    gate = None
+    gate_entered = None
     def log_message(self, *unused):
         pass
 
@@ -45,6 +47,10 @@ class AIHandler(BaseHTTPRequestHandler):
             self.send_header('Content-Length',str(len(encoded)));self.end_headers();self.wfile.write(encoded);return
         context = json.loads(body['messages'][1]['content'])
         REQUESTS.append(context)
+        gate=self.gate
+        if gate is not None:
+            if self.gate_entered is not None:self.gate_entered.set()
+            gate.wait(20)
         if self.fail_context:
             encoded=json.dumps({'error':{'message':'maximum context length exceeded'}}).encode()
             self.send_response(400)
@@ -129,12 +135,11 @@ async def run(url):
                 await page.locator('#explain-button').click()
                 await page.locator('#explanation').wait_for(state='visible')
                 text = await page.locator('#explanation').inner_text()
-                assert 'оценка рынка' in text and 'qwen' not in text.lower()
-                assert '**' not in text and await page.locator('#explanation strong').count() == 2
-                assert await page.locator('#explanation li').count() == 1
+                assert text.startswith('Наиболее вероятный исход') and 'qwen' not in text.lower(),text
+                assert '**' not in text and await page.locator('#explanation .report-section').count() == 3
                 assert not await page.evaluate('Boolean(window.analysisInjected || window.marketInjected)')
-                assert REQUESTS[-1]['selection']['outcome_key']
-                assert REQUESTS[-1]['snapshot']['observed_at']
+                assert await page.evaluate('state.aiAnalysis.context.selection.outcome_key')
+                assert await page.evaluate('state.aiAnalysis.context.snapshot.observed_at')
                 assert not await page.evaluate('document.documentElement.scrollWidth > window.innerWidth'), f'Overflow at {width}'
                 await page.screenshot(path=f'/tmp/matchlab-ui-match-{width}.png')
                 # An answer delayed in transit must not appear under a new
@@ -145,7 +150,7 @@ async def run(url):
                     captured.set()
                     await release.wait()
                     await route.fulfill(response=response)
-                await page.route('**/api/bookmakers/events/17006967/explain', delayed_answer)
+                await page.route('**/api/bookmakers/events/17006967/analysis-jobs', delayed_answer)
                 await page.locator('#explain-button').click()
                 await asyncio.wait_for(captured.wait(), timeout=10)
                 await page.evaluate("location.hash = '#match/17007000'")
@@ -153,7 +158,8 @@ async def run(url):
                 release.set()
                 await expect(page.locator("#explain-button")).to_be_enabled()
                 assert not await page.locator('#explanation').is_visible(), 'Old analysis appeared for another match'
-                await page.unroute('**/api/bookmakers/events/17006967/explain', delayed_answer)
+                await page.unroute('**/api/bookmakers/events/17006967/analysis-jobs', delayed_answer)
+                await page.wait_for_function("async () => !(await Account.api('/api/analysis-jobs/current')).job")
                 variant_groups=page.locator('.market-group').filter(has_text=GOAL_VARIANTS['market'])
                 assert await variant_groups.count()==2
                 assert '4-5' in await variant_groups.nth(0).inner_text() and '4-6' in await variant_groups.nth(1).inner_text()
@@ -166,8 +172,9 @@ async def run(url):
                 await page.locator('#ai-notes-details summary').click()
                 await page.locator('#explain-button').click()
                 await page.locator('#explanation').wait_for(state='visible')
-                selected=next(item for item in REQUESTS[-1]['markets'] if item['key']==REQUESTS[-1]['selection']['market_key'])
-                assert selected['variant_id']=='b'*32,(selected,REQUESTS[-1]['selection'])
+                saved=await page.evaluate('state.aiAnalysis.context')
+                selected=next(item for item in saved['markets'] if item['key']==saved['selection']['market_key'])
+                assert selected['variant_id']=='b'*32,(selected,saved['selection'])
                 await page.locator('.nav-link[href="#history"]').click()
                 await page.locator('.history-card').first.wait_for()
                 await page.locator('#history-refresh').click()
@@ -181,9 +188,9 @@ async def run(url):
                 await page.locator('.history-card').first.wait_for()
                 await page.locator('.history-card').filter(has_text='Сандерленд').first.locator('a').click()
                 await page.locator('#saved-analysis').wait_for(state='visible')
-                assert 'оценка рынка' in await page.locator('#saved-analysis-text').inner_text()
+                assert 'Наиболее вероятный исход' in await page.locator('#saved-analysis-text').inner_text()
                 assert '**' not in await page.locator('#saved-analysis-text').inner_text()
-                assert await page.locator('#saved-analysis-text strong').count() == 2
+                assert await page.locator('#saved-analysis-text .report-section').count() == 3
                 assert 'Qwen' not in await page.locator('body').inner_text()
                 await page.locator('#saved-analysis-open').click()
                 await page.locator('#market-detail-title').wait_for(state='visible')
@@ -209,8 +216,8 @@ async def run(url):
                 await page.locator('#notes').fill(f'Проверка тенниса {width}')
                 await page.locator('#explain-button').click()
                 await page.locator('#explanation').wait_for(state='visible')
-                assert REQUESTS[-1]['event']['sport']=='tennis'
-                assert REQUESTS[-1]['statistical_model'] is None
+                assert await page.evaluate('state.aiAnalysis.context.event.sport')=='tennis'
+                assert await page.evaluate('state.aiAnalysis.context.statistical_model') is None
                 assert not await page.evaluate('document.documentElement.scrollWidth > window.innerWidth')
                 await page.screenshot(path=f'/tmp/matchlab-sports-tennis-{width}.png')
                 await page.locator('.nav-link[href="#matches"]').click()

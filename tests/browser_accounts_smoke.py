@@ -11,7 +11,7 @@ import time
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from threading import Thread
+from threading import Event as ThreadEvent, Thread
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -51,7 +51,7 @@ async def exercise(base, repo):
                     search_started.set()
                     await release_search.wait()
                     await route.continue_()
-                await page.route('**/api/archive/events/*/explain', pause_analysis)
+                await page.route('**/api/archive/events/*/analysis-jobs', pause_analysis)
                 errors = []
                 page.on(
                     "pageerror",
@@ -103,7 +103,25 @@ async def exercise(base, repo):
                 assert await page.locator('.ai-wait-track span').evaluate('(node) => getComputedStyle(node).animationName') == 'none'
                 assert not await page.evaluate('document.documentElement.scrollWidth > innerWidth')
                 await page.screenshot(path=f'/tmp/matchlab-ai-wait-{theme}-{width}.png', full_page=True)
+                if index==0:
+                    AIHandler.gate=ThreadEvent();AIHandler.gate_entered=ThreadEvent()
                 release_search.set()
+                if index==0:
+                    try:
+                        assert await asyncio.to_thread(AIHandler.gate_entered.wait,10), 'Фоновый вызов модели не начался'
+                        pending=(await (await context.request.get(base+'/api/analysis-jobs/current')).json())['job']
+                        assert pending and pending['state']=='running', pending
+                        await page.reload()
+                        await page.locator('#market-detail-title').wait_for()
+                        await expect(page.locator('#explain-button')).to_be_enabled()
+                        await page.locator('#explain-button').click()
+                        await expect(page.locator('#ai-wait')).to_be_visible()
+                        same=(await (await context.request.get(base+'/api/analysis-jobs/current')).json())['job']
+                        assert same['id']==pending['id'], 'Перезагрузка создала новый разбор'
+                        with repo.connection() as db:
+                            assert db.execute('SELECT count(*) FROM ai_analysis_jobs').fetchone()[0]==1
+                    finally:
+                        AIHandler.gate.set();AIHandler.gate=None;AIHandler.gate_entered=None
                 await page.locator("#explanation").wait_for(state="visible")
                 await expect(page.locator('#ai-wait')).to_be_hidden()
                 result = await page.evaluate('''(value) => {

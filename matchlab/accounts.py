@@ -7,6 +7,7 @@ import re
 import secrets
 import sqlite3
 import time
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from threading import BoundedSemaphore
 from uuid import uuid4
@@ -47,6 +48,7 @@ LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"
 )
+AI_JOB_ROUTE = re.compile(r'^/api/(?:bookmakers|archive)/events/[^/]+/analysis-jobs/?$')
 
 
 def now():
@@ -316,16 +318,17 @@ def create_user(repo, username, password, role="user", agreements=False):
     return user_id
 
 
-def start_usage(repo, user, kind, target, settings):
+def start_usage(repo, user, kind, target, settings, db=None):
     usage_id = uuid4().hex
     bonus = 0
-    with repo.connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+    with (repo.connection() if db is None else nullcontext(db)) as db:
+        if not db.in_transaction:db.execute("BEGIN IMMEDIATE")
         expired = (datetime.now(UTC) - timedelta(minutes=10)).isoformat(
             timespec="microseconds"
         )
         abandoned = db.execute(
-            "SELECT id,user_id,used_bonus FROM ai_usage WHERE user_id=? AND status='pending' AND at<?",
+            "SELECT id,user_id,used_bonus FROM ai_usage WHERE user_id=? AND status='pending' AND at<? "
+            "AND NOT EXISTS(SELECT 1 FROM ai_analysis_jobs j WHERE j.usage_id=ai_usage.id AND j.state IN ('queued','running'))",
             (user["id"], expired),
         ).fetchall()
         for old in abandoned:
@@ -337,7 +340,8 @@ def start_usage(repo, user, kind, target, settings):
                 )
         if settings.ai_daily_limit:
             count = db.execute(
-                "SELECT count(*) FROM ai_usage WHERE user_id=? AND at>=? AND (status='success' OR (status='pending' AND at>?)) AND used_bonus=0",
+                "SELECT count(*) FROM ai_usage WHERE user_id=? AND at>=? AND (status='success' OR (status='pending' AND "
+                "(at>? OR EXISTS(SELECT 1 FROM ai_analysis_jobs j WHERE j.usage_id=ai_usage.id AND j.state IN ('queued','running'))))) AND used_bonus=0",
                 (
                     user["id"],
                     datetime.now(UTC).date().isoformat(),
@@ -362,9 +366,9 @@ def start_usage(repo, user, kind, target, settings):
     return usage_id
 
 
-def finish_usage(repo, usage_id, status, latency_ms, details=None):
-    with repo.connection() as db:
-        db.execute("BEGIN IMMEDIATE")
+def finish_usage(repo, usage_id, status, latency_ms, details=None, db=None):
+    with (repo.connection() if db is None else nullcontext(db)) as db:
+        if not db.in_transaction:db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM ai_usage WHERE id=?", (usage_id,)).fetchone()
         if not row or row["status"] != "pending":
             return
@@ -388,21 +392,21 @@ def install(app, repo, settings):
         started = time.monotonic()
         try:
             path = request.url.path
-            if AI_ROUTE.fullmatch(path) and request.method == "POST":
+            if (AI_ROUTE.fullmatch(path) or AI_JOB_ROUTE.fullmatch(path)) and request.method == "POST":
                 user = current_user(request)
                 mutation(request)
                 if not agreements_current(repo,user['id']):
                     raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})
                 limited(repo, "ai:" + user["id"], 6, 60)
                 request.state.user = user
-                usage = start_usage(
+                usage = None if AI_JOB_ROUTE.fullmatch(path) else start_usage(
                     repo,
                     user,
                     "event" if "/events/" in path else "forecast",
                     path,
                     settings,
                 )
-            elif path == "/api/analyses" or path.startswith("/api/analyses/"):
+            elif path == "/api/analyses" or path.startswith("/api/analyses/") or path.startswith('/api/analysis-jobs/'):
                 request.state.user = current_user(request)
             response = await call_next(request)
         except HTTPException as exc:

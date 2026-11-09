@@ -78,8 +78,8 @@ async def exercise(base):
                     state={'kind':'model'}
                     async def fake_explain(route):
                         if state['kind']=='error': await route.fulfill(status=502,json={'detail':'Тестовая ошибка'})
-                        else: await route.fulfill(status=200,json={'text':'Тестовый разбор','analysis_type':state['kind']})
-                    await page.route('**/api/bookmakers/events/123/explain',fake_explain)
+                        else: await route.fulfill(status=202,json={'id':'fixture','state':'completed','result':{'text':'Тестовый разбор','analysis_type':state['kind']}})
+                    await page.route('**/api/bookmakers/events/123/analysis-jobs',fake_explain)
                     await page.evaluate("location.hash='#match/123'")
                     await page.wait_for_function("() => window.__ymCalls.some(x=>x[1]==='reachGoal' && x[2]==='match_view')")
                     await page.wait_for_function("() => window.__ymCalls.some(x=>x[1]==='hit')")

@@ -29,6 +29,7 @@ class Settings:
     qwen_analysis_timeout: float = 120
     qwen_batch_tokens: int = 4096
     qwen_parallelism: int = 1
+    qwen_job_timeout: float = 900
 
     @property
     def database(self) -> Path:
@@ -55,6 +56,9 @@ class Settings:
         analysis_timeout=float(os.getenv('QWEN_ANALYSIS_TIMEOUT_SECONDS','120'))
         batch_tokens=int(os.getenv('QWEN_BATCH_TOKENS','4096'))
         parallelism=int(os.getenv('QWEN_PARALLELISM','1'))
+        job_timeout=float(os.getenv('QWEN_JOB_TIMEOUT_SECONDS','900'))
+        if not 30<=job_timeout<=1800:
+            raise ValueError('QWEN_JOB_TIMEOUT_SECONDS должен быть от 30 до 1800.')
         if context_tokens!=0 and not 1024<=context_tokens<=1_000_000:
             raise ValueError('QWEN_CONTEXT_TOKENS: 0 для автоопределения или 1024–1000000.')
         if not 10<=analysis_timeout<=150:
@@ -92,4 +96,5 @@ class Settings:
             wigolo_mcp_token_file=os.getenv("WIGOLO_MCP_TOKEN_FILE", "").strip(),
             qwen_context_tokens=context_tokens,qwen_analysis_timeout=analysis_timeout,
             qwen_batch_tokens=batch_tokens,qwen_parallelism=parallelism,
+            qwen_job_timeout=job_timeout,
         )

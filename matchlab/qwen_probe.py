@@ -6,7 +6,7 @@ import time
 from urllib.parse import quote
 
 from . import qwen
-from .event_reasoning import Budget,EXTRACT,DIRECT,records_for,encoded,evidence_payload
+from .event_reasoning import Budget,EXTRACT,DIRECT,records_for,record_limit,encoded,evidence_payload
 
 
 def saved_context(settings):
@@ -23,7 +23,7 @@ def inspect_context(settings):
             'parallelism':settings.qwen_parallelism,'request_timeout_seconds':settings.qwen_timeout}
     context=saved_context(settings)
     if context is None:return result|{'sample':'no_saved_analysis'}
-    records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
+    records=records_for(context,limit=record_limit(budget))
     for label,payload in (('raw_context',context),('single_evidence_request',evidence_payload(context,records))):
         messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
         item={'input_bytes':sum(len(m['content'].encode()) for m in messages)}

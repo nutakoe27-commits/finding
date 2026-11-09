@@ -156,6 +156,12 @@ class Budget:
         return result
 
 
+def record_limit(budget):
+    # Larger requests need fewer repeated paths/scopes, while small batches retain
+    # fine records that can be partitioned without exceeding their token budget.
+    return max(200,min(3600,budget.limit//4,max(1800,getattr(budget.settings,'qwen_batch_tokens',4096)//8)))
+
+
 def verified_observations(reply,records):
     values=reply.get('observations');sources={r['id']:r for r in records}
     if not isinstance(values,list) or len(values)>3:raise ValueError('Invalid evidence response')
@@ -213,7 +219,7 @@ def analyze(settings,context,complete,request):
     """Return public arguments plus auditable delivery/coverage diagnostics."""
     start=time.monotonic();deadline=start+getattr(settings,'qwen_analysis_timeout',120)
     budget=Budget(settings,request)
-    source_records=records_for(context,limit=max(200,min(1800,budget.limit//4)))
+    source_records=records_for(context,limit=record_limit(budget))
     build=lambda records:evidence_payload(context,records)
     scope=build([])['match']
     single_pass=budget.fits(DIRECT,build(source_records),512)
