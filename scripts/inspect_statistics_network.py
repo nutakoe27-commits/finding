@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import re
+import time
+import unicodedata
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -71,6 +73,48 @@ def recent_matches(value):
     return None
 
 
+def participant_key(value):
+    if not isinstance(value,str): return ''
+    return ''.join(char for char in unicodedata.normalize('NFKC',value).casefold() if char.isalnum())
+
+
+def passive_summary(documents, header):
+    """Count already received public documents, binding team results to the displayed match."""
+    header_key=participant_key(header)
+    target=None
+    for elapsed,data in documents:
+        match=data.get('match') if isinstance(data.get('match'),dict) else data
+        teams=match.get('teams') if isinstance(match,dict) else None
+        if not isinstance(teams,dict): continue
+        home,away=teams.get('home'),teams.get('away')
+        if not isinstance(home,dict) or not isinstance(away,dict): continue
+        home_key,away_key=participant_key(home.get('name')),participant_key(away.get('name'))
+        if min(len(home_key),len(away_key))<3 or home_key==away_key: continue
+        if home_key in header_key and away_key in header_key:
+            target=(home_key,away_key,elapsed)
+            break
+    result={'documents':len(documents),'match_bound_to_header':bool(target),
+            'recent_match_counts':{},'team_stats_found':{},'standings_candidates':0,
+            'player_list_candidates':0,'seconds_until_matched_team_lists':None}
+    if not target: return result
+    home_key,away_key,match_at=target
+    timestamps=[match_at]
+    for elapsed,data in documents:
+        team=data.get('team')
+        team_key=participant_key(team.get('name')) if isinstance(team,dict) else ''
+        side='home' if team_key==home_key else 'away' if team_key==away_key else None
+        if side and isinstance(data.get('matches'),list):
+            if side not in result['recent_match_counts']:
+                result['recent_match_counts'][side]=len(data['matches'])
+                timestamps.append(elapsed)
+        if side and isinstance(data.get('stats'),dict): result['team_stats_found'][side]=True
+        if isinstance(data.get('season'),dict) and isinstance(data.get('teams'),list): result['standings_candidates']+=1
+        if isinstance(data.get('players'),list) and isinstance(data.get('season'),dict): result['player_list_candidates']+=1
+    if set(result['recent_match_counts'])=={'home','away'}:
+        result['seconds_until_matched_team_lists']=round(max(timestamps),2)
+    return result
+
+
 def compare_response(value, status: int, original: dict) -> dict:
     if isinstance(value,dict) and isinstance(value.get('doc'),list):
         for item in value['doc']:
@@ -133,14 +177,15 @@ async def session_request(context, url: str, original: dict) -> dict:
         if response is not None: await response.dispose()
 
 
-async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False) -> dict:
+async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False) -> dict:
     responses = []
     sockets = []
+    started=time.monotonic()
     def on_response(response):
         safe = endpoint(response.url)
         host = urlsplit(response.url).hostname
         if safe and (not provider_only or host == 'sh.fn.yunai.tech') and response.request.resource_type in ('fetch', 'xhr', 'document') and len(responses) < MAX_RESPONSES:
-            responses.append((response, safe))
+            responses.append((response, safe, time.monotonic()-started))
     def on_socket(socket):
         safe = endpoint(socket.url)
         if safe and safe not in sockets and len(sockets) < 20: sockets.append(safe)
@@ -149,6 +194,8 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     document = await page.goto(url, wait_until='domcontentloaded', timeout=45000)
     await asyncio.sleep(seconds)
     frames = []
+    header=''
+    expected_id = urlsplit(url).path.strip('/').split('/')[-1]
     for frame in page.frames:
         host = urlsplit(frame.url).hostname or ''
         if host not in ('statshub.yunai.tech', 'statshub.sportradar.com'):
@@ -165,13 +212,16 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
             })'''), timeout=5)
             keys = [key for key in info.pop('next_keys') if key in JSON_KEYS and not SENSITIVE.search(key)]
             item.update(info, next_data_keys=keys)
+            frame_url=urlsplit(frame.url)
+            if test_passive and re.fullmatch(rf'/winline/(?:ru|en)/match/{re.escape(expected_id)}/?',frame_url.path):
+                header=await frame.locator('[data-testid="match-header"]').inner_text(timeout=3000)
         except Exception as error:
             item['error'] = type(error).__name__
         frames.append(item)
     entries = []
     candidate = None
-    expected_id = urlsplit(url).path.strip('/').split('/')[-1]
-    for response, safe in responses:
+    passive_documents=[]
+    for response, safe, elapsed in responses:
         item = {'endpoint': safe, 'status': response.status, 'resource_type': response.request.resource_type}
         try:
             content_type = (await response.header_value('content-type') or '').split(';', 1)[0].lower()
@@ -185,6 +235,15 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
                     if len(body) <= MAX_BODY:
                         value=json.loads(body)
                         item['shape'] = shape(value)
+                        if test_passive and response.status==200 and urlsplit(response.url).hostname=='sh.fn.yunai.tech':
+                            frame=urlsplit(response.request.frame.url)
+                            expected_path=rf'/winline/(?:ru|en)/match/{re.escape(expected_id)}/?'
+                            matched=frame.scheme=='https' and frame.hostname in ('statshub.yunai.tech','statshub.sportradar.com') and re.fullmatch(expected_path,frame.path)
+                            if matched and isinstance(value,dict) and isinstance(value.get('doc'),list):
+                                for entry in value['doc'][:20]:
+                                    data=entry.get('data') if isinstance(entry,dict) else None
+                                    if isinstance(data,dict) and entry.get('event')!='exception' and data.get('_doc')!='exception':
+                                        passive_documents.append((elapsed,data))
                         if test_direct and candidate is None and response.status==200 and response.request.method=='GET' and urlsplit(response.url).hostname=='sh.fn.yunai.tech':
                             frame=urlsplit(response.request.frame.url)
                             expected_path=rf'/winline/(?:ru|en)/match/{re.escape(expected_id)}/?'
@@ -206,6 +265,8 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
         entries = list(grouped.values())[:30]
     result={'page_status': document.status if document else None, 'frames': frames,
             'responses': entries, 'websockets': sockets, 'responses_limit': MAX_RESPONSES}
+    if test_passive:
+        result['passive_test']=passive_summary(passive_documents,header)
     if test_direct:
         if candidate is None:
             result['direct_test']={'state':'candidate_not_found'}
@@ -218,7 +279,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     return result
 
 
-async def run(url: str, seconds: int, *, provider_only=False, test_direct=False) -> dict:
+async def run(url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False) -> dict:
     # Never pass local service secrets to a browser launched for diagnostics.
     environment = {key: value for key, value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN', 'QWEN_API_KEY')}
     async with async_playwright() as playwright:
@@ -230,7 +291,7 @@ async def run(url: str, seconds: int, *, provider_only=False, test_direct=False)
                 else: await route.continue_()
             await context.route('**/*', resources)
             page = await context.new_page()
-            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct)
+            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct, test_passive=test_passive)
         finally:
             await browser.close()
 
@@ -241,13 +302,16 @@ def main():
     parser.add_argument('--seconds', type=int, default=20)
     parser.add_argument('--provider-only', action='store_true', help='Summarize provider responses only')
     parser.add_argument('--test-direct', action='store_true', help='Repeat one observed public request without browser session')
+    parser.add_argument('--test-passive', action='store_true', help='Measure already received data only; no replay requests')
     args = parser.parse_args()
     if not widget_url(args.url): parser.error('Нужна ссылка https://winline.ru/stats/match/ID без параметров.')
     if not 1 <= args.seconds <= 40: parser.error('Ожидание должно быть от 1 до 40 секунд.')
+    if args.test_direct and args.test_passive: parser.error('Выберите только один режим проверки.')
     os.umask(0o077)
     try:
-        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct))
+        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct, test_passive=args.test_passive))
         if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test','session_test') if key in result}
+        if args.test_passive: result={key:result[key] for key in ('page_status','frames','passive_test')}
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)

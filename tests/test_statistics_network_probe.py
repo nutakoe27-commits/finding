@@ -4,7 +4,7 @@ import shutil
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, shape, widget_url
+from scripts.inspect_statistics_network import compare_response, direct_request, endpoint, inspect_page, passive_summary, shape, widget_url
 
 
 class RedactionTests(unittest.TestCase):
@@ -54,6 +54,22 @@ class RedactionTests(unittest.TestCase):
         result=compare_response(value,200,{'team':{},'matches':[]})
         self.assertEqual(result,{'state':'provider_error','http_status':200,'provider_code':403})
         self.assertNotIn('private message',json.dumps(result))
+
+    def test_passive_counts_only_teams_in_verified_header(self):
+        documents=[
+            (1,{'match':{'teams':{'home':{'name':'Alpha United'},'away':{'name':'Beta City'}}}}),
+            (2,{'team':{'name':'Alpha United'},'matches':[{},{}]}),
+            (3,{'team':{'name':'Beta City'},'matches':[{}]}),
+            (4,{'team':{'name':'Other Club'},'matches':[{}, {}, {}]}),
+        ]
+        result=passive_summary(documents,'Alpha United — Beta City')
+        self.assertTrue(result['match_bound_to_header'])
+        self.assertEqual(result['recent_match_counts'],{'home':2,'away':1})
+        self.assertEqual(result['seconds_until_matched_team_lists'],3)
+        self.assertNotIn('Alpha United',json.dumps(result))
+        rejected=passive_summary(documents,'Unrelated match')
+        self.assertFalse(rejected['match_bound_to_header'])
+        self.assertEqual(rejected['recent_match_counts'],{})
 
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
@@ -106,6 +122,43 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                 await context.close()
             finally:
                 await browser.close()
+
+    @unittest.skipUnless(shutil.which('chromium'), 'Chromium is required')
+    async def test_passive_mode_uses_only_the_widgets_own_responses(self):
+        from playwright.async_api import async_playwright
+        requests=[]
+        async with async_playwright() as playwright:
+            browser=await playwright.chromium.launch(headless=True,executable_path=shutil.which('chromium'))
+            try:
+                context=await browser.new_context()
+                async def fixture(route):
+                    url=route.request.url
+                    requests.append(url)
+                    if '/stats/match/' in url:
+                        await route.fulfill(status=200,content_type='text/html',body='<iframe src="https://statshub.yunai.tech/winline/ru/match/123"></iframe>')
+                    elif '/winline/ru/match/' in url:
+                        html='''<div data-testid="match-header">Alpha United — Beta City</div>
+                        <script>for (const name of ['match','home','away'])
+                          fetch('https://sh.fn.yunai.tech/api/v1/match/123?fixture='+name);</script>'''
+                        await route.fulfill(status=200,content_type='text/html',body=html)
+                    elif 'fixture=' in url:
+                        if 'fixture=match' in url: data={'match':{'teams':{'home':{'name':'Alpha United'},'away':{'name':'Beta City'}}}}
+                        else: data={'team':{'name':'Alpha United' if 'fixture=home' in url else 'Beta City'},'matches':[{},{}]}
+                        body=json.dumps({'doc':[{'data':data}]})
+                        await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(body)),
+                                                               'access-control-allow-origin':'*'},body=body)
+                    else: raise AssertionError('Unexpected request: '+url)
+                await context.route('**/*',fixture)
+                page=await context.new_page()
+                with patch('scripts.inspect_statistics_network.direct_request') as direct:
+                    result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True,test_passive=True)
+                direct.assert_not_called()
+                self.assertEqual(len(requests),5)
+                self.assertTrue(result['passive_test']['match_bound_to_header'])
+                self.assertEqual(result['passive_test']['recent_match_counts'],{'home':2,'away':2})
+                self.assertNotIn('Alpha United',json.dumps(result))
+                await context.close()
+            finally: await browser.close()
 
 
 if __name__=='__main__': unittest.main()
