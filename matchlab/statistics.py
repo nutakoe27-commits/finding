@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import logging
 import re
 from urllib.parse import urljoin, urlsplit
 
@@ -12,6 +13,7 @@ FORMAT='matchlab.event-statistics.v1'
 STATES={'ok','blocked','empty','unavailable'}
 PROVIDERS={'statshub.yunai.tech','statshub.sportradar.com'}
 VIEWS={'overview', 'report', 'statistics'}
+LOG=logging.getLogger(__name__)
 
 
 def provider_match_id(value: str) -> str | None:
@@ -173,6 +175,7 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
     attempted=lambda: datetime.now(timezone.utc).isoformat()
     base={'format':FORMAT,'source_event_id':job['source_event_id'],'event_url':job['url'],
           'statistics_url':job['statistics_url'],'state':'unavailable'}
+    diagnostic={'provider_frames':0,'matching_frames':0,'samples':0,'valid_samples':0,'changes':0}
     try:
         response=await page.goto(job['statistics_url'],wait_until='domcontentloaded',timeout=45000)
         if response and response.status in (401,403,429):
@@ -186,8 +189,13 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
                     await asyncio.sleep(.5); continue
                 if re.search(r'access denied|you don.t have permission|проверка безопасности',data['body'],re.I):
                     return 'blocked', None
+                diagnostic['samples']+=1
                 if data['header'] and (data['sections'] or not require_sections):
-                    signature=(data['header'],data['body'],[(s['title'],s['text']) for s in data['sections']])
+                    diagnostic['valid_samples']+=1
+                    # The surrounding widget may contain a ticking clock or
+                    # unrelated dynamic text. Only compare what is saved.
+                    signature=(data['header'],[(s['title'],s['text']) for s in data['sections']])
+                    if previous is not None and previous!=signature: diagnostic['changes']+=1
                     stable=stable+1 if previous==signature else 0; previous=signature
                     if stable>=2: return 'ok', data
                 await asyncio.sleep(.5)
@@ -195,8 +203,10 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
 
         deadline=time.monotonic()+wait_seconds
         while time.monotonic()<deadline:
+            diagnostic['provider_frames']=max(diagnostic['provider_frames'],sum(urlsplit(frame.url).hostname in PROVIDERS for frame in page.frames))
             frames=[frame for frame in page.frames if provider_match_id(frame.url)==stats_id and
                     re.fullmatch(r'/winline/(?:ru|en)/match/\d{1,20}/?',urlsplit(frame.url).path)]
+            diagnostic['matching_frames']=max(diagnostic['matching_frames'],len(frames))
             for frame in frames:
                 status,data=await read_stable(frame,max(1,deadline-time.monotonic()),True)
                 if status=='blocked': return {**base,'state':'blocked','attempted_at':attempted()}
@@ -301,6 +311,9 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
                 if season_filters_complete is not None: result['season_filters_complete']=season_filters_complete
                 return result
             await asyncio.sleep(.5)
+        LOG.warning('Statistics empty for event %s: provider_frames=%d matching_frames=%d samples=%d valid_samples=%d changes=%d',
+                    job['source_event_id'],diagnostic['provider_frames'],diagnostic['matching_frames'],
+                    diagnostic['samples'],diagnostic['valid_samples'],diagnostic['changes'])
         return {**base,'state':'empty','attempted_at':attempted()}
     except Exception:
         return {**base,'state':'unavailable','attempted_at':attempted()}

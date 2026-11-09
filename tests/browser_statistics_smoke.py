@@ -23,7 +23,7 @@ from sports_fixtures import PROJECTIONS, document
 PUBLIC=json.loads((ROOT/'tests/fixtures/team_statistics_projection.json').read_text())
 
 
-def widget(blocked=False, view='overview', frozen=False):
+def widget(blocked=False, view='overview', frozen=False, dynamic=False):
     if blocked: return '<h1>Access Denied</h1><p>You do not have permission to access this server.</p>'
     result='<body data-testid="hydrated"><div data-testid="match-header">'+escape(PUBLIC['header']).replace('\n','<br>')+'</div>'
     result+='<nav><a href="/winline/ru/match/72334410">Обзор</a><a href="/winline/ru/match/72334410/report">Отчет о матче</a><a href="/winline/ru/match/72334410/statistics">Статистика</a></nav>'
@@ -47,6 +47,8 @@ def widget(blocked=False, view='overview', frozen=False):
       const selected=[...document.querySelectorAll('#season button[aria-pressed="true"]')].map(b=>b.innerText);
       document.querySelector('#season-data').textContent='Показатели: '+selected.join(' / ');
     }</script>""".replace('FROZEN','true' if frozen else 'false')
+    if dynamic:
+        result+='<div id="unrelated-clock">0</div><script>setInterval(()=>document.querySelector("#unrelated-clock").textContent=String(Date.now()),100)</script>'
     return result+'<form>private-statistics-form<input value="private-statistics-input"></form></body>'
 
 
@@ -59,6 +61,7 @@ async def exercise(base,repo):
             blocked=False
             blocked_report=False
             frozen=False
+            dynamic=False
             async def fixture(route):
                 if blocked_report and route.request.url.endswith('/report'):
                     await route.fulfill(status=403,content_type='text/html',body='Access Denied')
@@ -67,7 +70,7 @@ async def exercise(base,repo):
                     body='<iframe src="https://statshub.yunai.tech/winline/ru/match/72334410"></iframe>'
                 elif 'statshub.yunai.tech' in route.request.url:
                     view=route.request.url.rsplit('/',1)[-1]
-                    body=widget(blocked,view if view in ('report','statistics') else 'overview',frozen)
+                    body=widget(blocked,view if view in ('report','statistics') else 'overview',frozen,dynamic)
                 elif '/stavki/sport/' in route.request.url: body='<p>Market fixture</p>'
                 else: raise AssertionError(route.request.url)
                 await route.fulfill(status=200,content_type='text/html',body='<meta charset="utf-8">'+body)
@@ -88,6 +91,11 @@ async def exercise(base,repo):
             assert any(s['filters']==['За матч','Общее'] and 'За матч / Общее' in s['text'] for s in variants)
             assert any(s['view']=='statistics' and 'Велес' in s['text'] for s in snapshot['sections'])
             assert all(s['observed_at']<=snapshot['attempted_at'] for s in snapshot['sections'])
+            dynamic=True
+            ticking=await collect_statistics(page,parent,wait_seconds=5)
+            assert ticking['state']=='ok' and ticking['season_filters_complete'] is True,ticking
+            assert not any('unrelated-clock' in s['text'] for s in ticking['sections'])
+            dynamic=False
             frozen=True
             stale=await collect_statistics(page,parent,wait_seconds=8)
             assert stale['state']=='ok' and stale['season_filters_complete'] is False
