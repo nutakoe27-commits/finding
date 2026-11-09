@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import re
+import urllib.error
+import urllib.request
 from urllib.parse import urlsplit
 
 from playwright.async_api import async_playwright
@@ -60,7 +62,44 @@ def shape(value) -> dict:
     return describe(value)
 
 
-async def inspect_page(page, url: str, seconds: int, *, provider_only=False) -> dict:
+def recent_matches(value):
+    if not isinstance(value, dict) or not isinstance(value.get('doc'), list): return None
+    for item in value['doc']:
+        data=item.get('data') if isinstance(item,dict) else None
+        if isinstance(data,dict) and isinstance(data.get('team'),dict) and isinstance(data.get('matches'),list):
+            return data
+    return None
+
+
+def direct_request(url: str, original: dict) -> dict:
+    """One plain GET to the observed provider URL; don't print URL, headers or body."""
+    parsed=urlsplit(url)
+    if parsed.scheme!='https' or parsed.hostname!='sh.fn.yunai.tech' or parsed.username or parsed.password:
+        return {'state':'invalid_source'}
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl): return None
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+    try:
+        request=urllib.request.Request(url,headers={'Accept':'application/json'},method='GET')
+        with opener.open(request,timeout=15) as response:
+            status=response.status
+            body=response.read(MAX_BODY+1)
+        if len(body)>MAX_BODY: return {'state':'too_large','http_status':status}
+        value=json.loads(body)
+        result=recent_matches(value)
+        if result is None: return {'state':'different_response','http_status':status}
+        return {'state':'ok','http_status':status,'match_count':len(result['matches']),
+                'same_team':result['team']==original['team'],
+                'same_matches':result['matches']==original['matches']}
+    except urllib.error.HTTPError as error:
+        return {'state':'http_error','http_status':error.code}
+    except (ValueError,UnicodeError):
+        return {'state':'invalid_json'}
+    except Exception as error:
+        return {'state':'request_error','error_type':type(error).__name__}
+
+
+async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False) -> dict:
     responses = []
     sockets = []
     def on_response(response):
@@ -96,6 +135,8 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False) -> 
             item['error'] = type(error).__name__
         frames.append(item)
     entries = []
+    candidate = None
+    expected_id = urlsplit(url).path.strip('/').split('/')[-1]
     for response, safe in responses:
         item = {'endpoint': safe, 'status': response.status, 'resource_type': response.request.resource_type}
         try:
@@ -108,7 +149,15 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False) -> 
                 else:
                     body = await asyncio.wait_for(response.body(), timeout=3)
                     if len(body) <= MAX_BODY:
-                        item['shape'] = shape(json.loads(body))
+                        value=json.loads(body)
+                        item['shape'] = shape(value)
+                        if test_direct and candidate is None and response.status==200 and response.request.method=='GET' and urlsplit(response.url).hostname=='sh.fn.yunai.tech':
+                            frame=urlsplit(response.request.frame.url)
+                            expected_path=rf'/winline/(?:ru|en)/match/{re.escape(expected_id)}/?'
+                            matched=frame.scheme=='https' and frame.hostname in ('statshub.yunai.tech','statshub.sportradar.com') and re.fullmatch(expected_path,frame.path)
+                            recent=recent_matches(value)
+                            if matched and recent is not None:
+                                candidate=(response.url,recent)
                     else:
                         item['shape'] = 'skipped_large_size'
         except Exception as error:
@@ -121,11 +170,18 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False) -> 
             if identity not in grouped: grouped[identity] = {**item, 'count': 0}
             grouped[identity]['count'] += 1
         entries = list(grouped.values())[:30]
-    return {'page_status': document.status if document else None, 'frames': frames,
+    result={'page_status': document.status if document else None, 'frames': frames,
             'responses': entries, 'websockets': sockets, 'responses_limit': MAX_RESPONSES}
+    if test_direct:
+        if candidate is None:
+            result['direct_test']={'state':'candidate_not_found'}
+        else:
+            result['direct_test']={'category':'recent_matches','browser_match_count':len(candidate[1]['matches']),
+                                   **await asyncio.to_thread(direct_request,*candidate)}
+    return result
 
 
-async def run(url: str, seconds: int, *, provider_only=False) -> dict:
+async def run(url: str, seconds: int, *, provider_only=False, test_direct=False) -> dict:
     # Never pass local service secrets to a browser launched for diagnostics.
     environment = {key: value for key, value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN', 'QWEN_API_KEY')}
     async with async_playwright() as playwright:
@@ -137,7 +193,7 @@ async def run(url: str, seconds: int, *, provider_only=False) -> dict:
                 else: await route.continue_()
             await context.route('**/*', resources)
             page = await context.new_page()
-            return await inspect_page(page, url, seconds, provider_only=provider_only)
+            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct)
         finally:
             await browser.close()
 
@@ -147,12 +203,15 @@ def main():
     parser.add_argument('--url', required=True, help='Public Winline statistics link')
     parser.add_argument('--seconds', type=int, default=20)
     parser.add_argument('--provider-only', action='store_true', help='Summarize provider responses only')
+    parser.add_argument('--test-direct', action='store_true', help='Repeat one observed public request without browser session')
     args = parser.parse_args()
     if not widget_url(args.url): parser.error('Нужна ссылка https://winline.ru/stats/match/ID без параметров.')
     if not 1 <= args.seconds <= 40: parser.error('Ожидание должно быть от 1 до 40 секунд.')
     os.umask(0o077)
     try:
-        print(json.dumps(asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only)), ensure_ascii=False, indent=2), flush=True)
+        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct))
+        if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test')}
+        print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)
         raise SystemExit(1)

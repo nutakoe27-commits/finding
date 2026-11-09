@@ -2,8 +2,9 @@
 import json
 import shutil
 import unittest
+from unittest.mock import patch
 
-from scripts.inspect_statistics_network import endpoint, inspect_page, shape, widget_url
+from scripts.inspect_statistics_network import direct_request, endpoint, inspect_page, shape, widget_url
 
 
 class RedactionTests(unittest.TestCase):
@@ -32,6 +33,22 @@ class RedactionTests(unittest.TestCase):
         self.assertNotIn('private-event',encoded)
         self.assertNotIn('private-name',encoded)
 
+    def test_direct_request_compares_data_without_exposing_url_or_values(self):
+        original={'team':{'id':7},'matches':[{'id':8}]}
+        class Reply:
+            status=200
+            def __enter__(self): return self
+            def __exit__(self,*args): pass
+            def read(self,amount): return json.dumps({'doc':[{'data':original}]}).encode()
+        class Opener:
+            def open(self,request,timeout): return Reply()
+        with patch('scripts.inspect_statistics_network.urllib.request.build_opener',return_value=Opener()):
+            result=direct_request('https://sh.fn.yunai.tech/path?token=private',original)
+        self.assertTrue(result['same_team'])
+        self.assertTrue(result['same_matches'])
+        self.assertNotIn('private',json.dumps(result))
+        self.assertEqual(direct_request('https://evil.example/path',original)['state'],'invalid_source')
+
 
 class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
     @unittest.skipUnless(shutil.which('chromium'), 'Chromium is required')
@@ -52,7 +69,7 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                         fetch('https://sh.fn.yunai.tech/api/v1/match/123?secret=private-query');</script>'''
                         await route.fulfill(status=200,content_type='text/html',body=html)
                     elif '/api/v1/match/' in request.url:
-                        body=json.dumps({'data':{'match':{'token':'private-value','score':2}}})
+                        body=json.dumps({'doc':[{'data':{'team':{'name':'private-value'},'matches':[{'score':2}]}}]})
                         await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(body)),
                                                                'access-control-allow-origin':'*'},body=body)
                     else:
@@ -63,13 +80,16 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(result['frames'][0]['header'])
                 self.assertTrue(result['frames'][0]['next_data'])
                 json_entries=[item for item in result['responses'] if item.get('shape')]
-                self.assertEqual(json_entries[0]['shape']['keys'],['data'])
+                self.assertEqual(json_entries[0]['shape']['keys'],['doc'])
                 encoded=json.dumps(result)
                 for value in ('private-value','private-query','private-next','Private team name','token='):
                     self.assertNotIn(value,encoded)
-                provider_result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True)
+                with patch('scripts.inspect_statistics_network.direct_request',return_value={'state':'ok','same_matches':True}):
+                    provider_result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True,test_direct=True)
                 self.assertTrue(provider_result['responses'])
                 self.assertTrue(all(item['endpoint'].startswith('sh.fn.yunai.tech/') for item in provider_result['responses']))
+                self.assertEqual(provider_result['direct_test']['state'],'ok')
+                self.assertEqual(provider_result['direct_test']['browser_match_count'],1)
                 await context.close()
             finally:
                 await browser.close()
