@@ -224,7 +224,7 @@ async def session_request(context, url: str, original: dict) -> dict:
         if response is not None: await response.dispose()
 
 
-async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False) -> dict:
+async def inspect_page(page, url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False, preview_feed=False) -> dict:
     responses = []
     sockets = []
     started=time.monotonic()
@@ -315,6 +315,17 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     if test_passive:
         result['passive_test']=passive_summary(passive_documents,header,expected_id)
         if show_labels: result['passive_details']=passive_details(passive_documents,header,expected_id)
+        if preview_feed:
+            try:
+                from statistics_feed import extract_passive_feed
+            except ModuleNotFoundError:
+                from matchlab.statistics_feed import extract_passive_feed
+            feed=extract_passive_feed([data for _,data in passive_documents],expected_id)
+            result['feed_preview']={'state':'ready' if feed else 'unavailable'}
+            if feed:
+                result['feed_preview'].update(binding=feed['binding'],truncated=feed['truncated'],
+                    list_sizes={side:[len(item['matches']) for item in feed['participants'][side]] for side in ('home','away')},
+                    encoded_bytes=len(json.dumps(feed,ensure_ascii=False).encode()))
     if test_direct:
         if candidate is None:
             result['direct_test']={'state':'candidate_not_found'}
@@ -327,7 +338,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     return result
 
 
-async def run(url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False) -> dict:
+async def run(url: str, seconds: int, *, provider_only=False, test_direct=False, test_passive=False, show_labels=False, preview_feed=False) -> dict:
     # Never pass local service secrets to a browser launched for diagnostics.
     environment = {key: value for key, value in os.environ.items() if key not in ('BOOKMAKER_INGEST_TOKEN', 'QWEN_API_KEY')}
     async with async_playwright() as playwright:
@@ -339,7 +350,7 @@ async def run(url: str, seconds: int, *, provider_only=False, test_direct=False,
                 else: await route.continue_()
             await context.route('**/*', resources)
             page = await context.new_page()
-            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct, test_passive=test_passive, show_labels=show_labels)
+            return await inspect_page(page, url, seconds, provider_only=provider_only, test_direct=test_direct, test_passive=test_passive, show_labels=show_labels, preview_feed=preview_feed)
         finally:
             await browser.close()
 
@@ -352,16 +363,18 @@ def main():
     parser.add_argument('--test-direct', action='store_true', help='Repeat one observed public request without browser session')
     parser.add_argument('--test-passive', action='store_true', help='Measure already received data only; no replay requests')
     parser.add_argument('--show-match-labels', action='store_true', help='Show public match header and team labels')
+    parser.add_argument('--preview-feed', action='store_true', help='Build a bounded local feed preview without saving it')
     args = parser.parse_args()
     if not widget_url(args.url): parser.error('Нужна ссылка https://winline.ru/stats/match/ID без параметров.')
     if not 1 <= args.seconds <= 40: parser.error('Ожидание должно быть от 1 до 40 секунд.')
     if args.test_direct and args.test_passive: parser.error('Выберите только один режим проверки.')
     if args.show_match_labels and not args.test_passive: parser.error('Для имён команд укажите --test-passive.')
+    if args.preview_feed and not args.test_passive: parser.error('Для проверки данных укажите --test-passive.')
     os.umask(0o077)
     try:
-        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct, test_passive=args.test_passive, show_labels=args.show_match_labels))
+        result=asyncio.run(run(args.url, args.seconds, provider_only=args.provider_only, test_direct=args.test_direct, test_passive=args.test_passive, show_labels=args.show_match_labels, preview_feed=args.preview_feed))
         if args.test_direct: result={key:result[key] for key in ('page_status','frames','direct_test','session_test') if key in result}
-        if args.test_passive: result={key:result[key] for key in ('page_status','frames','passive_test','passive_details') if key in result}
+        if args.test_passive: result={key:result[key] for key in ('page_status','frames','passive_test','passive_details','feed_preview') if key in result}
         print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     except Exception as error:
         print(json.dumps({'error': type(error).__name__}), flush=True)
