@@ -392,10 +392,68 @@ function analysisDisplayText(value) {
     .replace(/\\([\\`*_{}\[\]()#+\-.!>])/g, "$1")
     .replace(/`?\b(statistical_model|team_statistics|archive_history|head_to_head|web_research)\b`?/gi, (_, name) => names[name.toLowerCase()]);
 }
+function reportParts(text) {
+  const pattern=/(?:^|\s)(Победитель|Победные рынки(?: \(оценка\))?|Аргументы|Ограничения)[ \t]*:[ \t]*/g;
+  const matches=[...text.matchAll(pattern)];
+  if(matches.length<3 || matches.length>4 || text.slice(0,matches[0].index).trim()) return null;
+  const labels=matches.map(match=>match[1]);
+  if(labels[0]!=="Победитель" || !labels[1].startsWith("Победные рынки") || labels[2]!=="Аргументы" || (labels[3] && labels[3]!=="Ограничения")) return null;
+  return matches.map((match,index)=>text.slice(match.index+match[0].length,matches[index+1]?.index ?? text.length).trim());
+}
+function reportItems(value) {
+  const items=[]; let start=0, depth=0;
+  for(let index=0;index<value.length;index++) {
+    if(value[index]==="(" || value[index]==="[") depth++;
+    else if(value[index]===")" || value[index]==="]") depth=Math.max(0,depth-1);
+    else if(value[index]===";" && depth===0) {items.push(value.slice(start,index).trim());start=index+1;}
+  }
+  items.push(value.slice(start).trim());
+  return items.filter(Boolean);
+}
+function reportProbability(parent,value) {
+  const pattern=/>?\d+(?:[.,]\d+)?%/g; let start=0;
+  for(const match of value.matchAll(pattern)) {
+    parent.append(document.createTextNode(value.slice(start,match.index)),el("strong","report-probability",match[0]));
+    start=match.index+match[0].length;
+  }
+  parent.append(document.createTextNode(value.slice(start)));
+}
+function renderReport(target,parts) {
+  const nodes=[], lead=el("section","report-section report-lead");
+  const heading=el("div","report-heading"), byMarket=parts[0].includes("по линии");
+  heading.append(el("h3","","Наиболее вероятный исход"));
+  if(/\d+(?:[.,]\d+)?%/.test(parts[0])) heading.append(el("span","report-badge",byMarket ? "По линии" : "Расчёт"));
+  lead.append(heading);
+  const winner=parts[0].match(/^(.*?)\s+[—–]\s+(>?\d+(?:[.,]\d+)?%)(.*)$/s);
+  if(winner) {
+    const row=el("div","report-winner"); row.append(el("span","report-team",winner[1]),el("strong","report-chance",winner[2]));lead.append(row);
+    const scope=winner[3].replace(/^[\s(]*(?:по линии|оценка)[;,]\s*/,"").replace(/\)[.]?$/,"").trim();
+    if(scope) lead.append(el("p","report-scope",scope));
+  } else lead.append(el("p","report-no-winner",parts[0]));
+  if(byMarket) lead.append(el("p","report-basis","Оценка по коэффициентам букмекера; независимый прогноз не рассчитан для этого исхода."));
+  nodes.push(lead);
+  for(const [index,title] of [[1,"Рынки"],[2,"Аргументы"]]) {
+    const section=el("section","report-section"); section.append(el("h3","",title));
+    const list=el("ul",index===1 ? "report-markets" : "report-facts");
+    for(const item of reportItems(parts[index])) {
+      const li=el("li"); if(index===1) reportProbability(li,item); else li.textContent=item;
+      list.append(li);
+    }
+    section.append(list);nodes.push(section);
+  }
+  if(parts[3]) {
+    const details=el("details","report-limitations"); details.open=true;
+    details.append(el("summary","","Ограничения данных"),el("p","",parts[3])); nodes.push(details);
+  }
+  target.replaceChildren(...nodes);
+}
 function renderAnalysis(target, text) {
+  const displayed=analysisDisplayText(text), parts=reportParts(displayed);
+  target.classList.toggle("structured-report",Boolean(parts));
+  if(parts) {renderReport(target,parts); return;}
   const nodes = []; let paragraph = [], list = null;
   const flush = () => { if (paragraph.length) { const p=el("p"); analysisInline(p,paragraph.join("\n")); nodes.push(p); paragraph=[]; } };
-  for (const line of analysisDisplayText(text).split(/\r?\n/)) {
+  for (const line of displayed.split(/\r?\n/)) {
     if (!line.trim()) { flush(); list=null; continue; }
     const heading=line.match(/^\s*#{1,6}\s+(.+?)\s*#*\s*$/);
     const bullet=line.match(/^\s*[-*•]\s+(.+)$/);
@@ -717,7 +775,7 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
   const prep=context.statistics_preparation?.state;
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
-  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}${prepNote}`;
+  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${prepNote}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }

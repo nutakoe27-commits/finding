@@ -1146,3 +1146,27 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
 [data-admin-panel]>.panel + .panel { margin-top:20px; }
 @media(max-width:1100px){.admin-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-overview-grid{grid-template-columns:1fr}.admin-compose-grid{grid-template-columns:1fr}.admin-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.topbar-actions{gap:10px}}
 @media(max-width:650px){.topbar-actions .timezone-label{display:none}.topbar-actions .guide-toggle{font-size:0;gap:0}.topbar-actions .guide-toggle>span{font-size:11px}.topbar-actions{gap:9px}.account-button{font-size:11px;max-width:100px;padding:6px 9px}#admin-link{font-size:10px}.topbar #breadcrumb{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.account-grid,.statistics-brief-grid{grid-template-columns:1fr}.account-summary{align-items:flex-start}.inline-form{flex-wrap:wrap}.inline-form button{flex:1}.auth-dialog{padding:25px 22px}.auth-dialog h2{font-size:25px}.admin-metrics{gap:9px}.admin-metric{padding:13px;gap:8px}.admin-metric strong{font-size:27px}.admin-metric .small{font-size:11px}.admin-health-grid{gap:18px}.admin-promo-grid{grid-template-columns:1fr}.admin-promo-grid>p{grid-column:auto}.admin-tabs{gap:2px}.admin-tabs button{font-size:11px;padding:9px}.admin-security-line{font-size:11px}.admin-period{flex-wrap:wrap}.admin-period button{margin-left:0}.admin-table{min-width:550px}.admin-overview-grid .panel{padding:16px}.admin-chart-caption{font-size:9px}.event-bookmaker-button{width:100%;text-align:center}.admin-security-line button{margin-left:0}.admin-section-heading .search-field{width:100%;min-width:0}}
+
+/* Match reports retain a clear hierarchy in the narrow AI panel and saved history. */
+.explanation.structured-report { display:grid; gap:16px; white-space:normal; line-height:1.65; }
+.structured-report .report-section { min-width:0; }
+.structured-report .report-section h3 { margin:0 0 10px; font-size:13px; line-height:1.4; color:var(--text); }
+.structured-report .report-lead { padding:16px; border:1px solid var(--secondary-border); border-radius:12px; background:var(--panel2); }
+.report-heading { display:flex; align-items:flex-start; flex-wrap:wrap; gap:8px 12px; }
+.structured-report .report-heading h3 { flex:1; margin:0; min-width:110px; font-size:11px; color:var(--muted); font-weight:500; }
+.report-badge { padding:3px 7px; border:1px solid var(--line); border-radius:6px; color:var(--muted); font-size:10px; line-height:1.4; }
+.report-winner { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin:15px 0 8px; }
+.report-team { min-width:0; font-size:18px; font-weight:650; line-height:1.4; overflow-wrap:anywhere; }
+.report-chance { color:var(--accent-text); font-size:28px; line-height:1.15; letter-spacing:-.7px; font-variant-numeric:tabular-nums; }
+.structured-report .report-scope { margin:0; color:var(--muted); font-size:11px; line-height:1.5; }
+.structured-report .report-basis { margin:12px 0 0; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; line-height:1.6; }
+.structured-report .report-no-winner { margin:12px 0 0; }
+.structured-report ul.report-markets { display:grid; gap:8px; list-style:none; padding:0; margin:0; }
+.structured-report .report-markets li { margin:0; padding:11px 12px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; font-size:12px; line-height:1.7; }
+.report-probability { color:var(--text); font-weight:750; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.structured-report ul.report-facts { margin:0; padding-left:17px; }
+.structured-report .report-facts li { padding-left:3px; margin:0 0 9px; font-size:12px; }
+.structured-report .report-facts li:last-child { margin-bottom:0; }
+.report-limitations { padding:12px; border:1px solid var(--line); border-radius:9px; color:var(--muted); }
+.report-limitations summary { cursor:pointer; font-size:12px; color:var(--text); line-height:1.5; }
+.structured-report .report-limitations p { margin:10px 0 0; font-size:11px; line-height:1.7; }

@@ -127,8 +127,9 @@ async def exercise(base, repo):
                 assert MARKER in REQUESTS[-1]["team_statistics"]["sections"][0]["text"]
                 assert REQUESTS[-1]['statistics_preparation']['state']=='ok'
                 text=await page.locator('#explanation').inner_text()
-                assert text.startswith('Победитель:') and 'Победные рынки (оценка):' in text and 'Аргументы:' in text,text
-                assert await page.locator('#explanation p').count() in (3,4)
+                assert text.startswith('Наиболее вероятный исход') and 'Рынки' in text and 'Аргументы' in text,text
+                assert await page.locator('#explanation .report-section').count()==3
+                await expect(page.locator('#ai-analysis-meta')).to_contain_text('История участников найдена.')
                 assert 'Пуассон' not in text and 'half_life' not in text
                 if index==0:
                     AIHandler.fail_context=True
