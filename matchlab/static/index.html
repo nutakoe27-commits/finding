@@ -14,7 +14,7 @@
   <script src="/static/theme.js?v=20261109-accounts1"></script>
   <link rel="stylesheet" href="/static/style.css?v=20261109-accounts1" />
   <script src="/static/account.js?v=20261109-accounts1" defer></script>
-  <script src="/static/app.js?v=20261109-accounts1" defer></script>
+  <script src="/static/app.js?v=20261109-wigolo1" defer></script>
   <script src="/static/admin.js?v=20261109-accounts1" defer></script>
 </head>
 <body>
@@ -245,7 +245,7 @@
 
 
       </div>
-      <article id="saved-analysis" class="panel" hidden><h2 id="saved-analysis-title"></h2><div id="saved-analysis-text" class="explanation"></div><p id="saved-analysis-coverage" class="small muted"></p><a id="saved-analysis-open" class="secondary-button" href="#matches">Открыть актуальные рынки <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></article>
+      <article id="saved-analysis" class="panel" hidden><h2 id="saved-analysis-title"></h2><div id="saved-analysis-text" class="explanation"></div><p id="saved-analysis-coverage" class="small muted"></p><div id="saved-analysis-sources"></div><a id="saved-analysis-open" class="secondary-button" href="#matches">Открыть актуальные рынки <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></article>
     </section>
     <section id="view-archive" data-view hidden>
       <div class="page-heading"><div><p class="eyebrow">НАКОПЛЕННЫЕ РЕЗУЛЬТАТЫ</p><h1>Архив матчей<span class="lime">.</span></h1><p class="subtitle">История для сравнения участников и аргументированного разбора. Результаты сохраняются по мере получения от Winline.</p></div><button id="archive-refresh" class="secondary-button" type="button">Обновить</button></div>
@@ -406,7 +406,7 @@
       <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
       <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
       <div id="ai-request-error" class="notice error" role="alert" hidden></div>
-      <div id="explanation" class="explanation" aria-live="polite" hidden></div><p id="ai-analysis-meta" class="small muted" hidden></p>
+      <div id="explanation" class="explanation" aria-live="polite" hidden></div><p id="ai-analysis-meta" class="small muted" hidden></p><div id="ai-analysis-sources"></div>
     </aside>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>

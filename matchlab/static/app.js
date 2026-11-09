@@ -646,6 +646,7 @@ function clearAIOutput() {
   state.explainRequest++;
   state.aiAnalysis = null;
   $("explanation").hidden = true; $("ai-analysis-meta").hidden = true;
+  $("ai-analysis-sources").replaceChildren();
   showError("ai-request-error", "");
 }
 function syncAIButton() {
@@ -691,6 +692,28 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
   $("ai-analysis-meta").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК.${changed ? " Данные матча обновились. Этот ответ относится к предыдущему состоянию — запросите новый разбор." : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}`;
   $("ai-analysis-meta").hidden = false;
+  renderResearchSources($("ai-analysis-sources"), context.web_research);
+}
+function renderResearchSources(target, research) {
+  target.replaceChildren();
+  if (!research || ["disabled", "not_applicable"].includes(research.state)) return;
+  if (research.state !== "ready") {
+    target.append(el("p", "small muted", research.state === "empty" ? "Подходящих интернет-источников не найдено." : "Интернет-поиск временно недоступен; разбор основан на остальных данных."));
+    return;
+  }
+  const details = el("details", "research-sources"), summary = el("summary", "", `Интернет-источники · ${research.sources.length}`), list = el("ol");
+  details.append(summary, el("p", "small muted", `Поиск: ${moscowTime(research.searched_at)} МСК.${research.partial ? " Часть запросов не выполнена." : ""} Сведения источников требуют проверки.`));
+  for (const source of research.sources) {
+    let url;
+    try { url = new URL(source.url); } catch { continue; }
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) continue;
+    const item = el("li"), link = el("a", "", source.title);
+    link.href = url.href; link.target = "_blank"; link.rel = "noopener noreferrer";
+    item.append(link);
+    if (source.published_at) item.append(el("span", "small muted", ` · дата источника: ${source.published_at}${source.date_inferred ? " (предположительно)" : ""}`));
+    list.append(item);
+  }
+  details.append(list); target.append(details);
 }
 function eventRoute(event) { return `#${event.source_kind === "stream" ? "stream" : "match"}/${event.source_event_id}`; }
 function eventAPI(id) { return `${state.streamEvent ? "/api/archive/events/" : "/api/bookmakers/events/"}${id}`; }
@@ -825,7 +848,7 @@ async function requestAI() {
   const request = ++state.explainRequest, selection = state.selection ? {...state.selection} : null;
   const eventId = state.eventId, forecastId = forecast?.id;
   state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; syncAIButton(); showError("ai-request-error", "");
-  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true;
+  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-analysis-sources").replaceChildren();
   $("ai-desk").setAttribute("aria-busy", "true");
   try {
     const endpoint = document ? eventAPI(eventId)+"/explain" : "/api/explain";
@@ -888,6 +911,7 @@ async function loadSavedAnalysis(id) {
     $("saved-analysis-title").textContent = analysis.market_name;
     renderAnalysis($("saved-analysis-text"),analysis.text);
     $("saved-analysis-coverage").textContent = `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков. Данные и текст относятся ко времени этого разбора.`;
+    renderResearchSources($("saved-analysis-sources"), context.web_research);
     $("saved-analysis-open").href = eventRoute(analysis.event);
   } catch (error) { if (request === state.marketDetailRequest) showError("detail-error", error.message); }
 }

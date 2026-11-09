@@ -23,6 +23,8 @@ class Settings:
     vapid_private_key: str = ""
     vapid_public_key: str = ""
     vapid_subject: str = ""
+    wigolo_mcp_url: str = ""
+    wigolo_mcp_token_file: str = ""
 
     @property
     def database(self) -> Path:
@@ -72,4 +74,6 @@ class Settings:
             vapid_private_key=os.getenv("WEBPUSH_PRIVATE_KEY_FILE", ""),
             vapid_public_key=os.getenv("WEBPUSH_PUBLIC_KEY", ""),
             vapid_subject=os.getenv("WEBPUSH_SUBJECT", ""),
+            wigolo_mcp_url=os.getenv("WIGOLO_MCP_URL", "").strip(),
+            wigolo_mcp_token_file=os.getenv("WIGOLO_MCP_TOKEN_FILE", "").strip(),
         )

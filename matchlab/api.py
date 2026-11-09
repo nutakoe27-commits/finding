@@ -468,9 +468,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         team_statistics=analysis_statistics(saved_statistics)
         archive_history=archive.history(repo,document)
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        key=hashlib.sha256((user['id']+':'+key).encode()).hexdigest()
+        key=hashlib.sha256((user['id']+':'+key+':web='+str(bool(settings.wigolo_mcp_url))).encode()).hexdigest()
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
-        if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(minutes=10):
+        search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
+        cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
+        if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
             return {**cached, "cached": True}
         if not analysis_lock.acquire(blocking=False):
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
@@ -490,6 +492,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                            notes=request.notes, statistics=statistics,team_statistics=team_statistics,archive_history=archive_history)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
+            from .web_research import research
+            context['web_research'] = research(settings, context['event'])
             try:
                 text = qwen.explain_event(settings, context)
             except ValueError as exc:

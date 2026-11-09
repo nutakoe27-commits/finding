@@ -67,6 +67,16 @@ async def exercise(base):
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#auth-dialog")).not_to_be_visible()
                 await page.locator("#explanation").wait_for(state="visible")
+                await page.evaluate('''() => renderResearchSources(document.getElementById("ai-analysis-sources"), {
+                    state: "ready", searched_at: new Date().toISOString(), sources: [
+                      {id: 1, title: "<img src=x onerror=window.injected=1>", url: "https://example.org/news"},
+                      {id: 2, title: "bad", url: "javascript:alert(1)"}
+                    ]})''')
+                source_links = page.locator('#ai-analysis-sources a')
+                assert await source_links.count() == 1
+                assert await source_links.first.get_attribute('href') == 'https://example.org/news'
+                assert 'noopener' in await source_links.first.get_attribute('rel')
+                assert not await page.evaluate('Boolean(window.injected)')
                 await expect(page.locator("#account-button")).to_have_text(username)
                 assert MARKER in REQUESTS[-1]["team_statistics"]["sections"][0]["text"]
                 await page.locator("#team-statistics > summary").click()

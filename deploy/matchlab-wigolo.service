@@ -1,0 +1,35 @@
+# Managed by Matchlab Wigolo integration
+[Unit]
+Description=Private Wigolo MCP search for Matchlab
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matchlab-wigolo
+Group=matchlab-wigolo
+WorkingDirectory=/var/lib/matchlab-wigolo
+Environment=WIGOLO_DATA_DIR=/var/lib/matchlab-wigolo/data
+Environment=PKG_NATIVE_CACHE_PATH=/var/lib/matchlab-wigolo/native-cache
+Environment=WIGOLO_API_TOKEN_FILE=/var/lib/matchlab-wigolo/api-token
+Environment=WIGOLO_RERANKER=none
+Environment=WIGOLO_LOCAL_LLM=off
+Environment=MAX_BROWSERS=1
+Environment=CACHE_TTL_SEARCH=300
+Environment=FETCH_TIMEOUT_MS=5000
+ExecStart=/opt/matchlab-wigolo/wigolo serve --host 127.0.0.1 --port 13334
+Restart=on-failure
+RestartSec=15
+MemoryMax=1G
+CPUQuota=50%
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/matchlab-wigolo
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

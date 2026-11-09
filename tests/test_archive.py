@@ -233,6 +233,22 @@ class ArchiveTests(unittest.TestCase):
             self.assertIsNone(context["statistical_model"])
             self.assertNotIn("current_score_and_match_clock", context["missing_data"])
 
+    def test_research_is_attached_to_private_analysis_and_sent_to_qwen(self):
+        self.feed([header()])
+        research = {'state': 'ready', 'searched_at': datetime.now(UTC).isoformat(),
+                    'sources': [{'id': 1, 'title': 'Источник', 'url': 'https://example.org/news',
+                                 'excerpt': 'Новость', 'published_at': None, 'date_inferred': False}]}
+        with patch('matchlab.web_research.research', return_value=research) as search, \
+             patch('matchlab.api.qwen.explain_event', return_value='Анализ [1]') as model:
+            response = self.client.post('/api/archive/events/101/explain', json={'notes': 'private note'})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(model.call_args.args[1]['web_research'], research)
+            self.assertNotIn('private note', str(search.call_args.args[1]))
+            result = response.json()
+            self.assertEqual(result['context']['web_research'], research)
+            saved = self.client.get('/api/analyses/' + result['id']).json()
+            self.assertEqual(saved['context']['web_research'], research)
+
     def test_history_is_exact_and_never_uses_future_score_corrections(self):
         self.feed([header()])
         early = datetime.now(UTC)
