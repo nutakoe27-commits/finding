@@ -712,7 +712,7 @@ function renderAIAnalysisMeta() {
   const market = context.markets.find(item => item.key === context.selection.market_key);
   const outcome = market?.outcomes.find(item => item.key === context.selection.outcome_key);
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
-  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? " Данные матча обновились. Этот ответ относится к предыдущему состоянию — запросите новый разбор." : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}`;
+  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников учтена." : ""}${context.team_statistics ? " Статистика участников учтена." : ""}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }

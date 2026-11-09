@@ -68,6 +68,27 @@ class ProductTests(unittest.TestCase):
             self.assertEqual(qwen.explain_event(settings, ctx), 'Обычный разбор')
             model.assert_called_once()
 
+    def test_live_snapshot_reports_raw_clock_and_each_observation_time(self):
+        settings = Settings(self.path, 'http://127.0.0.1:9/v1', 'fixture-model')
+        context = {'team_statistics': None, 'statistical_model': None, 'archive_history': {'state': 'empty'},
+                   'web_research': {'state': 'ready', 'sources': [{'id': 5, 'excerpt': 'unverified'}]},
+                   'selection': {'market_key': 'live'}, 'request_time': {'kickoff_passed': True},
+                   'snapshot': {'is_stale': True, 'observed_at': '2026-11-09T05:47:05+00:00'},
+                   'event': {'phase': 'live', 'live_score': '2:0', 'live_clock': "2Т 13'"},
+                   'markets': [{'key': 'live', 'name': 'Тотал', 'period': '2-й тайм', 'parameter': '2.5', 'is_stale': True,
+                                'observed_at': '2026-11-09T05:40:00+00:00',
+                                'outcomes': [{'name': 'Больше', 'odds': 1.42, 'state': 'open'}]}]}
+        with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
+            text = qwen.explain_event(settings, context)
+        self.assertIn('Счёт: 2:0', text)
+        self.assertIn("Отметка источника: «2Т 13'»", text)
+        self.assertIn('09.11.2026, 08:47:05 МСК', text)
+        self.assertIn('09.11.2026, 08:40:00 МСК', text)
+        self.assertIn('Тотал · 2-й тайм · значение: 2.5', text)
+        self.assertIn('Снимок мог устареть', text)
+        self.assertNotIn('давление', text)
+        self.assertNotIn('доминиру', text)
+
     def test_catalogue_searches_all_pages_with_cyrillic_and_filters(self):
         self.repo.import_event_markets(event("124", home="Динамо", competition="Беларусь. Высшая лига"))
         self.repo.import_event_markets(event("125", home="Крылья Советов", phase="live"))

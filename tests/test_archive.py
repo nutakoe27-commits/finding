@@ -250,21 +250,42 @@ class ArchiveTests(unittest.TestCase):
             statuses = [row[0] for row in db.execute('SELECT status FROM ai_usage ORDER BY rowid')]
         self.assertEqual(statuses, ['limited', 'limited'])
 
-    def test_research_is_attached_to_private_analysis_and_sent_to_qwen(self):
-        self.feed([header()])
+    def test_web_links_alone_do_not_trigger_model_and_live_clock_stays_verbatim(self):
+        live = header(live=True, score='2:0')
+        live['clock'] = "2Т 13'"
+        self.feed([live])
         research = {'state': 'ready', 'searched_at': datetime.now(UTC).isoformat(),
                     'sources': [{'id': 1, 'title': 'Источник', 'url': 'https://example.org/news',
-                                 'excerpt': 'Новость', 'published_at': None, 'date_inferred': False}]}
+                                 'excerpt': 'Команды провели матч 28.10.2026', 'published_at': None, 'date_inferred': False}]}
         with patch('matchlab.web_research.research', return_value=research) as search, \
-             patch('matchlab.api.qwen.explain_event', return_value='Анализ [1]') as model:
+             patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
             response = self.client.post('/api/archive/events/101/explain', json={'notes': 'private note'})
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual(model.call_args.args[1]['web_research'], research)
             self.assertNotIn('private note', str(search.call_args.args[1]))
             result = response.json()
+            self.assertEqual(result['analysis_type'], 'limited_summary')
+            self.assertIn('Счёт: 2:0', result['text'])
+            self.assertIn("Отметка источника: «2Т 13'»", result['text'])
+            self.assertNotIn('13-я минута второго тайма', result['text'])
+            self.assertNotIn('28.10.2026', result['text'])
+            self.assertIn('ссылки показаны отдельно', result['text'])
             self.assertEqual(result['context']['web_research'], research)
             saved = self.client.get('/api/analyses/' + result['id']).json()
             self.assertEqual(saved['context']['web_research'], research)
+
+    def test_research_and_confirmed_history_are_sent_to_model(self):
+        self.feed([header()])
+        self.send('results', source='a' * 64, rows=[result()])
+        research = {'state': 'ready', 'sources': [{'id': 1, 'title': 'Источник',
+                    'url': 'https://example.org/news', 'excerpt': 'Новость'}]}
+        with patch('matchlab.web_research.research', return_value=research), \
+             patch('matchlab.qwen._completion', return_value='Разбор') as model:
+            response = self.client.post('/api/archive/events/101/explain', json={})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['analysis_type'], 'model')
+        context = json.loads(model.call_args.args[1][1]['content'])
+        self.assertEqual(context['web_research'], research)
+        self.assertEqual(context['archive_history']['state'], 'ready')
 
     def test_history_is_exact_and_never_uses_future_score_corrections(self):
         self.feed([header()])

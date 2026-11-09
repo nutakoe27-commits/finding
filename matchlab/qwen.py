@@ -1,9 +1,11 @@
 import json
 import math
 import re
+from datetime import timedelta, timezone
 
 import httpx
 
+from .bookmakers import instant
 from .config import Settings
 
 SYSTEM = """Ты аналитик футбольного сервиса prognozich ai. Дай связный аргументированный разбор по-русски.
@@ -104,8 +106,11 @@ EVENT_SYSTEM = """archive_history — накопленные результат�
 используй только переданные recent_results и head_to_head; учитывай observed_at/received_at и сокращение списка.
 Сопоставление подтверждается ID события, участниками, видом спорта и временем; пустой архив не означает отсутствие игр.
 При live используй live_score/live_clock только с временем snapshot, не называй их текущими при устаревшем снимке.
+Отметка live_clock — буквальное обозначение источника. Не пересчитывай её в минуты отдельного тайма и не додумывай
+правила часов или продолжительность матча. Счёт показывает только число голов, но не владение, удары или доминирование.
 Для начавшейся встречи давай разбор хода или ретроспективу, не выдавай его за предматчевый прогноз.
 Рынки с is_stale=true относятся к прошлым наблюдениям. Каждая цена имеет своё observed_at.
+Возраст или время наблюдения сами по себе не подтверждают, что коэффициент был предматчевым или live.
 Ты спортивный аналитик сервиса prognozich ai. Дай аргументированный разбор по-русски.
 Пиши для обычного пользователя: не упоминай имена полей JSON, переменные, внутренние статусы и технические идентификаторы.
 Не выводи UTC и технические отметки времени: время разбора и снимка показано в интерфейсе по Москве.
@@ -156,8 +161,8 @@ web_research — непроверенные выдержки из поиска; 
 Для каждого использованного сообщения добавляй номер источника вида [1] строго по id из web_research.sources.
 Не используй новости, опубликованные после начала матча, как данные, известные до начала. При live учитывай время и фазу.
 Не выдумывай содержание источников, ссылки, составы, травмы, результаты или причинно-следственные связи.
-Если team_statistics=null, историю формы и личных встреч бери из archive_history со state=ready или из сопоставленных,
-датированных источников web_research с указанием номеров. Поисковые выдержки могут быть неполными и ошибочными.
+Если team_statistics=null, историю формы и личных встреч бери только из archive_history со state=ready.
+Поисковые выдержки могут быть неполными и ошибочными; сами по себе они не подтверждают историю команд.
 Если подходящих фактов нет, прямо укажи это; поиск сам по себе не подтверждает достоверность сообщения.
 Если event содержит live_score/live_clock, это наблюдённые счёт и стадия игры на время snapshot.
 Если их нет, счёт и время неизвестны. Если отдельная статистика содержит счёт, указывай её время. Не придумывай счёт, форму,
@@ -170,20 +175,50 @@ web_research — непроверенные выдержки из поиска; 
 
 
 def limited_event_summary(context: dict) -> str | None:
-    """Use only captured quotes when no supporting facts are available."""
+    """Use observed match data and quotes when no verified analysis data exists."""
     archive = context.get('archive_history') or {}
     web = context.get('web_research') or {}
     if (context.get('team_statistics') or context.get('statistical_model') or
-        archive.get('state') == 'ready' or (web.get('state') == 'ready' and web.get('sources'))):
+        archive.get('state') == 'ready'):
         return None
 
     def plain(value):
         return re.sub(r'[\x00-\x1f\x7f*_`\\]', ' ', str(value or '')).strip()[:150]
 
+    def moscow_time(value):
+        try:
+            return instant(value).astimezone(timezone(timedelta(hours=3))).strftime('%d.%m.%Y, %H:%M:%S МСК')
+        except (TypeError, ValueError, OverflowError):
+            return ''
+
     text = ('**Сводка по доступным данным**\n'
             'Подтверждённых сведений о форме и личных встречах участников для этого матча '
             'недостаточно. По одним коэффициентам нельзя обоснованно оценить исход. '
             'Это автоматическая сводка по сохранённым данным; модель не вызывалась.\n')
+    event = context.get('event') or {}
+    snapshot = context.get('snapshot') or {}
+    if event.get('phase') == 'live':
+        score, clock = plain(event.get('live_score')), plain(event.get('live_clock'))
+        if score or clock:
+            text += '\n**Последний снимок матча**\n'
+            if score:
+                text += f'Счёт: {score}. '
+            if clock:
+                text += f'Отметка источника: «{clock}». '
+            observed = moscow_time(snapshot.get('observed_at'))
+            if observed:
+                text += f'Наблюдение: {observed}.'
+            if snapshot.get('is_stale'):
+                text += ' Снимок мог устареть.'
+            text += '\n'
+    elif event.get('phase') == 'finished':
+        final = event.get('final_result') or {}
+        score = plain(final.get('score_text'))
+        if score:
+            text += f'\n**Результат из архива**\nСчёт: {score}.\n'
+    if web.get('state') == 'ready' and web.get('sources'):
+        text += ('\nНайденные ссылки показаны отдельно и требуют проверки; '
+                 'они не считаются подтверждённой историей участников.\n')
     selection = context.get('selection') or {}
     markets = context.get('markets') or []
     selected = next((m for m in markets if m.get('key') == selection.get('market_key')), None)
@@ -195,11 +230,24 @@ def limited_event_summary(context: dict) -> str | None:
             odds = item.get('odds')
             if (item.get('state') == 'open' and isinstance(odds, (int, float)) and
                     not isinstance(odds, bool) and math.isfinite(odds) and odds > 0 and plain(item.get('name'))):
-                quotes.append(f"- {plain(item['name'])}: {odds:g}")
+                label = plain(item['name'])
+                parameter = plain(item.get('parameter'))
+                if parameter and parameter not in label:
+                    label += f' ({parameter})'
+                quotes.append(f"- {label}: {odds:g}")
         if quotes:
-            text += f"\n**Коэффициенты в сохранённом снимке**\n{plain(selected.get('name'))}\n\n" + '\n'.join(quotes)
+            label = plain(selected.get('name'))
+            period, parameter = plain(selected.get('period')), plain(selected.get('parameter'))
+            if period and period.casefold() not in label.casefold():
+                label += f' · {period}'
+            if parameter and parameter not in label:
+                label += f' · значение: {parameter}'
+            text += f"\n**Коэффициенты в сохранённом снимке**\n{label}\n\n" + '\n'.join(quotes)
+            observed = moscow_time(selected.get('observed_at'))
+            if observed:
+                text += f'\n\nНаблюдение коэффициентов: {observed}.'
             text += '\n\nКоэффициенты описывают рынок и сами по себе не доказывают равенство сил команд.'
-            if selected.get('is_stale') or (context.get('snapshot') or {}).get('is_stale'):
+            if selected.get('is_stale') or snapshot.get('is_stale'):
                 text += ' Снимок мог устареть.'
     if ((context.get('request_time') or {}).get('kickoff_passed') and
             (context.get('event') or {}).get('phase') not in ('live', 'finished')):
