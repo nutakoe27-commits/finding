@@ -1,0 +1,39 @@
+# Managed by standalone Winline archive
+[Unit]
+Description=Persistent public Winline match history
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=winline-archive
+Group=winline-archive
+WorkingDirectory=/opt/winline-archive
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/winline-archive/browsers
+Environment=WINLINE_DATABASE=/var/lib/winline-archive/winline.sqlite3
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/winline-archive/.venv/bin/python -m winline.worker --state-dir /var/lib/winline-archive
+Restart=on-failure
+RestartSec=60
+TimeoutStopSec=90
+KillMode=control-group
+MemoryHigh=1536M
+MemoryMax=2048M
+CPUQuota=50%
+Nice=15
+IOSchedulingClass=idle
+OOMScoreAdjust=500
+TasksMax=512
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=winline-archive
+StateDirectoryMode=0700
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -2,11 +2,16 @@
 
 import hashlib
 import json
+import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-DEFAULT_DB = Path(__file__).resolve().parent / "data" / "winline.sqlite3"
+DEFAULT_DB = Path(
+    os.environ.get(
+        "WINLINE_DATABASE", Path(__file__).resolve().parent / "data" / "winline.sqlite3"
+    )
+)
 
 
 def now():
