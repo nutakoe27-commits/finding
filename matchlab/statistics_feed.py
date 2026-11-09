@@ -33,6 +33,34 @@ def _same_team(left,right):
     return bool(len(a)>=3 and a==b)
 
 
+def _team_id(team):
+    if not isinstance(team,dict): return None
+    return _id(team.get('_id')) or _id(team.get('id'))
+
+
+def _anchored_teams(documents,target,expected):
+    """Map external team IDs only when an observed list contains this exact match."""
+    anchors={'home':set(),'away':set()}
+    for data in documents:
+        if not isinstance(data,dict) or not isinstance(data.get('team'),dict) or not isinstance(data.get('matches'),list): continue
+        team=data['team']; team_id=_team_id(team); name=_name(team.get('name'))
+        if not team_id or len(name)<3: continue
+        sides=[side for side in anchors if _name(target['teams'][side].get('name'))==name]
+        if len(sides)!=1: continue
+        for row in data['matches'][:100]:
+            if not isinstance(row,dict) or _id(row.get('_id'))!=expected: continue
+            teams=row.get('teams')
+            if not isinstance(teams,dict): continue
+            if all(_team_id(target['teams'][side]) and _team_id(target['teams'][side])==_team_id(teams.get(side)) for side in anchors):
+                anchors[sides[0]].add(team_id)
+                break
+    # A shared or ambiguous ID cannot establish a reliable mapping.
+    shared=anchors['home'] & anchors['away']
+    for side in anchors:
+        if len(anchors[side])!=1 or anchors[side] & shared: anchors[side].clear()
+    return anchors
+
+
 def _sanitize(value, budget, depth=0):
     if budget[0]<=0 or depth>10:
         budget[1]=True
@@ -81,10 +109,17 @@ def extract_passive_feed(documents, statistics_id):
     if not target: return None
     sides={'home':[],'away':[]}
     seen={'home':set(),'away':set()}
+    methods={'home':set(),'away':set()}
+    anchors=_anchored_teams(documents,target,expected)
     truncated=False
     for data in documents:
         if not isinstance(data,dict) or not isinstance(data.get('team'),dict) or not isinstance(data.get('matches'),list): continue
         matches=[side for side in sides if _same_team(target['teams'][side],data['team'])]
+        method='team_id_or_exact_name'
+        if not matches:
+            team_id=_team_id(data['team']); name=_name(data['team'].get('name'))
+            matches=[side for side in sides if team_id in anchors[side] and name==_name(target['teams'][side].get('name'))]
+            method='same_match_anchor'
         if len(matches)!=1: continue
         side=matches[0]
         budget=[15000,False]
@@ -96,10 +131,12 @@ def extract_passive_feed(documents, statistics_id):
             continue
         seen[side].add(encoded)
         sides[side].append(safe)
+        methods[side].add(method)
         truncated|=budget[1]
     match_budget=[10000,False]
     result={'binding':'statistics_id','statistics_id':expected,'match':_sanitize(target,match_budget),
-            'participants':sides,'scope':'source match lists may include finished and future fixtures',
+            'participants':sides,'team_bindings':{side:sorted(methods[side]) for side in sides},
+            'scope':'source match lists may include finished and future fixtures',
             'truncated':truncated or match_budget[1]}
     if len(json.dumps(result,ensure_ascii=False,allow_nan=False).encode())>MAX_TOTAL_BYTES:
         return None

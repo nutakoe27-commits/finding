@@ -108,6 +108,7 @@ def preview_feed_result(feed):
     count=sum(bool(feed['participants'][side]) for side in ('home','away'))
     return {'state':'ready' if count==2 else 'partial' if count==1 else 'bound_without_team_lists',
             'binding':feed['binding'],'truncated':feed['truncated'],
+            'team_bindings':feed.get('team_bindings',{}),
             'list_sizes':{side:[len(item['matches']) for item in feed['participants'][side]] for side in ('home','away')},
             'encoded_bytes':len(json.dumps(feed,ensure_ascii=False).encode())}
 

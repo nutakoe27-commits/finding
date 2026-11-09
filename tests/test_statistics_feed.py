@@ -34,6 +34,30 @@ class PassiveFeedTests(unittest.TestCase):
         self.assertEqual(result['participants']['home'],[])
         self.assertEqual(len(result['participants']['away']),1)
 
+    def test_different_id_spaces_require_the_exact_match_as_an_anchor(self):
+        match={'_id':72578418,'teams':{'home':{'_id':15184073,'name':'Велес'},'away':{'_id':509591,'name':'Камаз Н-Ч'}}}
+        home={'_id':347438,'name':'Велес'}
+        away={'_id':7518,'name':'Камаз Н-Ч'}
+        docs=[{'match':match},{'team':home,'matches':[{'_id':1}]},{'team':away,'matches':[{'_id':2}]},
+              {'team':home,'matches':[match]},{'team':away,'matches':[match]}]
+        result=extract_passive_feed(docs,'72578418')
+        self.assertEqual([len(result['participants'][side]) for side in ('home','away')],[2,2])
+        self.assertEqual(result['team_bindings'],{'home':['same_match_anchor'],'away':['same_match_anchor']})
+
+    def test_wrong_opponent_or_other_event_cannot_anchor_a_conflicting_team_id(self):
+        match=fixture()[0]['match']
+        team={'_id':99,'name':'Велес'}
+        wrong={'_id':72578418,'teams':{'home':{'_id':10,'name':'Велес'},'away':{'_id':999,'name':'Камаз Н-Ч'}}}
+        other={'_id':777,'teams':match['teams']}
+        result=extract_passive_feed([{'match':match},{'team':team,'matches':[wrong,other]}],'72578418')
+        self.assertEqual(result['participants']['home'],[])
+
+    def test_ambiguous_anchors_do_not_bind_either_external_id(self):
+        match=fixture()[0]['match']
+        docs=[{'match':match}, {'team':{'_id':99,'name':'Велес'},'matches':[match]},
+              {'team':{'_id':98,'name':'Велес'},'matches':[match]}]
+        self.assertEqual(extract_passive_feed(docs,'72578418')['participants']['home'],[])
+
     def test_unrelated_teams_and_credentials_are_not_included(self):
         docs=fixture()
         docs[1]['team']['auth_token']='very-private'
