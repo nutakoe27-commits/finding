@@ -1,6 +1,7 @@
 """First-party analytics, referral links, promotional credits and admin operations."""
 
 import re
+import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from urllib.parse import quote, urlsplit
@@ -165,6 +166,23 @@ def referral_template(value):
     return value
 
 
+def usage_details(db,row):
+    """Prefer per-request diagnostics; recover old rows only from one matching saved analysis."""
+    if row['details']:
+        return json.loads(row['details'])
+    match=re.fullmatch(r'/api/(?:bookmakers|archive)/events/(\d+)/explain',row['target'])
+    if not match or row['status']!='limited':return None
+    candidates=db.execute('''SELECT payload FROM event_analyses WHERE user_id=?
+        AND json_extract(payload,'$.event.source_event_id')=?
+        AND julianday(generated_at)>=julianday(?)
+        AND (julianday(generated_at)-julianday(?))*86400<=?''',
+        (row['user_id'],match[1],row['at'],row['at'],(row['latency_ms'] or 0)/1000+2)).fetchall()
+    if len(candidates)!=1:return None
+    saved=json.loads(candidates[0]['payload']);gen=saved.get('context',{}).get('ai_generation') or {}
+    if not gen.get('state'):return None
+    return {key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')} | {'analysis_id':saved['id'],'derived_from_saved':True}
+
+
 def overview(repo, days):
     cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat(
         timespec="microseconds"
@@ -174,7 +192,13 @@ def overview(repo, days):
         users = scalar("SELECT count(*) FROM users")
         usage = dict(
             db.execute(
-                "SELECT count(*) total,coalesce(sum(status='success'),0) success,coalesce(sum(status='failed'),0) failed,coalesce(round(avg(CASE WHEN status='success' THEN latency_ms END)),0) avg_ms FROM ai_usage WHERE at>=?",
+                """SELECT count(*) total,coalesce(sum(status='success'),0) success,
+                   coalesce(sum(status='failed' OR json_extract(details,'$.state') IN ('unavailable','partial')),0) failed,
+                   coalesce(sum(status='limited'),0) limited,
+                   coalesce(sum(json_extract(details,'$.model_calls')),0) model_calls,
+                   coalesce(sum(json_extract(details,'$.cache_hit')=1),0) cached,
+                   coalesce(round(avg(CASE WHEN status='success' AND coalesce(json_extract(details,'$.cache_hit'),0)=0 THEN latency_ms END)),0) avg_ms
+                   FROM ai_usage WHERE at>=?""",
                 (cutoff,),
             ).fetchone()
         )
@@ -223,12 +247,9 @@ def overview(repo, days):
                 (cutoff,),
             ),
         }
-        result["recent_ai"] = [
-            dict(r)
-            for r in db.execute(
-                "SELECT a.at,u.username,a.kind,a.status,a.latency_ms FROM ai_usage a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.at DESC LIMIT 12"
-            )
-        ]
+        result['recent_ai']=[]
+        for row in db.execute('SELECT a.*,u.username FROM ai_usage a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.at DESC LIMIT 12').fetchall():
+            result['recent_ai'].append({key:row[key] for key in ('at','username','kind','status','latency_ms')} | {'generation':usage_details(db,row)})
     result["archive"] = archive.overview(repo)
     return result
 

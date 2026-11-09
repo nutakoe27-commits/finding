@@ -15,6 +15,7 @@ from matchlab.chances import fit_goals,goal_probabilities,market_probabilities,r
 from matchlab import qwen
 from matchlab.config import Settings
 from matchlab.chances_audit import evaluate
+from reasoning_helpers import completion as reasoning_completion
 
 NOW=datetime.now(timezone.utc)
 
@@ -104,7 +105,10 @@ class ChanceTests(unittest.TestCase):
         assessment={'winner':{'participant':'Team A','probability':.7,'basis':'history','market':'Исход 1X2','period':'осн.время'},
                     'markets':[],'facts':['Проверенный факт'],'limitations':[],'finished':False}
         context={'team_statistics':{'state':'ok'},'probability_assessment':assessment,'markets':[market('Исход 1X2',['П1','X','П2'])]}
-        with patch('matchlab.qwen._completion',return_value='{"fact_indices":[0],"probability":0.99}'):
+        def invented_probability(settings,messages):
+            result=json.loads(reasoning_completion(settings,messages));result['probability']=.99
+            return json.dumps(result,ensure_ascii=False)
+        with patch('matchlab.qwen._completion',side_effect=invented_probability):
             text=qwen.explain_event(settings,context)
         self.assertIn('70,0%',text);self.assertNotIn('99',text)
         with patch('matchlab.qwen._completion',side_effect=ValueError('Сервер Qwen не ответил вовремя.')),self.assertLogs('matchlab.qwen') as logs:
@@ -112,7 +116,7 @@ class ChanceTests(unittest.TestCase):
         self.assertEqual(context['ai_generation']['reason'],'timeout')
         self.assertIn('70,0%',text);self.assertIn('расчётный отчёт',text)
         self.assertIn('timeout',logs.output[0])
-        with patch('matchlab.qwen._completion',return_value='{"fact_indices":[999]}'):
+        with patch('matchlab.qwen._completion',return_value='{"observations":"invalid"}'):
             text=qwen.explain_event(settings,context)
         self.assertIn('Проверенный факт',text)
 

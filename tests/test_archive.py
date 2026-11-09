@@ -13,6 +13,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from account_helpers import signed_in
+from reasoning_helpers import completion as reasoning_completion,leaf_values,record_values
 
 from matchlab import archive
 from matchlab.api import create_app
@@ -309,13 +310,14 @@ class ArchiveTests(unittest.TestCase):
         research = {'state': 'ready', 'sources': [{'id': 1, 'title': 'Источник',
                     'url': 'https://example.org/news', 'excerpt': 'Новость'}]}
         with patch('matchlab.web_research.research', return_value=research), \
-             patch('matchlab.qwen._completion', return_value='{"fact_indices":[0]}') as model:
+             patch('matchlab.qwen._completion', side_effect=reasoning_completion) as model:
             response = self.client.post('/api/archive/events/101/explain', json={})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()['analysis_type'], 'model')
-        context = json.loads(model.call_args.args[1][1]['content'])
-        self.assertEqual(context['web_research'], research)
-        self.assertEqual(context['archive_history']['state'], 'ready')
+        payloads=[json.loads(call.args[1][1]['content']) for call in model.call_args_list]
+        values=record_values([record for payload in payloads for record in payload.get('records',[])])
+        self.assertEqual(values['/archive_history/state'],'ready')
+        self.assertEqual(values['/web_research/sources/0/title'],'Источник')
 
     def test_independent_chances_use_only_past_same_competition_and_keep_parameters_private(self):
         self.feed([header()])
@@ -325,7 +327,7 @@ class ArchiveTests(unittest.TestCase):
             item['data'].update(date=(datetime.now(UTC)-timedelta(days=i+1)).isoformat(),score=f'{i%4}:{i%3}')
             rows.append(rekey(item))
         self.assertEqual(self.send('results',source='a'*64,rows=rows).status_code,200)
-        with patch('matchlab.qwen._completion',return_value='{"fact_indices":[0,1]}'):
+        with patch('matchlab.qwen._completion',side_effect=reasoning_completion):
             response=self.client.post('/api/archive/events/101/explain',json={})
         self.assertEqual(response.status_code,200,response.text)
         saved=response.json(); assessment=saved['context']['probability_assessment']
@@ -346,6 +348,35 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(data['context']['ai_generation']['reason'],'context_limit')
         self.assertIn('контекст нейросети',data['text'])
         self.assertTrue(data['text'].startswith('Победитель:'))
+
+    def test_admin_sees_actual_calls_and_cache_does_not_claim_another_inference(self):
+        self.feed([header()]);self.send('results',source='a'*64,rows=[result()])
+        with patch('matchlab.qwen._completion',side_effect=reasoning_completion):
+            first=self.client.post('/api/archive/events/101/explain',json={}).json()
+            cached=self.client.post('/api/archive/events/101/explain',json={}).json()
+        self.assertTrue(cached['cached'])
+        with self.repo.connection() as db:
+            details=[json.loads(row['details']) for row in db.execute('SELECT details FROM ai_usage ORDER BY rowid')]
+        self.assertEqual(details[0]['state'],'ready')
+        self.assertGreaterEqual(details[0]['model_calls'],2)
+        self.assertEqual(details[0]['parts_completed'],details[0]['parts_total'])
+        self.assertTrue(details[1]['cache_hit']);self.assertEqual(details[1]['model_calls'],0)
+        signed_in(self.client,self.repo,'admin_fixture','admin')
+        overview=self.client.get('/api/admin/overview').json()
+        self.assertEqual(overview['recent_ai'][0]['generation']['analysis_id'],first['id'])
+        self.assertEqual(overview['ai']['cached'],1)
+
+    def test_old_summary_status_is_resolved_only_from_its_matching_saved_analysis(self):
+        self.feed([header()]);self.send('results',source='a'*64,rows=[result()])
+        with patch('matchlab.qwen._completion',side_effect=ValueError('Полный контекст матча превышает лимит сервера ИИ.')):
+            response=self.client.post('/api/archive/events/101/explain',json={})
+        self.assertEqual(response.status_code,200,response.text)
+        with self.repo.connection() as db:db.execute('UPDATE ai_usage SET details=NULL')
+        signed_in(self.client,self.repo,'admin_fixture','admin')
+        item=self.client.get('/api/admin/overview').json()['recent_ai'][0]
+        self.assertEqual(item['status'],'limited')
+        self.assertEqual(item['generation']['reason'],'context_limit')
+        self.assertTrue(item['generation']['derived_from_saved'])
 
     def test_history_is_exact_and_never_uses_future_score_corrections(self):
         self.feed([header()])

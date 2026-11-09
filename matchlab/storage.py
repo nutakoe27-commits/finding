@@ -125,6 +125,8 @@ class Repository:
             if 'webvisor' not in analytics_columns:db.execute('ALTER TABLE analytics_consents ADD COLUMN webvisor INTEGER NOT NULL DEFAULT 0')
             columns={row['name'] for row in db.execute('PRAGMA table_info(event_analyses)')}
             if 'user_id' not in columns:db.execute('ALTER TABLE event_analyses ADD COLUMN user_id TEXT')
+            usage_columns={row['name'] for row in db.execute('PRAGMA table_info(ai_usage)')}
+            if 'details' not in usage_columns:db.execute('ALTER TABLE ai_usage ADD COLUMN details TEXT')
             db.execute('CREATE INDEX IF NOT EXISTS analyses_owner ON event_analyses(user_id,generated_at)')
 
     def replace_season(self, season: str, rows: list[dict], source: str, digest: str) -> None:

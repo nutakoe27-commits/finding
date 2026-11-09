@@ -25,6 +25,8 @@ class Settings:
     vapid_subject: str = ""
     wigolo_mcp_url: str = ""
     wigolo_mcp_token_file: str = ""
+    qwen_context_tokens: int = 0
+    qwen_analysis_timeout: float = 120
 
     @property
     def database(self) -> Path:
@@ -47,6 +49,12 @@ class Settings:
         max_tokens = int(os.getenv("QWEN_MAX_TOKENS", "1024"))
         if max_tokens < 1:
             raise ValueError("QWEN_MAX_TOKENS должен быть положительным целым числом.")
+        context_tokens=int(os.getenv('QWEN_CONTEXT_TOKENS','0'))
+        analysis_timeout=float(os.getenv('QWEN_ANALYSIS_TIMEOUT_SECONDS','120'))
+        if context_tokens!=0 and not 1024<=context_tokens<=1_000_000:
+            raise ValueError('QWEN_CONTEXT_TOKENS: 0 для автоопределения или 1024–1000000.')
+        if not 10<=analysis_timeout<=150:
+            raise ValueError('QWEN_ANALYSIS_TIMEOUT_SECONDS должен быть от 10 до 150.')
         public_origin=os.getenv('PUBLIC_ORIGIN','https://prognozich.online').rstrip('/')
         parsed=urlsplit(public_origin)
         if (parsed.scheme not in ('http','https') or not parsed.hostname or parsed.path or parsed.query or parsed.fragment or parsed.username or parsed.password
@@ -76,4 +84,5 @@ class Settings:
             vapid_subject=os.getenv("WEBPUSH_SUBJECT", ""),
             wigolo_mcp_url=os.getenv("WIGOLO_MCP_URL", "").strip(),
             wigolo_mcp_token_file=os.getenv("WIGOLO_MCP_TOKEN_FILE", "").strip(),
+            qwen_context_tokens=context_tokens,qwen_analysis_timeout=analysis_timeout,
         )

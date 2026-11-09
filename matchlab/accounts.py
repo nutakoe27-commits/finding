@@ -362,15 +362,15 @@ def start_usage(repo, user, kind, target, settings):
     return usage_id
 
 
-def finish_usage(repo, usage_id, status, latency_ms):
+def finish_usage(repo, usage_id, status, latency_ms, details=None):
     with repo.connection() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM ai_usage WHERE id=?", (usage_id,)).fetchone()
         if not row or row["status"] != "pending":
             return
         db.execute(
-            "UPDATE ai_usage SET status=?,latency_ms=? WHERE id=?",
-            (status, latency_ms, usage_id),
+            "UPDATE ai_usage SET status=?,latency_ms=?,details=? WHERE id=?",
+            (status, latency_ms,json.dumps(details,ensure_ascii=False) if details else None,usage_id),
         )
         if status != "success" and row["used_bonus"]:
             db.execute(
@@ -421,6 +421,7 @@ def install(app, repo, settings):
                 usage,
                 ("limited" if getattr(request.state, "limited_summary", False) else "success") if response.status_code < 400 else "failed",
                 int((time.monotonic() - started) * 1000),
+                getattr(request.state,'ai_details',None),
             )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"

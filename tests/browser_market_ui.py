@@ -17,6 +17,7 @@ import urllib.request
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from account_helpers import signed_in_browser
+from reasoning_helpers import reply as reasoning_reply
 from matchlab.markets import FORMAT
 from matchlab.storage import Repository
 from matchlab.winline_markets import primary_quote
@@ -31,8 +32,17 @@ class AIHandler(BaseHTTPRequestHandler):
     def log_message(self, *unused):
         pass
 
+    def do_GET(self):
+        encoded=json.dumps({'data':[{'id':'fixture','max_model_len':4096}]}).encode()
+        self.send_response(200);self.send_header('Content-Type','application/json')
+        self.send_header('Content-Length',str(len(encoded)));self.end_headers();self.wfile.write(encoded)
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        if self.path.endswith('/tokenize'):
+            encoded=json.dumps({'count':sum(len(m['content'].encode()) for m in body['messages'])//3+30}).encode()
+            self.send_response(200);self.send_header('Content-Type','application/json')
+            self.send_header('Content-Length',str(len(encoded)));self.end_headers();self.wfile.write(encoded);return
         context = json.loads(body['messages'][1]['content'])
         REQUESTS.append(context)
         if self.fail_context:
@@ -43,8 +53,8 @@ class AIHandler(BaseHTTPRequestHandler):
             self.end_headers(); self.wfile.write(encoded); return
         time.sleep(0.3)
         text = 'Qwen: **Вывод:** разбор выбранного рынка.\n\n* **Рынок:** это оценка рынка, а не независимая вероятность. <img src=x onerror="window.analysisInjected=1">'
-        if 'fact_indices' in body['messages'][0]['content']:
-            text=json.dumps({'fact_indices':list(range(min(3,len(context['probability_assessment']['facts']))))})
+        if context.get('stage'):
+            text=json.dumps(reasoning_reply(context),ensure_ascii=False)
         encoded = json.dumps({'choices':[{'message':{'content':text},'finish_reason':'stop'}]}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')

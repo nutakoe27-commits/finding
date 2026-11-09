@@ -271,7 +271,17 @@ def assess(repo, document, context):
             'coverage':{'received_markets':len(context['markets']),'evaluated_markets':len({r['market_key'] for r in evaluated})}}
 
 
-def render_report(assessment, indices=None, extra_limit=None):
+def report_markets(assessment):
+    candidates=sorted(assessment['markets'],key=lambda r:(r['basis']!='history',-r['probability']))
+    chosen=[];seen=set()
+    for row in candidates:
+        if row['probability']<.55 or (row.get('odds') or 0)<1.15 or row['market_key'] in seen:continue
+        chosen.append(row);seen.add(row['market_key'])
+        if len(chosen)==3:break
+    return chosen
+
+
+def render_report(assessment, indices=None, extra_limit=None,arguments=None):
     def pct(value): return '>99,9%' if value>.999 else f'{value*100:.1f}'.replace('.',',')+'%'
     def label(record):
         parts=[record['market'],record.get('period'),record.get('parameter'),record['outcome']]
@@ -281,14 +291,9 @@ def render_report(assessment, indices=None, extra_limit=None):
         basis='по линии' if winner['basis']=='market' else 'оценка'
         first=f"Победитель: {plain(winner.get('participant'))} — {pct(winner['probability'])} ({basis}; {plain(winner['market'])}{' · '+plain(winner['period']) if winner.get('period') else ''})."
     else: first='Победитель: '+('прогноз не формируется — матч завершён.' if assessment.get('finished') else 'оценить по доступным данным нельзя.')
-    candidates=sorted(assessment['markets'],key=lambda r:(r['basis']!='history',-r['probability']))
-    chosen=[]; seen=set()
-    for row in candidates:
-        if row['probability']<.55 or (row.get('odds') or 0)<1.15 or row['market_key'] in seen: continue
-        chosen.append(row); seen.add(row['market_key'])
-        if len(chosen)==3: break
+    chosen=report_markets(assessment)
     second='Победные рынки (оценка): '+('; '.join(f"{label(r)} — {pct(r['probability'])}{' по линии' if r['basis']=='market' else ''}{' (возврат '+pct(r['push_probability'])+')' if r.get('push_probability') else ''}" for r in chosen) if chosen else 'подходящих вариантов для оценки не найдено')+'.'
     bank=assessment['facts']; indices=list(range(min(3,len(bank)))) if indices is None else indices
-    third='Аргументы: '+'; '.join(plain(bank[i],220) for i in dict.fromkeys(indices) if type(i) is int and 0<=i<len(bank)) + '.'
+    third='Аргументы: '+'; '.join(plain(value,350).replace(';',',') for value in arguments[:3]) + '.' if arguments else 'Аргументы: '+'; '.join(plain(bank[i],220) for i in dict.fromkeys(indices) if type(i) is int and 0<=i<len(bank)) + '.'
     limits=list(dict.fromkeys(assessment['limitations']+([extra_limit] if extra_limit else [])))
     return '\n\n'.join([first,second,third]+(['Ограничения: '+' '.join(limits)] if limits else []))

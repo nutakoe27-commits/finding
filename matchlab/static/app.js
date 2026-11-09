@@ -775,7 +775,7 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
   const prep=context.statistics_preparation?.state;
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
-  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${prepNote}`;
+  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${prepNote}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }
@@ -979,7 +979,7 @@ async function requestAI() {
     const result = await api(endpoint, {method:"POST",body:JSON.stringify(body)});
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
     renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
-    window.ProductAnalytics?.goal(['limited_summary','statistical_report'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
+    window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
     if (result.context) {
       result.preparation_notice=preparationNotice;
       state.aiAnalysis = result; renderAIAnalysisMeta();
@@ -1032,7 +1032,7 @@ async function loadSavedAnalysis(id) {
     const context = analysis.context;
     $("manual-heading").hidden = false;
     $("manual-heading").querySelector("h1").textContent = eventTitle(analysis.event);
-    $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
+    $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
     renderAnalysis($("saved-analysis-text"),analysis.text);

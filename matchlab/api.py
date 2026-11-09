@@ -84,6 +84,14 @@ def public_prediction(value):
     return result
 
 
+def generation_details(payload,cached=False):
+    gen=payload.get('context',{}).get('ai_generation') or {}
+    result={key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')}
+    result.update(analysis_id=payload['id'],cache_hit=cached)
+    if cached:result['model_calls']=0
+    return result
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     repo = Repository(settings.database)
@@ -539,10 +547,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cached = repo.event_analysis(request_key=key,user_id=user['id'])
         search_state = (cached.get('context', {}).get('web_research') or {}).get('state') if cached else None
         cache_seconds = (30 if search_state in ('unavailable','empty') else 300) if settings.wigolo_mcp_url else 600
-        if cached and cached.get('context',{}).get('ai_generation',{}).get('state')=='unavailable':
+        if cached and cached.get('context',{}).get('ai_generation',{}).get('state') in ('unavailable','partial'):
             cache_seconds=min(cache_seconds,30)
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
-            http_request.state.limited_summary = cached.get('analysis_type') in ('limited_summary','statistical_report')
+            http_request.state.limited_summary = cached.get('analysis_type') in ('limited_summary','statistical_report','partial_model')
+            http_request.state.ai_details=generation_details(cached,True)
             return {**cached, "cached": True}
         if not analysis_lock.acquire(blocking=False):
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
@@ -580,9 +589,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload = {"id": uuid4().hex, "generated_at": utc_now(), "event": context["event"],
                        "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
                        "text": text, "context": context,
-                       "analysis_type": {'unavailable':'statistical_report','skipped':'limited_summary'}.get(context.get('ai_generation',{}).get('state'),'model')}
+                       "analysis_type": {'unavailable':'statistical_report','skipped':'limited_summary','partial':'partial_model'}.get(context.get('ai_generation',{}).get('state'),'model')}
             repo.save_event_analysis(payload, key,user_id=user['id'])
-            http_request.state.limited_summary = payload['analysis_type'] in ('limited_summary','statistical_report')
+            http_request.state.limited_summary = payload['analysis_type'] in ('limited_summary','statistical_report','partial_model')
+            http_request.state.ai_details=generation_details(payload)
             return {**payload, "cached": False}
         finally:
             analysis_lock.release()

@@ -5,7 +5,8 @@ window.Admin = (() => {
   const format=value=>Number(value||0).toLocaleString("ru-RU");
   const when=value=>value ? new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
   let tab="overview",userOffset=0,auditOffset=0,request=0,elevatedUntil=0,resolvePassword=null,pushPreview=null,lastOverview=null;
-  const statuses={draft:"Черновик",active:"Активен",paused:"Приостановлен",queued:"В очереди",sending:"Отправляется",complete:"Завершена",cancelled:"Отменена",success:"Успешно",limited:"Сводка",failed:"Ошибка",pending:"В работе"};
+  const statuses={draft:"Черновик",active:"Активен",paused:"Приостановлен",queued:"В очереди",sending:"Отправляется",complete:"Завершена",cancelled:"Отменена",success:"Успешно",limited:"Сводка · без диагностики",failed:"Ошибка",pending:"В работе",ai_ready:"ИИ ответил",ai_partial:"ИИ · частично",ai_skipped:"ИИ не вызывался",ai_context_limit:"Превышен контекст",ai_error:"Ошибка ИИ",ai_cached:"Ответ из кэша"};
+  const aiReasons={context_limit:"Превышен контекст",timeout:"Истекло время ожидания",connection:"Нет соединения с ИИ",proxy:"Ошибка прокси",authentication:"Ошибка ключа ИИ",model_or_endpoint:"Модель или адрес API не найдены",provider_http:"Ошибка сервера ИИ",output_limit:"Ответ не завершён",reasoning_only:"Нет итогового ответа",invalid_response:"Некорректный ответ ИИ",insufficient_data:"Недостаточно подтверждённых данных"};
   const actions={"admin.bootstrap":"Создан администратор","admin.reauth":"Подтверждён доступ","admin.reauth_failed":"Неверный пароль администратора","account.password_changed":"Изменён пароль","user.enabled":"Включён аккаунт","user.disabled":"Ограничен аккаунт","promo.created":"Создан промокод","promo.active":"Включён промокод","promo.paused":"Приостановлен промокод","promo.draft":"Промокод возвращён в черновики","promo.redeemed":"Активирован промокод","links.updated":"Изменены партнёрские ссылки","push.draft":"Создан черновик уведомления","push.queued":"Запланирована отправка уведомления","push.cancelled":"Отменена отправка"};
   function message(value,error=false){$("admin-message").textContent=value;$("admin-message").classList.toggle("is-error",error);}
   function table(headers,rows){
@@ -17,6 +18,13 @@ window.Admin = (() => {
     const b=node("button",className,label);b.type="button";b.addEventListener("click",async()=>{b.disabled=true;try{await action();}catch(error){message(error.message,true);}finally{b.disabled=false;}});return b;
   }
   function badge(status){return node("span","admin-status status-"+status,statuses[status]||status);}
+  function aiResult(item){
+    const gen=item.generation;if(!gen?.state && !gen?.cache_hit)return badge(item.status);
+    const value=gen.cache_hit ? 'ai_cached' : gen.state==='ready' ? 'ai_ready' : gen.state==='partial' ? 'ai_partial' : gen.state==='skipped' ? 'ai_skipped' : gen.reason==='context_limit' ? 'ai_context_limit' : 'ai_error';
+    const box=node('div','admin-ai-result');box.append(badge(value));
+    if(gen.reason)box.append(node('small','muted',aiReasons[gen.reason]||'Причина не установлена'));
+    return box;
+  }
   function confirmPassword(){
     $("admin-password-error").textContent="";$("admin-password").value="";$("admin-password-dialog").showModal();$("admin-password").focus();
     return new Promise(resolve=>{resolvePassword=resolve;});
@@ -35,7 +43,7 @@ window.Admin = (() => {
   $("admin-password-dialog").addEventListener("cancel",cancelPassword);
   $("admin-confirm-access").addEventListener("click",()=>sensitive(async()=>message("Пароль подтверждён для этого сеанса.")).catch(e=>message(e.message,true)));
   function metrics(data){
-    const values=[["Пользователей",data.users,`Новых за период: ${format(data.new_users)}`],["Активных аккаунтов",data.active_users,"По входам за выбранный период"],["Посетителей",data.visitors,"Уникальные браузеры"],["Успешных ИИ-запросов",data.ai.success,`Ошибок: ${format(data.ai.failed)}`],["Переходов в Winline",data.events.outbound_click||0,"Нажатия на ссылки событий"],["Подписчиков push",data.push_subscribers,"Аккаунты с активной подпиской"],["Принято push-службой",data.push_sent,"За выбранный период"],["Активаций промокодов",data.promo_activations,`Начислено бонусов: ${format(data.promo_credits)}`]];
+    const values=[["Пользователей",data.users,`Новых за период: ${format(data.new_users)}`],["Активных аккаунтов",data.active_users,"По входам за выбранный период"],["Посетителей",data.visitors,"Уникальные браузеры"],["Готовых разборов",data.ai.success,`Сбоев: ${format(data.ai.failed)} · Из кэша: ${format(data.ai.cached)}`],["Переходов в Winline",data.events.outbound_click||0,"Нажатия на ссылки событий"],["Подписчиков push",data.push_subscribers,"Аккаунты с активной подпиской"],["Принято push-службой",data.push_sent,"За выбранный период"],["Активаций промокодов",data.promo_activations,`Начислено бонусов: ${format(data.promo_credits)}`]];
     $("admin-metrics").replaceChildren(...values.map(([label,value,note])=>{const card=node("article","admin-metric");card.append(node("span","small muted",label),node("strong","",format(value)),node("small","muted",note));return card;}));
   }
   function traffic(data){
@@ -49,15 +57,15 @@ window.Admin = (() => {
     const caption=node("div","admin-chart-caption");caption.append(node("span","",days[0].day),node("span","",`Максимум: ${format(max)}`),node("span","",days.at(-1).day));$("admin-traffic").replaceChildren(svg,caption);
   }
   function funnel(data){
-    const stages=[["Просмотры страниц",data.events.page_view||0],["Открытия матчей",data.events.match_view||0],["Намерения получить разбор",data.events.ai_intent||0],["Успешные ИИ-запросы",data.ai.success],["Регистрации",data.new_users]];const max=Math.max(1,...stages.map(i=>i[1]));
+    const stages=[["Просмотры страниц",data.events.page_view||0],["Открытия матчей",data.events.match_view||0],["Намерения получить разбор",data.events.ai_intent||0],["Готовые разборы",data.ai.success],["Регистрации",data.new_users]];const max=Math.max(1,...stages.map(i=>i[1]));
     $("admin-funnel").replaceChildren(...stages.map(([label,value])=>{const row=node("div","admin-funnel-row"),top=node("div");top.append(node("span","",label),node("strong","",format(value)));const bar=node("div","admin-funnel-bar"),fill=node("span");fill.style.width=`${value/max*100}%`;bar.append(fill);row.append(top,bar);return row;}),node("p","small muted","Количество событий, а не когортная конверсия."));
   }
   async function loadOverview(){
     const data=await api("/api/admin/overview?days="+$("admin-period").value);if(tab!=="overview" || location.hash!=="#admin")return;lastOverview=data;metrics(data);traffic(data);funnel(data);
     const health=data.archive,box=node("div","admin-health-grid");
-    for(const [label,value] of [["Поток матчей",health.connected && !health.source_stale ? "Обновляется" : health.available ? "Данные сохранены, поток задерживается" : "Ожидает подключение"],["Событий в потоке",format(health.events)],["Результатов в архиве",format(health.stored_results)],["Последнее наблюдение",when(health.last_snapshot_at)],["Среднее время ответа ИИ",data.ai.total ? `${(data.ai.avg_ms/1000).toFixed(1)} с` : "Пока нет запросов"],["Ошибки ИИ",`${format(data.ai.failed)} из ${format(data.ai.total)} запросов`]]){const item=node("div");item.append(node("small","muted",label),node("strong","",value));box.append(item);}
+    for(const [label,value] of [["Поток матчей",health.connected && !health.source_stale ? "Обновляется" : health.available ? "Данные сохранены, поток задерживается" : "Ожидает подключение"],["Событий в потоке",format(health.events)],["Результатов в архиве",format(health.stored_results)],["Последнее наблюдение",when(health.last_snapshot_at)],["Среднее время запроса к сайту",data.ai.avg_ms ? `${(data.ai.avg_ms/1000).toFixed(1)} с` : "Пока нет готовых разборов без кэша"],["Сбои и неполные разборы",`${format(data.ai.failed)} из ${format(data.ai.total)} запросов`]]){const item=node("div");item.append(node("small","muted",label),node("strong","",value));box.append(item);}
     $("admin-service-health").replaceChildren(box);
-    $("admin-ai-list").replaceChildren(table(["Время","Пользователь","Запрос","Статус","Ответ"],data.recent_ai.map(i=>[when(i.at),i.username||"Удалённый аккаунт",i.kind==="event"?"Матч":"Сценарий",badge(i.status),i.latency_ms==null?"—":`${(i.latency_ms/1000).toFixed(1)} с`])));
+    $("admin-ai-list").replaceChildren(table(["Время","Пользователь","Запрос","Результат","Вызовы ИИ / части","Время сайта"],data.recent_ai.map(i=>[when(i.at),i.username||"Удалённый аккаунт",i.kind==="event"?"Матч":"Сценарий",aiResult(i),i.generation?.cache_hit ? '0 выз. · кэш' : i.generation?.model_calls==null ? '—' : `${i.generation.model_calls} выз. / ${i.generation.parts_completed??'—'} из ${i.generation.parts_total??'—'} частей`,i.latency_ms==null?"—":`${(i.latency_ms/1000).toFixed(1)} с`])));
   }
   async function loadUsers(){
     const query=new URLSearchParams({search:$("admin-user-search").value,offset:String(userOffset)}),data=await api("/api/admin/users?"+query);if(tab!=="users")return;

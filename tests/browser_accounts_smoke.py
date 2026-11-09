@@ -124,8 +124,8 @@ async def exercise(base, repo):
                 assert 'noopener' in await source_links.first.get_attribute('rel')
                 assert not await page.evaluate('Boolean(window.injected)')
                 await expect(page.locator("#account-button")).to_have_text(username)
-                assert MARKER in REQUESTS[-1]["team_statistics"]["sections"][0]["text"]
-                assert REQUESTS[-1]['statistics_preparation']['state']=='ok'
+                assert MARKER in str(REQUESTS)
+                assert await page.evaluate("state.aiAnalysis.context.statistics_preparation.state")=='ok'
                 text=await page.locator('#explanation').inner_text()
                 assert text.startswith('Наиболее вероятный исход') and 'Рынки' in text and 'Аргументы' in text,text
                 assert await page.locator('#explanation .report-section').count()==3
@@ -137,7 +137,7 @@ async def exercise(base, repo):
                         await page.locator('details').filter(has=page.locator('#notes')).locator('summary').click()
                         await page.locator('#notes').fill('Проверка недоступного контекста')
                         await page.locator('#explain-button').click()
-                        await expect(page.locator('#explanation')).to_contain_text('не поместились в контекст нейросети')
+                        await expect(page.locator('#explanation')).to_contain_text('Не удалось передать контекст нейросети')
                         await expect(page.locator('#ai-analysis-meta')).to_contain_text('Расчётный разбор')
                         assert await page.locator('#ai-request-error').is_hidden()
                     finally: AIHandler.fail_context=False
@@ -186,6 +186,9 @@ async def exercise(base, repo):
                     await expect(page.locator('#legal-renewal')).to_be_hidden()
                 await page.locator("#admin-link").click()
                 await page.locator(".admin-metric").first.wait_for()
+                await expect(page.locator('#admin-ai-list')).to_contain_text('ИИ ответил')
+                await expect(page.locator('#admin-ai-list')).to_contain_text('Превышен контекст')
+                await expect(page.locator('#admin-ai-list')).to_contain_text('Вызовы ИИ / части')
                 assert not await page.evaluate(
                     "document.documentElement.scrollWidth>innerWidth"
                 ), (width, "admin overview overflow")
