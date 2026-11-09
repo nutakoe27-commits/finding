@@ -367,6 +367,11 @@ class Repository:
             previous=db.execute('SELECT * FROM event_statistics WHERE event_id=?',(event_id,)).fetchone()
             if previous and result['attempted_at']<previous['last_attempt_at']:
                 return {'updated':False,'reason':'older_observation'}
+            if (previous and previous['statistics_id']==result['statistics_id'] and previous['payload']
+                    and result['state']=='ok' and result.get('capture_kind')=='fast'):
+                old=json.loads(previous['payload'])
+                if old.get('capture_kind','detailed')=='detailed':
+                    return {'updated':False,'reason':'preserved_detailed'}
             payload=json.dumps(result,ensure_ascii=False) if result['state']=='ok' else None
             if previous and previous['statistics_id']==result['statistics_id'] and not payload:
                 payload=previous['payload']

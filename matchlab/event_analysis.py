@@ -64,6 +64,6 @@ def request_key(document: dict, market_key, outcome_key, notes: str, team_statis
     value = [ANALYSIS_VERSION, document["source_event_id"], document.get('sport','football'), document.get("content_version",document["observed_at"]), None if document.get("source_kind")=="stream" else document["capture_started_at"],
              {key:document.get(key) for key in ('home','away','title','event_kind','competition','kickoff_at','coverage')},
              [{k:v for k,v in m.items() if k not in ("observed_at","age_seconds")} for m in document["markets"]] if document.get("source_kind")=="stream" else document["markets"], market_key, outcome_key, notes, stale, started,
-             {key:team_statistics.get(key) for key in ('statistics_id','observed_at','match_phase','is_stale')} if team_statistics else None]
+             {key:team_statistics.get(key) for key in ('statistics_id','observed_at','match_phase','is_stale','capture_kind')} if team_statistics else None]
     value.append(archive_history.get('revision') if archive_history else None)
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

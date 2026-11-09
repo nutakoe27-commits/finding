@@ -18,6 +18,7 @@ from account_helpers import signed_in
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.statistics import FORMAT,analysis_statistics,validate_statistics
+from matchlab.statistics_feed import extract_passive_feed
 from matchlab.event_analysis import analysis_context
 from matchlab.storage import Repository
 from matchlab.statistics_worker import read_config, runtime_config, report
@@ -32,6 +33,14 @@ def stats(event_id='123',state='ok'):
     now=datetime.now(timezone.utc).isoformat()
     return {'format':FORMAT,'source_event_id':event_id,'event_url':f'https://winline.ru/stavki/sport/futbol/rossiya/rpl/{event_id}',
         'statistics_url':'https://winline.ru/stats/match/72334410','state':state,'attempted_at':now,'observed_at':now,**deepcopy(PROJECTION)}
+
+
+def structured_feed(observed_at):
+    target={'_id':72334410,'teams':{'home':{'_id':10,'name':'Спартак М'},'away':{'_id':20,'name':'Акрон Тольятти'}}}
+    docs=[{'match':target},{'team':{'_id':10,'name':'Спартак М'},'matches':[{'_id':101,'status':'finished','teams':{'home':{'_id':10}}}]},
+          {'team':{'_id':20,'name':'Акрон Тольятти'},'matches':[{'_id':102,'status':'scheduled','teams':{'away':{'_id':20}}}]}]
+    result=extract_passive_feed(docs,'72334410'); result['observed_at']=observed_at
+    return result
 
 
 class StatisticsTests(unittest.TestCase):
@@ -51,6 +60,7 @@ class StatisticsTests(unittest.TestCase):
     def test_queue_is_protected_and_returns_only_explicitly_linked_events(self):
         self.assertEqual(self.client.get('/api/bookmakers/statistics/queue').status_code,401)
         result=self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()
+        self.assertIn('statistics_feed_v1',result['capabilities'])
         self.assertEqual(result['linked_events'],1)
         self.assertEqual(result['jobs'][0]['statistics_url'],'https://winline.ru/stats/match/72334410')
         self.repo.import_event_markets(event('124'))
@@ -104,6 +114,54 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(saved['binding'],'observed_event_link')
         self.assertEqual(self.repo.revision(),revision)
         self.assertEqual(self.client.get('/api/bookmakers/statistics/queue',headers=self.headers).json()['jobs'],[])
+
+    def test_structured_feed_reaches_model_only_after_match_and_team_validation(self):
+        value=stats(); value['structured_feed']=structured_feed(value['observed_at'])
+        response=self.post(value); self.assertEqual(response.status_code,200,response.text)
+        model=analysis_statistics(self.repo.statistics('123'))
+        self.assertEqual(model['structured_feed']['participants']['home'][0]['verified_matches'][0]['_id'],101)
+        self.assertEqual(model['structured_feed']['participants']['home'][0]['unverified_matches'],[])
+        self.assertEqual(model['structured_feed']['participants']['away'][0]['verified_matches'][0]['status'],'scheduled')
+        forged=stats(); forged['structured_feed']=structured_feed(forged['observed_at']); forged['structured_feed']['match']['_id']=999
+        self.assertEqual(self.post(forged).status_code,422)
+        self.assertEqual(self.repo.statistics('123')['structured_feed']['match']['_id'],72334410)
+
+    def test_structured_feed_with_future_observation_is_rejected(self):
+        value=stats(); value['structured_feed']=structured_feed(value['observed_at'])
+        value['structured_feed']['observed_at']=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()
+        self.assertEqual(self.post(value).status_code,422)
+
+    def test_unverified_rows_remain_separate_in_model_context(self):
+        value=stats(); value['structured_feed']=structured_feed(value['observed_at'])
+        value['structured_feed']['participants']['home'][0]['matches'].append(
+            {'_id':999,'teams':{'home':{'_id':9999,'name':'Спартак М'}}})
+        self.assertTrue(self.post(value).json()['updated'])
+        snapshot=self.repo.statistics('123')
+        self.assertEqual(len(snapshot['structured_feed']['participants']['home'][0]['matches']),2)
+        item=analysis_statistics(snapshot)['structured_feed']['participants']['home'][0]
+        self.assertEqual([row['_id'] for row in item['verified_matches']],[101])
+        self.assertEqual([row['_id'] for row in item['unverified_matches']],[999])
+
+    def test_fast_snapshot_never_replaces_saved_detailed_snapshot(self):
+        detailed=stats(); self.assertTrue(self.post(detailed).json()['updated'])
+        fast=stats(); fast['capture_kind']='fast'; fast['structured_feed']=structured_feed(fast['observed_at'])
+        response=self.post(fast)
+        self.assertEqual(response.json().get('reason'),'preserved_detailed')
+        saved=self.repo.statistics('123')
+        self.assertEqual(saved['capture_kind'],'detailed')
+        self.assertEqual(saved['sections'][0]['text'],detailed['sections'][0]['text'])
+
+    def test_fast_snapshot_without_structured_feed_is_rejected(self):
+        value=stats(); value['capture_kind']='fast'
+        self.assertEqual(self.post(value).status_code,422)
+
+    def test_fast_snapshot_can_be_replaced_by_later_detailed_capture(self):
+        fast=stats(); fast['capture_kind']='fast'; fast['structured_feed']=structured_feed(fast['observed_at'])
+        self.assertTrue(self.post(fast).json()['updated'])
+        self.assertEqual(self.repo.statistics('123')['capture_kind'],'fast')
+        detailed=stats(); detailed['structured_feed']=structured_feed(detailed['observed_at'])
+        self.assertTrue(self.post(detailed).json()['updated'])
+        self.assertEqual(self.repo.statistics('123')['capture_kind'],'detailed')
 
     def test_foreign_widget_wrong_stats_id_and_access_denied_cannot_be_ingested_as_facts(self):
         for mutate in ('url','provider','body'):
@@ -180,6 +238,20 @@ class StatisticsTests(unittest.TestCase):
         self.assertNotEqual(first['id'],second['id'])
         saved=self.client.get('/api/analyses/'+second['id']).json()
         self.assertEqual(saved['context']['team_statistics']['sections'][0]['title'],'Последние матчи- Спартак М')
+
+    def test_ai_request_receives_separated_structured_feed(self):
+        value=stats(); value['capture_kind']='fast'; value['structured_feed']=structured_feed(value['observed_at'])
+        value['structured_feed']['participants']['home'][0]['matches'].append(
+            {'_id':999,'teams':{'home':{'_id':9999,'name':'Спартак М'}}})
+        self.assertTrue(self.post(value).json()['updated'])
+        with patch('matchlab.api.qwen.explain_event',return_value='Разбор.') as completion:
+            response=self.client.post('/api/bookmakers/events/123/explain',json={})
+        self.assertEqual(response.status_code,200,response.text)
+        stats_context=completion.call_args.args[1]['team_statistics']
+        self.assertEqual(stats_context['capture_kind'],'fast')
+        home=stats_context['structured_feed']['participants']['home'][0]
+        self.assertEqual([row['_id'] for row in home['verified_matches']],[101])
+        self.assertEqual([row['_id'] for row in home['unverified_matches']],[999])
 
     def test_blocked_page_is_explicit_and_is_not_an_ai_data_source(self):
         self.post(stats(state='blocked'))

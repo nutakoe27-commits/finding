@@ -67,6 +67,7 @@ async def exercise(base,repo):
             frozen=False
             dynamic=False
             delayed=False
+            feed_mode=None
             async def fixture(route):
                 if blocked_report and route.request.url.endswith('/report'):
                     await route.fulfill(status=403,content_type='text/html',body='Access Denied')
@@ -76,6 +77,25 @@ async def exercise(base,repo):
                 elif 'statshub.yunai.tech' in route.request.url:
                     view=route.request.url.rsplit('/',1)[-1]
                     body=widget(blocked,view if view in ('report','statistics') else 'overview',frozen,dynamic,delayed)
+                    if feed_mode and view not in ('report','statistics'):
+                        body=body.replace('</body>','''<style id="delay-sections">article{display:none}</style>
+                          <script>fetch('https://sh.fn.yunai.tech/api/match/72334410');
+                          setTimeout(()=>document.querySelector('#delay-sections').remove(),3000);</script></body>''')
+                        if feed_mode=='lateheader':
+                            body=body.replace('</body>','''<style id="delay-header">[data-testid="match-header"]{visibility:hidden}</style>
+                              <script>setTimeout(()=>document.querySelector('#delay-header').remove(),1600);</script></body>''')
+                elif 'sh.fn.yunai.tech' in route.request.url:
+                    if feed_mode=='blocked':
+                        value={'doc':[{'event':'exception','data':{'_doc':'exception','code':403}}]}
+                    else:
+                        match={'_id':72334410,'teams':{'home':{'_id':10,'name':'Спартак М'},'away':{'_id':20,'name':'Акрон Тольятти'}}}
+                        value={'doc':[{'data':{'match':match}},
+                                      {'data':{'team':{'_id':100,'name':'Спартак М'},'matches':[{'_id':11,'status':'finished','teams':{'home':{'_id':10}}},match]}},
+                                      {'data':{'team':{'_id':200,'name':'Акрон Тольятти'},'matches':[{'_id':12,'status':'scheduled','teams':{'away':{'_id':20}}},match]}}]}
+                    content=json.dumps(value,ensure_ascii=False).encode()
+                    await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(content)),
+                                                           'access-control-allow-origin':'*'},body=content)
+                    return
                 elif '/stavki/sport/' in route.request.url: body='<p>Market fixture</p>'
                 else: raise AssertionError(route.request.url)
                 await route.fulfill(status=200,content_type='text/html',body='<meta charset="utf-8">'+body)
@@ -96,6 +116,26 @@ async def exercise(base,repo):
             assert any(s['filters']==['За матч','Общее'] and 'За матч / Общее' in s['text'] for s in variants)
             assert any(s['view']=='statistics' and 'Велес' in s['text'] for s in snapshot['sections'])
             assert all(s['observed_at']<=snapshot['attempted_at'] for s in snapshot['sections'])
+            feed_mode='ready'
+            fast=[]
+            async def on_fast(value): fast.append(value)
+            enriched=await collect_statistics(page,parent,wait_seconds=8,on_fast=on_fast,enable_feed=True)
+            assert fast and fast[0]['capture_kind']=='fast',fast
+            assert fast[0]['structured_feed']['team_bindings']=={'home':['same_match_anchor'],'away':['same_match_anchor']}
+            assert fast[0]['observed_at']<enriched['observed_at'],(fast[0]['observed_at'],enriched['observed_at'])
+            assert fast[0]['structured_feed']['participants']['away'][0]['matches'][0]['status']=='scheduled'
+            assert enriched['state']=='ok' and enriched['structured_feed']['statistics_id']=='72334410',enriched
+            repo.import_statistics(enriched)
+            assert repo.statistics('123')['structured_feed']['participants']['home'][0]['matches'][0]['_id']==11
+            feed_mode='lateheader'
+            late_fast=[]
+            async def on_late_fast(value): late_fast.append(value)
+            late_enriched=await collect_statistics(page,parent,wait_seconds=8,on_fast=on_late_fast,enable_feed=True)
+            assert late_fast and late_enriched['state']=='ok',late_fast
+            feed_mode='blocked'
+            denied=await collect_statistics(page,parent,wait_seconds=8,on_fast=on_fast,enable_feed=True)
+            assert denied['state']=='blocked',denied
+            feed_mode=None
             dynamic=True
             ticking=await collect_statistics(page,parent,wait_seconds=5)
             assert ticking['state']=='ok' and ticking['season_filters_complete'] is True,ticking
@@ -121,7 +161,7 @@ async def exercise(base,repo):
             failure=await collect_statistics(page,parent,wait_seconds=5)
             assert failure['state']=='blocked' and 'sections' not in failure
             repo.import_statistics(failure)
-            assert repo.statistics('123')['sections']==snapshot['sections']
+            assert repo.statistics('123')['sections']==enriched['sections']
             # An explicit statistics icon can expose the real ID via a popup;
             # its ID must not be derived from the bookmaker's event number.
             for event_id,statistics_id in (('123','72334410'),('124','72334422')):
@@ -145,6 +185,9 @@ async def exercise(base,repo):
                 assert '25 Забитые мячи 17' in await page.locator('#team-statistics-sections').inner_text()
                 assert 'Удары в створ' in await page.locator('#team-statistics-sections').inner_text()
                 assert 'Лучшие Игроки' in groups and 'Tarasenko' in await page.locator('#team-statistics-sections').inner_text()
+                await page.evaluate('(snapshot) => renderTeamStatistics({statistics:snapshot,link_status:"found"})',fast[0])
+                assert 'предварительная сводка' in await page.locator('#team-statistics-status').inner_text()
+                assert 'подробные показатели ещё не получены' in await page.locator('#team-statistics-note').inner_text()
                 await page.evaluate('''() => renderTeamStatistics({statistics:null,link_status:'found',source_blocked_until:new Date(Date.now()+3600000).toISOString()})''')
                 assert 'Источник временно ограничил доступ' in await page.locator('#team-statistics-note').inner_text()
                 await page.evaluate('''() => renderTeamStatistics({statistics:null,link_status:'missing',source_blocked_until:new Date(Date.now()+3600000).toISOString()})''')

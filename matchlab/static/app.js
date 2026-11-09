@@ -810,8 +810,9 @@ function renderTeamStatistics(data) {
   const snapshot=data?.statistics, stale=snapshot?.observed_at && Date.now()-Date.parse(snapshot.observed_at)>3600000;
   const available=snapshot?.state === "ok";
   const blocked=data?.link_status === "found" && Date.parse(data?.source_blocked_until || "") > Date.now();
-  $("team-statistics-status").textContent=available ? stale ? "· последнее обновление давно" : "· краткая сводка" : blocked ? "· временно недоступна" : "· пока нет данных";
+  $("team-statistics-status").textContent=available ? stale ? "· последнее обновление давно" : snapshot.capture_kind === "fast" ? "· предварительная сводка" : "· краткая сводка" : blocked ? "· временно недоступна" : "· пока нет данных";
   $("team-statistics-note").textContent=available ? `Обновлено ${moscowTime(snapshot.observed_at)} МСК.${snapshot.match_phase === "finished" ? " Включает результат этой встречи." : ""}${blocked ? " Источник временно ограничил обновление; показаны сохранённые данные." : ""}` : blocked ? "Источник временно ограничил доступ к расширенной статистике. Сборщик повторит проверку; доступная история показана ниже." : "Расширенная статистика пока недоступна. Ниже появятся последние игры из накопленной истории, когда данные будут получены.";
+  if(available && snapshot.capture_kind === "fast") $("team-statistics-note").textContent+=" Доступна предварительная информация; подробные показатели ещё не получены.";
   if(available && Array.isArray(snapshot.observed_views) && snapshot.observed_views.length<3) $("team-statistics-note").textContent+=" Часть вкладок источника пока недоступна.";
   if(available && snapshot.sections_truncated) $("team-statistics-note").textContent+=" Часть данных не вошла в снимок.";
   if(available && snapshot.season_filters_complete === false) $("team-statistics-note").textContent+=" Часть сезонных показателей пока не получена.";

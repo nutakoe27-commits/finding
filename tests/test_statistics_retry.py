@@ -14,6 +14,28 @@ from matchlab import statistics_worker as worker
 
 
 class RetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_old_receiver_disables_feed_and_rejected_detailed_feed_falls_back(self):
+        self.assertFalse(worker.feed_supported({}))
+        self.assertFalse(worker.feed_supported({'capabilities':'statistics_feed_v1'}))
+        self.assertTrue(worker.feed_supported({'capabilities':['statistics_feed_v1']}))
+        client=AsyncMock()
+        request=httpx.Request('POST','http://127.0.0.1:18081/api/bookmakers/statistics/ingest')
+        client.post.side_effect=[httpx.Response(422,request=request),httpx.Response(200,request=request,json={'updated':True})]
+        snapshot={'state':'ok','capture_kind':'detailed','sections':[{'title':'ok'}],'structured_feed':{'data':'private'}}
+        result=await worker.ingest_statistics(client,snapshot)
+        self.assertTrue(result['updated'])
+        self.assertEqual(client.post.await_count,2)
+        self.assertNotIn('structured_feed',client.post.await_args_list[1].kwargs['json'])
+        self.assertIn('structured_feed',snapshot)
+
+    async def test_rejected_fast_feed_is_never_retried_without_data(self):
+        client=AsyncMock()
+        request=httpx.Request('POST','http://127.0.0.1:18081/api/bookmakers/statistics/ingest')
+        client.post.return_value=httpx.Response(422,request=request)
+        with self.assertRaises(httpx.HTTPStatusError):
+            await worker.ingest_statistics(client,{'state':'ok','capture_kind':'fast','structured_feed':{'data':'private'}})
+        self.assertEqual(client.post.await_count,1)
+
     async def test_receiver_failures_wait_and_recover(self):
         client = AsyncMock()
         client.__aenter__.return_value = client

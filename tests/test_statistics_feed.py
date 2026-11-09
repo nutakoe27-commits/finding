@@ -1,16 +1,19 @@
+import asyncio
 import json
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
-from matchlab.statistics_feed import extract_passive_feed
+from matchlab.statistics_feed import PassiveFeedObserver, extract_passive_feed, feed_has_other_matches
 
 
 def fixture():
     match={'_id':72578418,'teams':{'home':{'_id':10,'name':'Велес'},'away':{'_id':20,'name':'Камаз Н-Ч'}}}
     return [
         {'match':match},
-        {'team':{'_id':10,'name':'Велес'},'matches':[{'_id':101,'status':'finished','result':{'home':2,'away':1}},
-                                                     {'_id':102,'status':'scheduled'}]},
-        {'team':{'_id':20,'name':'Камаз Н-Ч'},'matches':[{'_id':103,'status':'finished'}]},
+        {'team':{'_id':10,'name':'Велес'},'matches':[{'_id':101,'status':'finished','result':{'home':2,'away':1},'teams':{'home':{'_id':10}}},
+                                                     {'_id':102,'status':'scheduled','teams':{'away':{'_id':10}}}]},
+        {'team':{'_id':20,'name':'Камаз Н-Ч'},'matches':[{'_id':103,'status':'finished','teams':{'home':{'_id':20}}}]},
     ]
 
 
@@ -23,6 +26,23 @@ class PassiveFeedTests(unittest.TestCase):
         self.assertEqual(result['participants']['away'][0]['matches'][0]['_id'],103)
         self.assertIn('future',result['scope'])
         self.assertFalse(result['truncated'])
+        self.assertTrue(feed_has_other_matches(result))
+        self.assertEqual(result['participants']['home'][0]['verified_participant_indices'],[0,1])
+
+    def test_unverified_rows_are_preserved_but_not_eligible_as_confirmed_history(self):
+        docs=fixture()
+        docs[1]['matches'].append({'_id':999,'teams':{'home':{'_id':9999,'name':'Велес'}}})
+        result=extract_passive_feed(docs,'72578418')
+        item=result['participants']['home'][0]
+        self.assertEqual(item['verified_participant_indices'],[0,1])
+        self.assertEqual(item['unverified_participant_count'],1)
+        self.assertEqual(item['matches'][2]['_id'],999)
+
+    def test_anchor_match_alone_is_not_a_useful_fast_snapshot(self):
+        match=fixture()[0]['match']
+        docs=[{'match':match},{'team':match['teams']['home'],'matches':[match]},
+              {'team':match['teams']['away'],'matches':[match]}]
+        self.assertFalse(feed_has_other_matches(extract_passive_feed(docs,'72578418')))
 
     def test_same_teams_in_a_different_match_are_not_accepted(self):
         self.assertIsNone(extract_passive_feed(fixture(),'999999'))
@@ -81,6 +101,49 @@ class PassiveFeedTests(unittest.TestCase):
         result=extract_passive_feed(docs,'72578418')
         self.assertTrue(result['truncated'])
         self.assertEqual(len(result['participants']['home'][0]['matches']),100)
+
+
+class ObserverSafetyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_only_matching_widget_provider_can_signal_denial(self):
+        page=Mock()
+        observer=PassiveFeedObserver(page,'72578418')
+        observer.start()
+        request=SimpleNamespace(frame=SimpleNamespace(url='https://statshub.yunai.tech/winline/ru/match/72578418'),resource_type='fetch')
+        observer._on_response(SimpleNamespace(url='https://evil.example/api',request=request,status=403))
+        self.assertFalse(observer.blocked)
+        request.frame.url='https://statshub.yunai.tech/winline/ru/match/999'
+        observer._on_response(SimpleNamespace(url='https://sh.fn.yunai.tech/api',request=request,status=403))
+        self.assertFalse(observer.blocked)
+        request.frame.url='https://statshub.yunai.tech/winline/ru/match/72578418'
+        observer._on_response(SimpleNamespace(url='https://sh.fn.yunai.tech/api',request=request,status=403))
+        self.assertTrue(observer.blocked)
+        await observer.close()
+        page.remove_listener.assert_called_once()
+
+    async def test_provider_denial_interrupts_active_page_collection(self):
+        from matchlab.statistics import collect_statistics
+        stopped=asyncio.Event()
+        class Observer:
+            def __init__(self,page,statistics_id):
+                self.blocked=False; self.blocked_event=asyncio.Event(); self.ready=asyncio.Event(); self.feed=None
+            def start(self):
+                async def deny():
+                    await asyncio.sleep(.01)
+                    self.blocked=True; self.blocked_event.set(); self.ready.set()
+                asyncio.create_task(deny())
+            async def close(self): pass
+        async def slow_capture(*args,**kwargs):
+            try: await asyncio.sleep(60)
+            finally: stopped.set()
+        page=Mock(); page.goto=AsyncMock()
+        job={'source_event_id':'123','url':'https://winline.ru/stavki/event/123',
+             'statistics_url':'https://winline.ru/stats/match/72578418'}
+        with patch('matchlab.statistics_feed.PassiveFeedObserver',Observer), \
+             patch('matchlab.statistics._collect_statistics_dom',side_effect=slow_capture):
+            result=await asyncio.wait_for(collect_statistics(page,job,enable_feed=True),timeout=1)
+        self.assertEqual(result['state'],'blocked')
+        self.assertTrue(stopped.is_set())
+        page.goto.assert_awaited_once_with('about:blank',wait_until='commit',timeout=5000)
 
 
 if __name__=='__main__': unittest.main()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import re
 from urllib.parse import urljoin, urlsplit
@@ -14,6 +15,34 @@ STATES={'ok','blocked','empty','unavailable'}
 PROVIDERS={'statshub.yunai.tech','statshub.sportradar.com'}
 VIEWS={'overview', 'report', 'statistics'}
 LOG=logging.getLogger(__name__)
+
+
+def validate_structured_feed(value, statistics_id, attempted):
+    from .statistics_feed import extract_passive_feed, MAX_TOTAL_BYTES
+    if not isinstance(value,dict) or not isinstance(value.get('match'),dict) or not isinstance(value.get('participants'),dict):
+        raise ValueError('Некорректные структурированные данные статистики.')
+    if type(value.get('truncated')) is not bool:
+        raise ValueError('Неизвестна полнота структурированных данных.')
+    feed_at=instant(value.get('observed_at'))
+    if feed_at>attempted or attempted-feed_at>timedelta(minutes=5):
+        raise ValueError('Некорректное время структурированных данных.')
+    if len(json.dumps(value,ensure_ascii=False,allow_nan=False).encode())>MAX_TOTAL_BYTES:
+        raise ValueError('Структурированные данные слишком велики.')
+    documents=[{'match':value['match']}]
+    for side in ('home','away'):
+        lists=value['participants'].get(side)
+        if not isinstance(lists,list) or len(lists)>4:
+            raise ValueError('Некорректные списки матчей участников.')
+        for item in lists:
+            if not isinstance(item,dict) or not isinstance(item.get('team'),dict) or not isinstance(item.get('matches'),list):
+                raise ValueError('Некорректный список матчей участника.')
+            documents.append({'team':item['team'],'matches':item['matches']})
+    rebuilt=extract_passive_feed(documents,statistics_id)
+    if not rebuilt or not all(rebuilt['participants'][side] for side in ('home','away')):
+        raise ValueError('Не удалось проверить участников структурированных данных.')
+    rebuilt['truncated']=rebuilt['truncated'] or value['truncated']
+    rebuilt['observed_at']=iso(feed_at)
+    return rebuilt
 
 
 def provider_match_id(value: str) -> str | None:
@@ -50,6 +79,9 @@ def validate_statistics(value: dict, event: dict) -> dict:
             'provider_url':None,'provider':'Sportradar / StatsHub','header':None,'sections':[],
             'match_phase':'unknown','binding':'observed_event_link'}
     if value['state']!='ok': return result
+    capture_kind=value.get('capture_kind','detailed')
+    if capture_kind not in ('fast','detailed'): raise ValueError('Неизвестный вид снимка статистики.')
+    result['capture_kind']=capture_kind
     if provider_match_id(value.get('provider_url',''))!=stats_id:
         raise ValueError('Виджет статистики относится к другому событию.')
     observed=instant(value.get('observed_at'))
@@ -104,6 +136,14 @@ def validate_statistics(value: dict, event: dict) -> dict:
     if 'season_filters_complete' in value:
         if type(value['season_filters_complete']) is not bool: raise ValueError('Некорректное состояние фильтров.')
         result['season_filters_complete']=value['season_filters_complete']
+    if 'structured_feed' in value:
+        result['structured_feed']=validate_structured_feed(value['structured_feed'],stats_id,attempted)
+        if capture_kind=='fast':
+            from .statistics_feed import feed_has_other_matches
+            if not feed_has_other_matches(result['structured_feed']):
+                raise ValueError('В предварительном снимке нет других событий обоих участников.')
+    elif capture_kind=='fast':
+        raise ValueError('В предварительном снимке нет подтверждённых структурированных данных.')
     if len(header)+sum(len(section['text']) for section in clean)>70000:
         raise ValueError('Снимок статистики слишком большой.')
     return result
@@ -169,7 +209,7 @@ SEASON_FILTER_SCRIPT=r'''({mode, scope, action}) => {
 }'''
 
 
-async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
+async def _collect_statistics_dom(page, job: dict, *, wait_seconds=25) -> dict:
     import asyncio
     import time
     attempted=lambda: datetime.now(timezone.utc).isoformat()
@@ -329,6 +369,96 @@ async def collect_statistics(page, job: dict, *, wait_seconds=25) -> dict:
         return {**base,'state':'unavailable','attempted_at':attempted()}
 
 
+async def collect_statistics(page, job: dict, *, wait_seconds=25, on_fast=None, enable_feed=False) -> dict:
+    """Observe the widget's own JSON and retain the existing detailed DOM capture."""
+    if not enable_feed:
+        return await _collect_statistics_dom(page,job,wait_seconds=wait_seconds)
+    import asyncio
+    import time
+    from .statistics_feed import PassiveFeedObserver
+    stats_id=statistics_id_from_url(job['statistics_url'])
+    observer=PassiveFeedObserver(page,stats_id)
+    observer.start()
+    fast_snapshot=None
+
+    async def deliver_fast():
+        nonlocal fast_snapshot
+        await observer.ready.wait()
+        if observer.blocked or not observer.feed: return
+        try:
+            deadline=time.monotonic()+10; header=''; frame=None
+            while time.monotonic()<deadline and not observer.blocked:
+                frames=[candidate for candidate in page.frames if provider_match_id(candidate.url)==stats_id and
+                        re.fullmatch(r'/winline/(?:ru|en)/match/\d{1,20}/?',urlsplit(candidate.url).path)]
+                if len(frames)==1:
+                    frame=frames[0]
+                    try: data=await asyncio.wait_for(frame.evaluate(STATS_SCRIPT),timeout=3)
+                    except Exception: data={}
+                    if re.search(r'access denied|you don.t have permission|проверка безопасности',data.get('body',''),re.I): return
+                    header=data.get('header','')
+                    if header: break
+                await asyncio.sleep(.5)
+            if not header or observer.blocked or not frame or not re.fullmatch(r'/winline/(?:ru|en)/match/\d{1,20}/?',urlsplit(frame.url).path): return
+            now=datetime.now(timezone.utc).isoformat()
+            phase='finished' if re.search(r'закончен|заверш[её]н|finished|ended',header,re.I) else 'live' if re.search(r'\blive\b|ид[её]т матч|в игре',header,re.I) else 'unknown'
+            feed=observer.feed
+            sizes={side:', '.join(str(len(item['matches'])) for item in feed['participants'][side]) for side in ('home','away')}
+            has_unverified=any(item.get('unverified_participant_count',0) for side in ('home','away') for item in feed['participants'][side])
+            fast_snapshot={'format':FORMAT,'source_event_id':job['source_event_id'],'event_url':job['url'],
+                'statistics_url':job['statistics_url'],'state':'ok','observed_at':now,'attempted_at':now,
+                'provider_url':frame.url,'header':header,'match_phase':phase,'observed_views':['overview'],'capture_kind':'fast',
+                'sections_truncated':True,'sections':[{'title':'Матчи участников',
+                    'text':f"Размеры списков: хозяева — {sizes['home']}; гости — {sizes['away']}. Списки могут включать текущие и будущие события." + (" Часть встреч требует дополнительной проверки участника." if has_unverified else ''),
+                    'view':'overview','observed_at':now}], 'structured_feed':feed}
+            if on_fast:
+                try: await on_fast(fast_snapshot)
+                except Exception as error: LOG.warning('Fast statistics delivery failed (%s)',type(error).__name__)
+        except Exception:
+            return
+
+    task=asyncio.create_task(deliver_fast())
+    dom_task=asyncio.create_task(_collect_statistics_dom(page,job,wait_seconds=wait_seconds))
+    blocked_task=asyncio.create_task(observer.blocked_event.wait())
+    try:
+        await asyncio.wait((dom_task,blocked_task),return_when=asyncio.FIRST_COMPLETED)
+        if observer.blocked:
+            dom_task.cancel()
+            await asyncio.gather(dom_task,return_exceptions=True)
+            snapshot={'state':'blocked'}
+        else:
+            snapshot=await dom_task
+        if snapshot['state']=='blocked' or observer.blocked:
+            task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+            try: await page.goto('about:blank',wait_until='commit',timeout=5000)
+            except Exception: pass
+            return {'format':FORMAT,'source_event_id':job['source_event_id'],'event_url':job['url'],
+                    'statistics_url':job['statistics_url'],'state':'blocked','attempted_at':datetime.now(timezone.utc).isoformat()}
+        if not task.done() and observer.ready.is_set():
+            try: await asyncio.wait_for(task,timeout=10)
+            except Exception: pass
+        if observer.blocked:
+            try: await page.goto('about:blank',wait_until='commit',timeout=5000)
+            except Exception: pass
+            return {'format':FORMAT,'source_event_id':job['source_event_id'],'event_url':job['url'],
+                    'statistics_url':job['statistics_url'],'state':'blocked','attempted_at':datetime.now(timezone.utc).isoformat()}
+        if snapshot['state']=='ok' and observer.feed:
+            snapshot['structured_feed']=observer.feed
+            if snapshot['attempted_at']<observer.feed['observed_at']:
+                snapshot['attempted_at']=observer.feed['observed_at']
+            if fast_snapshot and snapshot['attempted_at']<fast_snapshot['attempted_at']:
+                snapshot['attempted_at']=fast_snapshot['attempted_at']
+        elif snapshot['state'] in ('empty','unavailable') and fast_snapshot:
+            snapshot=fast_snapshot
+        return snapshot
+    finally:
+        if not dom_task.done(): dom_task.cancel()
+        if not blocked_task.done(): blocked_task.cancel()
+        if not task.done(): task.cancel()
+        await asyncio.gather(task,dom_task,blocked_task,return_exceptions=True)
+        await observer.close()
+
+
 def analysis_statistics(snapshot: dict | None) -> dict | None:
     if not snapshot or snapshot.get('state')!='ok': return None
     # Put recent results and H2H ahead of aggregate season data. Preserve exact
@@ -339,9 +469,10 @@ def analysis_statistics(snapshot: dict | None) -> dict | None:
     # section intact for the model and the audited analysis snapshot.
     sections=[{'title':section['title'],'text':section['text'],'truncated':section.get('truncated',False),**{key:section[key] for key in ('view','observed_at','filters') if key in section}} for section in ordered]
     age=max(0,int((datetime.now(timezone.utc)-instant(snapshot['observed_at'])).total_seconds()))
-    return {'source':'Sportradar / StatsHub via Winline','statistics_id':snapshot['statistics_id'],
+    result={'source':'Sportradar / StatsHub via Winline','statistics_id':snapshot['statistics_id'],
             'statistics_url':snapshot['statistics_url'],'observed_at':snapshot['observed_at'],'age_seconds':age,
             'is_stale':age>3600,'match_phase':snapshot['match_phase'],'header':snapshot['header'],
+            'capture_kind':snapshot.get('capture_kind','detailed'),
             'header_truncated':False,
             'sections':sections,'total_sections':len(snapshot['sections']),
             'truncated_sections':sum(section['truncated'] for section in sections),
@@ -349,3 +480,18 @@ def analysis_statistics(snapshot: dict | None) -> dict | None:
             'sections_truncated':snapshot.get('sections_truncated',False),
             'season_filters_complete':snapshot.get('season_filters_complete'),
             'scope':'visible source sections and current filters only; may include this match and future fixtures'}
+    if snapshot.get('structured_feed'):
+        # Keep every source record, but separate unverified participant
+        # identities explicitly rather than asking the model to count indices.
+        import copy
+        feed=copy.deepcopy(snapshot['structured_feed'])
+        for side in ('home','away'):
+            for item in feed['participants'][side]:
+                matches=item.pop('matches')
+                verified=set(item.pop('verified_participant_indices',[]))
+                item['verified_matches']=[row for index,row in enumerate(matches) if index in verified]
+                item['unverified_matches']=[row for index,row in enumerate(matches) if index not in verified]
+        feed['scope']='verified_matches are participant-linked; unverified_matches are retained but cannot establish participant history; either may contain current or future fixtures'
+        result['structured_feed']=feed
+        result['scope']='sections are visible source content; structured_feed is from observed widget responses and may include current or future fixtures'
+    return result

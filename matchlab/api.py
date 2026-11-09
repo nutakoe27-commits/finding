@@ -323,7 +323,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def statistics_queue(request: Request,limit: int=10):
         require_worker(request)
         if not 1<=limit<=50: raise HTTPException(422,'Некорректный размер очереди.')
-        return repo.statistics_queue(limit)
+        return {**repo.statistics_queue(limit),'capabilities':['statistics_feed_v1']}
 
     @app.post('/api/bookmakers/statistics/ingest')
     async def statistics_ingest(request: Request):
@@ -373,7 +373,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result and result['statistics_id']!=statistics_id_from_url(event.get('statistics_url') or ''):
             result=None
         return {'statistics':result,'link_status':event.get('statistics_link_status','missing'),'statistics_url':event.get('statistics_url'),
-                'source_blocked_until':repo.statistics_blocked_until()}
+                'source_blocked_until':repo.statistics_blocked_until(),'capabilities':['statistics_feed_v1']}
 
     @app.get("/api/bookmakers/events")
     def market_events(include_started: bool = False, limit: int = 100, offset: int = 0,

@@ -76,6 +76,22 @@ async def wait_or_stop(stopped,seconds):
     except asyncio.TimeoutError:pass
 
 
+def feed_supported(payload):
+    capabilities=payload.get('capabilities') if isinstance(payload,dict) else None
+    return isinstance(capabilities,list) and 'statistics_feed_v1' in capabilities
+
+
+async def ingest_statistics(client,snapshot):
+    response=await client.post('/api/bookmakers/statistics/ingest',json=snapshot)
+    if response.status_code==422 and snapshot.get('structured_feed') and snapshot.get('capture_kind')!='fast':
+        # Preserve the detailed DOM capture if a source feed fails validation.
+        LOG.warning('Structured statistics rejected; delivering the detailed source sections')
+        fallback={key:value for key,value in snapshot.items() if key!='structured_feed'}
+        response=await client.post('/api/bookmakers/statistics/ingest',json=fallback)
+    response.raise_for_status()
+    return response.json()
+
+
 async def refresh_market(context,client,event):
     """Use the same public, feed-verified extraction as the regular crawler."""
     page=await context.new_page()
@@ -148,11 +164,13 @@ async def refresh_job(context,client,job):
             else:
                 page=await context.new_page()
                 try:
-                    snapshot=await collect_statistics(page,{**event,'statistics_url':url})
+                    async def publish_fast(value):
+                        await ingest_statistics(client,value)
+                    enabled=feed_supported(detail)
+                    snapshot=await collect_statistics(page,{**event,'statistics_url':url},on_fast=publish_fast if enabled else None,enable_feed=enabled)
                 finally: await page.close()
-                response=await client.post('/api/bookmakers/statistics/ingest',json=snapshot)
-                response.raise_for_status()
-                statistics_state=snapshot['state'] if response.json().get('updated') else 'unavailable'
+                reply=await ingest_statistics(client,snapshot)
+                statistics_state=snapshot['state'] if reply.get('updated') else 'unavailable'
     except Exception as error:
         LOG.warning('Event %s statistics refresh did not complete (%s)',event.get('source_event_id'),type(error).__name__)
         statistics_state='unavailable'
@@ -211,20 +229,24 @@ async def run(args):
                         operation='statistics_queue'
                         response=await client.get('/api/bookmakers/statistics/queue',params={'limit':args.batch_size})
                         response.raise_for_status(); queue=response.json(); linked=queue.get('linked_events',0); blocked_until=queue.get('blocked_until'); source_blocked=bool(blocked_until)
+                        feed_enabled=feed_supported(queue)
                         for job in queue['jobs']:
                             if stopped.is_set(): break
                             if not browser.is_connected():
                                 report(args,{'state':'browser_closed'})
                                 return 2
                             if page.is_closed(): page=await context.new_page()
-                            snapshot=await collect_statistics(page,job)
+                            async def publish_fast(value):
+                                reply=await ingest_statistics(client,value)
+                                if reply.get('updated'):
+                                    report(args,{'state':'fast','source_event_id':value['source_event_id']})
+                            snapshot=await collect_statistics(page,job,on_fast=publish_fast if feed_enabled else None,enable_feed=feed_enabled)
                             if stopped.is_set(): break
                             if not browser.is_connected():
                                 print('Окно сборщика закрыто. Запустите сборщик снова.',flush=True)
                                 return 2
                             operation='statistics_ingest'
-                            response=await client.post('/api/bookmakers/statistics/ingest',json=snapshot)
-                            response.raise_for_status()
+                            reply=await ingest_statistics(client,snapshot)
                             latest_attempt={'state':snapshot['state'],'at':snapshot['attempted_at'],'source_event_id':job['source_event_id']}
                             states[snapshot['state']]=states.get(snapshot['state'],0)+1
                             if snapshot['state']=='blocked': break
