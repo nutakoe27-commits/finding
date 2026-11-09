@@ -15,7 +15,7 @@ Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/matchlab-scraper/browsers
 Environment=HOME=/var/lib/matchlab-statistics
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x720x24 -nolisten tcp -extension GLX" /opt/matchlab-crawler/.venv/bin/python -m matchlab.statistics_worker --api-url http://127.0.0.1:18081 --interval 60 --batch-size 2 --status-file /var/lib/matchlab-statistics/status.json
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1280x720x24 -nolisten tcp -extension GLX" /opt/matchlab-crawler/.venv/bin/python -m matchlab.statistics_worker --api-url http://127.0.0.1:18081 --interval 30 --batch-size 2 --status-file /var/lib/matchlab-statistics/status.json
 StateDirectory=matchlab-statistics
 StateDirectoryMode=0700
 Restart=always
