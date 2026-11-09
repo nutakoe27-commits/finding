@@ -122,7 +122,7 @@ def passive_details(documents, header, expected_id):
     return {'header_lines':lines,'match_candidates':matches[:5],'team_match_lists':teams[:6]}
 
 
-def passive_summary(documents, header):
+def passive_summary(documents, header, expected_id=None):
     """Count already received public documents, binding team results to the displayed match."""
     header_key=participant_key(header)
     target=None
@@ -134,14 +134,17 @@ def passive_summary(documents, header):
         if not isinstance(home,dict) or not isinstance(away,dict): continue
         home_key,away_key=participant_key(home.get('name')),participant_key(away.get('name'))
         if min(len(home_key),len(away_key))<3 or home_key==away_key: continue
-        if home_key in header_key and away_key in header_key:
-            target=(home_key,away_key,elapsed)
+        exact_id=bool(expected_id and any(
+            isinstance(match.get(key),(str,int)) and str(match[key]).rsplit(':',1)[-1]==expected_id
+            for key in ('id','_id','matchId','match_id','eventId','event_id')))
+        if exact_id or (not expected_id and home_key in header_key and away_key in header_key):
+            target=(home_key,away_key,elapsed,'statistics_id' if exact_id else 'header')
             break
-    result={'documents':len(documents),'match_bound_to_header':bool(target),
+    result={'documents':len(documents),'match_bound':bool(target),'binding':target[3] if target else None,
             'recent_match_counts':{},'team_stats_found':{},'standings_candidates':0,
             'player_list_candidates':0,'seconds_until_matched_team_lists':None}
     if not target: return result
-    home_key,away_key,match_at=target
+    home_key,away_key,match_at,_=target
     timestamps=[match_at]
     for elapsed,data in documents:
         team=data.get('team')
@@ -310,7 +313,7 @@ async def inspect_page(page, url: str, seconds: int, *, provider_only=False, tes
     result={'page_status': document.status if document else None, 'frames': frames,
             'responses': entries, 'websockets': sockets, 'responses_limit': MAX_RESPONSES}
     if test_passive:
-        result['passive_test']=passive_summary(passive_documents,header)
+        result['passive_test']=passive_summary(passive_documents,header,expected_id)
         if show_labels: result['passive_details']=passive_details(passive_documents,header,expected_id)
     if test_direct:
         if candidate is None:

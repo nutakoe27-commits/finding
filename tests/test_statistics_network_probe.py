@@ -63,13 +63,26 @@ class RedactionTests(unittest.TestCase):
             (4,{'team':{'name':'Other Club'},'matches':[{}, {}, {}]}),
         ]
         result=passive_summary(documents,'Alpha United — Beta City')
-        self.assertTrue(result['match_bound_to_header'])
+        self.assertTrue(result['match_bound'])
         self.assertEqual(result['recent_match_counts'],{'home':2,'away':1})
         self.assertEqual(result['seconds_until_matched_team_lists'],3)
         self.assertNotIn('Alpha United',json.dumps(result))
         rejected=passive_summary(documents,'Unrelated match')
-        self.assertFalse(rejected['match_bound_to_header'])
+        self.assertFalse(rejected['match_bound'])
         self.assertEqual(rejected['recent_match_counts'],{})
+
+    def test_passive_binding_uses_exact_widget_id_even_when_names_differ(self):
+        documents=[
+            (1,{'match':{'_id':72578418,'teams':{'home':{'name':'Велес'},'away':{'name':'Камаз Н-Ч'}}}}),
+            (2,{'team':{'name':'Велес'},'matches':[{},{}]}),
+            (3,{'team':{'name':'Камаз Н-Ч'},'matches':[{}]}),
+        ]
+        header='Велес Москва — Камаз Набережные Челны'
+        result=passive_summary(documents,header,'72578418')
+        self.assertTrue(result['match_bound'])
+        self.assertEqual(result['binding'],'statistics_id')
+        self.assertEqual(result['recent_match_counts'],{'home':2,'away':1})
+        self.assertFalse(passive_summary(documents,'Велес — Камаз Н-Ч','999')['match_bound'])
 
     def test_optional_match_labels_are_bounded_and_do_not_expose_secrets(self):
         documents=[(1,{'match':{'id':123,'teams':{'home':{'name':{'ru':'Альфа'}},'away':{'name':'Бета'}}}}),
@@ -152,7 +165,7 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                           fetch('https://sh.fn.yunai.tech/api/v1/match/123?fixture='+name);</script>'''
                         await route.fulfill(status=200,content_type='text/html',body=html)
                     elif 'fixture=' in url:
-                        if 'fixture=match' in url: data={'match':{'teams':{'home':{'name':'Alpha United'},'away':{'name':'Beta City'}}}}
+                        if 'fixture=match' in url: data={'match':{'_id':123,'teams':{'home':{'name':'Alpha United'},'away':{'name':'Beta City'}}}}
                         else: data={'team':{'name':'Alpha United' if 'fixture=home' in url else 'Beta City'},'matches':[{},{}]}
                         body=json.dumps({'doc':[{'data':data}]})
                         await route.fulfill(status=200,headers={'content-type':'application/json','content-length':str(len(body)),
@@ -164,7 +177,7 @@ class OfflineBrowserTests(unittest.IsolatedAsyncioTestCase):
                     result=await inspect_page(page,'https://winline.ru/stats/match/123',1,provider_only=True,test_passive=True)
                 direct.assert_not_called()
                 self.assertEqual(len(requests),5)
-                self.assertTrue(result['passive_test']['match_bound_to_header'])
+                self.assertTrue(result['passive_test']['match_bound'])
                 self.assertEqual(result['passive_test']['recent_match_counts'],{'home':2,'away':2})
                 self.assertNotIn('Alpha United',json.dumps(result))
                 await context.close()
