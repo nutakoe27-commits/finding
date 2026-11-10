@@ -528,7 +528,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get('/api/bookmakers/featured-events')
     def featured_events(sport:str='',phase:str='',limit:int=10):
-        if len(sport)>40 or phase not in ('','upcoming','live') or not 1<=limit<=12:
+        if len(sport)>40 or phase not in ('','upcoming','live') or not 1<=limit<=100:
             raise HTTPException(422,'Некорректные параметры подборки.')
         from .featured_events import collection
         return collection(repo,sport=sport,phase=phase,limit=limit)

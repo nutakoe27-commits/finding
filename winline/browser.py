@@ -11,6 +11,27 @@ SNAPSHOT = r"""options => {
  if(a.client.websocket.readyState!==1) throw Error('Winline stream disconnected');
  const svc=a.getService('LineService'),formatter=a.getService('StringFormatService');
  const events=a.getEvents().toArray(),byId=new Map(events.map(e=>[e.id,e]));
+ // Read the actual desktop homepage block, including its editorial order.
+ // Category/league heuristics drift from the source; the Live block is separate.
+ const front=document.querySelector('ww-feature-frontpage-dsk');
+ const featured=[];
+ const add=id=>{if(byId.has(id)&&!featured.includes(id))featured.push(id)};
+ const motd=front?.querySelector('ww-feature-motd-card-dsk');
+ if(motd?.innerText.trim()){
+   const normalize=s=>String(s).normalize('NFKC').replace(/\s+/g,' ').trim();
+   const names=[...motd.querySelectorAll('.main-event__title,.members-wrapper .member')].map(n=>normalize(n.innerText));
+   const matches=events.filter(e=>e.members?.length===2&&e.members.every(n=>n&&names.includes(normalize(n))));
+   if(matches.length===1)add(matches[0].id);
+ }
+ const panel=front?.querySelector('ww-feature-live-panel-dsk[block="top"]');
+ for(const card of panel?.querySelectorAll('ww-feature-event-mini-card-dsk')||[]){
+   for(const link of card.querySelectorAll('a[href]')){
+     const url=new URL(link.getAttribute('href'),location.href);
+     const match=url.pathname.match(/^\/(?:stavki|live)\/(?:event|sport\/[^/]+(?:\/[^/]+)*)\/(\d+)\/?$/);
+     if(url.origin===location.origin&&match){add(Number(match[1]));break}
+   }
+ }
+ const featuredRanks=new Map(featured.map((id,index)=>[id,index]));
  const requested=new Set(options?.event_ids||[]),full=options?.all_lines!==false;
  const cache=window.__displayCache ||= new Map();
  const render=line=>{
@@ -42,7 +63,8 @@ SNAPSHOT = r"""options => {
  const all=picked.map(render);
  const mapped=new Map(all.map(l=>[[l.idEvent,l.id,l.isLive].join(':'),l]));
  const enriched=events.map(e=>{const main=mainByEvent.get(e.id);
-   return {...e,_main_line:main?mapped.get([e.id,main.id,e.isLive].join(':'))||render(main):null}});
+   return {...e,_featured_rank:featuredRanks.get(e.id)??null,
+     _main_line:main?mapped.get([e.id,main.id,e.isLive].join(':'))||render(main):null}});
  return JSON.stringify({sdkVersion:a.version,events:enriched,sports:a.getSports().serialize(),
    countries:a.getCountries().serialize(),championships:a.getChampionships().serialize(),lines:all},
    (key,value)=>key==='meta'||key==='$loki'?undefined:value);

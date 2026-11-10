@@ -41,7 +41,7 @@ window.FeaturedEvents=(()=>{
       }else odds.append(node('span','small muted','Коэффициенты — на странице матча'));
       const bottom=node('div','featured-bottom'),ai=node('button','featured-ai','Разбор ИИ');ai.type='button';ai.dataset.featured='ai-'+e.source_event_id;
       if(e.phase==='live'&&p.neural)ai.textContent='О разборе ИИ';
-      ai.addEventListener('click',()=>p.onAI(e));bottom.append(node('span','featured-freshness',e.is_stale?'Сохранённая линия':'Линия обновляется'),ai);
+      ai.addEventListener('click',()=>p.onAI(e));bottom.append(node('span','featured-freshness',e.is_stale?'Данные требуют обновления':e.phase==='live'?'Матч идёт':'До начала матча'),ai);
       card.append(top,main,timing,odds,bottom);return card;
     });
     track.replaceChildren(...cards);root.hidden=!cards.length;track.scrollLeft=scroll;
@@ -52,7 +52,7 @@ window.FeaturedEvents=(()=>{
     props=p;if(!p.visible){hide();return;}
     controller?.abort();controller=new AbortController();const epoch=++serial;
     try{
-      const query=new URLSearchParams({sport:p.sport,phase:p.phase,limit:'10'});
+      const query=new URLSearchParams({limit:'100'});
       const response=await fetch('/api/bookmakers/featured-events?'+query,{signal:controller.signal,cache:'no-store'});
       if(!response.ok)throw new Error('Unavailable');const d=await response.json();
       if(epoch!==serial||!props?.visible)return;render(d.events||[],p);

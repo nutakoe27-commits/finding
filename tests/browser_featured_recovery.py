@@ -58,17 +58,11 @@ async def exercise(base,repo):
                     if await page.locator('#age-gate').is_visible():await page.locator('#age-accept').click()
                     if await page.locator('#privacy-banner').is_visible():await page.locator('#privacy-reject').click()
                     await page.evaluate('document.documentElement.dataset.theme='+repr(theme))
-                    await expect(page.locator('#featured-track .featured-card')).to_have_count(6)
-                    await expect(page.locator('#featured-next')).to_be_enabled()
-                    await page.locator('#featured-next').click();await page.wait_for_function('()=>document.getElementById("featured-track").scrollLeft>0')
-                    await page.locator('#featured-prev').click();await page.wait_for_function('()=>document.getElementById("featured-track").scrollLeft<=3')
-                    assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'carousel overflow')
-                    await page.locator('#match-search').fill('Спартак');await expect(page.locator('#featured-events')).to_be_hidden()
-                    await page.locator('#match-search').fill('');await expect(page.locator('#featured-events')).to_be_visible()
-                    await page.locator('#featured-track [data-event-id="201"] .featured-ai').click();await expect(page.locator('#auth-dialog')).to_be_visible()
+                    await expect(page.locator('#featured-events')).to_be_hidden()
+                    await page.locator('.match-card[data-event-id="201"] .match-ai-button').click();await expect(page.locator('#auth-dialog')).to_be_visible()
                     await page.locator('#auth-close').click()
                     await signed_in_browser(page,base);await page.evaluate('Account.refresh()')
-                    await page.locator('#featured-track [data-event-id="201"] .featured-ai').click()
+                    await page.locator('.match-card[data-event-id="201"] .match-ai-button').click()
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак',timeout=30000)
                     first=await page.evaluate('state.aiAnalysis');assert first['context']['ai_generation']['model_calls']==3
                     assert first['context']['ai_generation']['token_usage']['total_tokens']==3300
@@ -88,16 +82,16 @@ async def exercise(base,repo):
                     live=await page.evaluate('state.aiAnalysis');assert live['context']['ai_generation']['reason']=='live_not_supported'
                     assert len(posts)==old_posts,'live unnecessarily requested statistics'
                     assert Model.calls['201']==3 and Model.calls['202']==3 and not Model.calls['299']
-                    await page.goto(base+'/#matches');await expect(page.locator('#featured-track .featured-card')).to_have_count(6)
+                    await page.goto(base+'/#matches');await expect(page.locator('#featured-events')).to_be_hidden()
                     await page.evaluate('window.scrollTo(0,0)')
                     await page.screenshot(path=f'/workspace/outputs/featured-events-{theme}-{width}.png',full_page=True)
-                    await page.locator('[data-phase="live"]').click();await expect(page.locator('#featured-track .featured-card')).to_have_count(1)
-                    await expect(page.locator('#featured-track')).to_contain_text('LIVE')
+                    await page.locator('[data-phase="live"]').click();await expect(page.locator('.match-card')).to_have_count(1)
+                    await expect(page.locator('.match-card')).to_contain_text('LIVE')
                     assert not errors,errors
                     await context.close()
             finally:await browser.close()
     finally:delivery.cancel();await asyncio.gather(delivery,return_exceptions=True)
-    print('PASS: carousel navigation/auth/filter/mobile; bounded 3-attempt regeneration; explicit nobody/skip; live without statistics requests or model calls')
+    print('PASS: legacy catalogue/auth/mobile; bounded 3-attempt regeneration; explicit nobody/skip; live without statistics requests or model calls')
 
 
 def main():

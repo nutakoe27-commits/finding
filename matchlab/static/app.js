@@ -9,6 +9,11 @@ const state = {
   aiBusy:false, aiStage:"analysis", predicting:false, pendingSelection:null, toastTimer:null,
   sport:"football", sports:[], refreshRequest:0, streamEvent:false, catalogSource:null, archiveOffset:0, archiveRequest:0,
 };
+const isAdmin = () => window.Account?.user?.role === "admin";
+function syncRoleUI() {
+  document.documentElement.dataset.role = isAdmin() ? "admin" : "user";
+  if (!isAdmin() && $("sort-filter").value === "freshness") $("sort-filter").value = "kickoff";
+}
 const themeMedia = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
 function storedTheme() {
   try { const value=localStorage.getItem('matchlab:theme:v1'); return value==='light'||value==='dark' ? value : null; }
@@ -24,8 +29,8 @@ function setTheme(theme, save = false) {
   document.querySelector('meta[name="theme-color"]').content=dark ? '#121618' : '#f5f5f2';
   if (save) try { localStorage.setItem('matchlab:theme:v1',theme); } catch { /* Theme still applies for this visit. */ }
 }
-let guideOpen=true;
-try { guideOpen=localStorage.getItem('matchlab:guide:v1')!=='hidden'; } catch { /* Show the guide when storage is unavailable. */ }
+let guideOpen=false;
+try { guideOpen=localStorage.getItem('matchlab:guide:v1')==='shown'; } catch { /* Show the guide when storage is unavailable. */ }
 function syncGuide() {
   const open=state.route==='#matches' && guideOpen;
   $('quick-guide').hidden=!open;
@@ -619,8 +624,8 @@ function renderSports(sports = state.sports) {
     button.setAttribute("aria-pressed", String(key === selected)); button.addEventListener("click", () => chooseSport(key)); return button;
   }));
   if (state.route === "#matches") {
-    $("catalog-title").textContent = sportLabel(selected);
-    $("catalog-eyebrow").textContent = `${sportLabel(selected).toLocaleUpperCase("ru-RU")} · СПОРТИВНАЯ АНАЛИТИКА`;
+    $("catalog-title").textContent = "Матчи";
+    $("catalog-eyebrow").textContent = "СПОРТИВНАЯ АНАЛИТИКА";
     $("breadcrumb").textContent = `Линия / ${sportLabel(selected)}`;
   }
 }
@@ -631,6 +636,7 @@ function chooseSport(key) {
   renderSports(); loadCatalogue();
 }
 function oddsStrip(preview, eventId, selectable = false) {
+  selectable = selectable && state.analysisMode !== "neural-verdict";
   const strip = el("div", "odds-strip");
   const outcomes = preview.outcomes || [["home","П1"],["draw","X"],["away","П2"]].map(([side,name]) => ({side,name,odds:preview[side],state:"open"}));
   strip.style.setProperty("--odds-count",outcomes.length);
@@ -703,6 +709,7 @@ function renderCatalogue(result) {
   showError("market-list-error", "");
   state.catalogSource=result.source_kind || null;
   const favoriteView = state.route === "#favorites";
+  $("catalog-list-title").textContent = favoriteView ? "Ваши матчи" : state.sport ? sportLabel(state.sport) : "Все матчи";
   FeaturedEvents.update({visible:!favoriteView&&state.marketOffset===0&&!$("match-search").value.trim()&&!$("competition-filter").value&&!$("day-filter").value,
     sport:state.sport,phase:state.phase,neural:state.analysisMode==='neural-verdict',route:eventRoute,
     onAI:event=>{window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id,null,true,event.source_kind==='stream'?'stream':'legacy');}});
@@ -758,11 +765,11 @@ function renderCatalogue(result) {
       const actions = el("div", "match-actions");
       const ai = el("button", "match-ai-button", state.analysisMode==='neural-verdict'&&event.phase==='live'?"О разборе ИИ":"Разбор ИИ"); ai.type = "button";
       ai.addEventListener("click", () => {window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id, null, true);});
-      const markets = el("a", "match-open", event.source_kind === "stream" ? "Матч и рынки →" : `${event.coverage.captured_markets} рынков →`); markets.href = eventRoute(event);
+      const markets = el("a", "match-open", "О матче →"); markets.href = eventRoute(event);
       const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
       actions.append(ai, markets, bookmaker); card.append(actions);
       const freshness = el("div", "match-freshness"); freshness.append(el("span", event.is_stale ? "freshness-badge stale" : "freshness-badge", ageLabel(event)));
-      if (!event.coverage.complete && event.source_kind !== "stream") freshness.append(el("span", "partial-label", event.source_kind === "stream" ? "Основные рынки" : "Неполный снимок"));
+      if (isAdmin() && !event.coverage.complete && event.source_kind !== "stream") freshness.append(el("span", "partial-label", event.source_kind === "stream" ? "Основные рынки" : "Неполный снимок"));
       card.append(freshness); group.append(card);
     }
     rows.push(group);
@@ -852,12 +859,13 @@ function renderAIAnalysisMeta() {
   const context = analysis.context;
   const market = context.markets.find(item => item.key === context.selection.market_key);
   const outcome = market?.outcomes.find(item => item.key === context.selection.outcome_key);
-  const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
+  const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || (isAdmin() && state.archiveHistory && context.archive_history?.revision !== state.archiveHistory.revision));
   const prep=context.statistics_preparation?.state;
   const focused=context.market_selection;
   const focusNote=focused ? (focused.policy === "source-popular-v1" ? ` В разборе ${focused.selected_markets} популярных рынков со страницы Winline.` : ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.${focused.context_only_keys?.length ? " Свежей линии нет; сохранённая показана только для контекста." : ""}`) : "";
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
   $("ai-analysis-meta").textContent = `${analysis.analysis_type === "neural_verdict" ? "Вердикт ИИ" : analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${focusNote}${prepNote}`;
+  if (!isAdmin()) $("ai-analysis-meta").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК.${changed ? " Сведения о матче изменились после разбора." : ""}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }
@@ -910,7 +918,12 @@ async function loadEvent(refresh = false) {
   if (!refresh) { state.refreshRequest++; $("event-refresh").disabled=false; $("event-refresh-status").textContent=""; }
   const prefix=eventAPI(id),stream=state.streamEvent;
   if(stream) api(`/api/archive/events/${id}/watch`,{method:"POST",body:"{}"}).catch(()=>{});
-  const [detail, context, teamStatistics, archived] = await Promise.allSettled([api(prefix+"/markets"),api(prefix+"/analysis"),api(prefix+"/statistics"),api(`/api/archive/events/${id}/history?source=${stream ? "stream" : "legacy"}`)]);
+  const [detail, context, teamStatistics, archived] = await Promise.allSettled([
+    api(prefix+"/markets"),
+    isAdmin() ? api(prefix+"/analysis") : Promise.resolve(null),
+    isAdmin() ? api(prefix+"/statistics") : Promise.resolve(null),
+    isAdmin() ? api(`/api/archive/events/${id}/history?source=${stream ? "stream" : "legacy"}`) : Promise.resolve(null)
+  ]);
   if (request !== state.marketDetailRequest || state.eventId !== id || !isEventRoute()) return;
   if (detail.status === "rejected") { showError("detail-error", detail.reason.message); return; }
   showError("detail-error", "");
@@ -924,7 +937,7 @@ async function loadEvent(refresh = false) {
   $("market-detail-title").textContent = eventTitle(document);
   $("event-competition").textContent = `${document.sport_label || sportLabel(document.sport)} · ${document.competition}`;
   $("breadcrumb").textContent = `Линия / ${document.sport_label || sportLabel(document.sport)}`;
-  $("tab-analysis").hidden = !state.analysisContext?.prediction_available;
+  $("tab-analysis").hidden = !isAdmin() || !state.analysisContext?.prediction_available;
   $("event-kickoff").textContent = document.kickoff_at ? `${moscowTime(document.kickoff_at)} МСК` : "Начало встречи в снимке не указано";
   $("event-phase").textContent = [phaseLabel(document),document.final_result?.score_text || document.live_score,document.source_present === false ? null : document.live_clock].filter(Boolean).join(" · ");
   $("event-phase").classList.toggle("live", document.phase === "live");
@@ -939,7 +952,7 @@ async function loadEvent(refresh = false) {
   if(document.source_kind === "stream") $("market-detail-meta").textContent=`Получено ${document.coverage.captured_markets} рынков${document.coverage.expected_markets ? " из " + document.coverage.expected_markets + " объявленных" : ""}. Событие наблюдалось ${moscowTime(document.capture_started_at)} МСК. У цен своё время наблюдения; дополнительные рынки запрашиваются при открытии матча.`;
   $("market-count").textContent = document.coverage.captured_markets;
   $("event-primary").hidden = !document.headline;
-  $("event-primary").replaceChildren(...(document.headline ? [el("p","headline-caption",[document.headline.name,document.headline.period,document.headline.outcome_count > 3 ? `${document.headline.outcome_count} исходов` : null].filter(Boolean).join(" · ")), oddsStrip(document.headline,id,true), el("p","odds-explainer","Выберите коэффициент, чтобы разобрать исход.")] : []));
+  $("event-primary").replaceChildren(...(document.headline ? [el("p","headline-caption",[document.headline.name,document.headline.period,document.headline.outcome_count > 3 ? `${document.headline.outcome_count} исходов` : null].filter(Boolean).join(" · ")), oddsStrip(document.headline,id,true), ...(state.analysisMode === "neural-verdict" ? [] : [el("p","odds-explainer","Выберите коэффициент, чтобы разобрать исход.")])] : []));
   if (state.selection && !document.markets.some(item => item.key === state.selection.marketKey && (!state.selection.outcomeKey || item.outcomes.some(outcome => outcome.key === state.selection.outcomeKey)))) {
     state.selection = null; clearAIOutput(); toast("Рынки изменились. Выберите исход заново.");
   }
@@ -981,7 +994,7 @@ function renderMarketGroups() {
   $("market-groups").replaceChildren(...markets.map(market => {
     const details = el("details", "market-group"); details.dataset.key = market.key;
     const summary = el("summary", "", market.name);
-    const caption = [market.group,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ");
+    const caption = [isAdmin() ? market.group : null,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ");
     summary.append(el("small", "", `${caption ? caption + " · " : ""}${market.outcomes.length} исходов${market.observed_at ? " · " + observationTime(market.observed_at) + " МСК" + (market.is_stale ? " · прошлое наблюдение" : "") : ""}`)); details.append(summary);
     if (market.variant_id) details.append(el("p","small muted","У источника есть несколько блоков с этим названием. Условия каждого варианта уточняйте на странице события."));
     let rendered = false;
@@ -989,14 +1002,14 @@ function renderMarketGroups() {
       if (rendered || !details.open) return;
       rendered = true; const outcomes = el("div", "market-outcomes");
       market.outcomes.forEach(outcome => {
-        const button = el("button", "market-outcome"); button.type = "button";
+        const button = el(state.analysisMode === "neural-verdict" ? "div" : "button", "market-outcome"); button.type = "button";
         button.dataset.selection = `${market.key}/${outcome.key}`;
         button.disabled = outcome.state !== "open";
         button.setAttribute("aria-pressed", String(state.selection?.marketKey === market.key && state.selection?.outcomeKey === outcome.key));
         const price = outcome.state === "open" ? String(outcome.odds) : outcome.state === "suspended" ? "Пауза" : "Недоступен";
         button.append(el("span", "", [outcome.name,outcome.parameter].filter(Boolean).join(" · ")), el("strong", "", price));
-        button.title = "Выбрать для разбора ИИ";
-        button.addEventListener("click", () => { selectAI(market,outcome); if (window.innerWidth <= 1050) $("ai-desk").scrollIntoView({behavior:"smooth",block:"nearest"}); });
+        button.title = state.analysisMode === "neural-verdict" ? "Коэффициент на момент обновления" : "Выбрать для разбора ИИ";
+        if (state.analysisMode !== "neural-verdict") button.addEventListener("click", () => { selectAI(market,outcome); if (window.innerWidth <= 1050) $("ai-desk").scrollIntoView({behavior:"smooth",block:"nearest"}); });
         outcomes.append(button);
       }); details.append(outcomes);
     };
@@ -1006,6 +1019,7 @@ function renderMarketGroups() {
   if (focusedSelection) [...$("market-groups").querySelectorAll("[data-selection]")].find(button => button.dataset.selection === focusedSelection)?.focus({preventScroll:true});
 }
 function setDetailTab(tab) {
+  if (tab === "analysis" && !isAdmin()) tab = "markets";
   state.detailTab = tab;
   const markets = tab === "markets";
   $("market-detail").hidden = !markets;
@@ -1159,8 +1173,10 @@ async function loadSavedAnalysis(id) {
     if (request !== state.marketDetailRequest || state.route !== `#analysis/${id}`) return;
     const context = analysis.context;
     $("manual-heading").hidden = false;
+    $("manual-heading").querySelector(".eyebrow").textContent = "СОХРАНЁННЫЙ РАЗБОР";
     $("manual-heading").querySelector("h1").textContent = eventTitle(analysis.event);
     $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "neural_verdict" ? "Вердикт ИИ" : analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
+    if (!isAdmin()) $("manual-heading").querySelector(".subtitle").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
     renderAnalysis($("saved-analysis-text"),analysis.text,analysis.context?.probability_assessment,analysis.context?.ai_generation,analysis.context?.neural_verdict);
@@ -1196,7 +1212,8 @@ async function loadStatus() {
   } catch (error) { if (request === state.statusRequest) { showError("global-error", error.message); $("feed-state").textContent = "Нет ответа сервиса"; $("feed-dot").classList.remove("green"); } }
 }
 function moveAIDesk() {
-  const mobile = window.innerWidth <= 1050;
+  const mobile = window.innerWidth <= 1050 || !isAdmin();
+  document.body.classList.toggle("inline-ai-desk", !isAdmin());
   const host = mobile ? $("ai-mobile-host") : $("ai-desktop-host");
   if ($("ai-desk").parentElement !== host) host.append($("ai-desk"));
 }
@@ -1205,6 +1222,12 @@ async function route() {
   let hash = location.hash || "#matches";
   const aliases = {"#markets":"#matches","#bookmakers":"#matches","#forecast":"#calculator","#validation":"#status","#data":"#status"};
   if (aliases[hash]) { hash = aliases[hash]; history.replaceState(null,"",hash); }
+  if (["#archive", "#status", "#calculator"].includes(hash)) {
+    await Account.ready;
+    if ((location.hash || "#matches") !== hash) return;
+    if (!isAdmin()) { hash = "#matches"; history.replaceState(null,"",hash); }
+  }
+  syncRoleUI();
   const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/);
   if (!["#matches","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
   state.route = hash; document.getElementById('view-matches').classList.toggle('ym-show-content',hash === '#matches'); Account.track("page_view",hash); window.ProductAnalytics?.hit(hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
@@ -1221,7 +1244,7 @@ async function route() {
   showError("detail-error", "");
   if (hash === "#matches" || hash === "#favorites") {
     showView("view-matches");
-    $("catalog-title").textContent = hash === "#favorites" ? "Избранное" : sportLabel(state.sport);
+    $("catalog-title").textContent = hash === "#favorites" ? "Избранное" : "Матчи";
     $("catalog-subtitle").textContent = hash === "#favorites" ? "Ваши матчи в этом браузере. Сохраните звёздочкой нужные встречи." : "Выберите матч, чтобы изучить рынки и получить разбор ИИ.";
     $("catalog-stats").hidden = hash === "#favorites";
     $("breadcrumb").textContent = hash === "#favorites" ? "Линия / Избранное" : `Линия / ${sportLabel(state.sport)}`;
@@ -1244,7 +1267,7 @@ async function route() {
     $("forecast").classList.toggle("manual-mode",hash === "#calculator");
     if (match) {
       state.eventId = match[1]; Account.track("match_view",match[1]); $("breadcrumb").textContent = "Линия / Матч";
-      $("match-back").href = state.catalogReturn; $("match-back").textContent = "← К линии";
+      $("match-back").href = state.catalogReturn; $("match-back").textContent = "← К матчам";
       $("market-search").value = ""; $("market-group-filter").value = "";
       $("market-groups").replaceChildren(el("p","small muted","Загружаем рынки…"));
       setDetailTab("markets"); loadEvent();
@@ -1252,6 +1275,7 @@ async function route() {
       $("breadcrumb").textContent = "Инструменты / Ручной расчёт";
       $("match-back").href = "#status"; $("match-back").textContent = "← К состоянию сервиса";
       $("manual-heading").hidden = false;
+      $("manual-heading").querySelector(".eyebrow").textContent = "СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ";
       $("manual-heading").querySelector("h1").textContent = "Ручной расчёт";
       $("manual-heading").querySelector(".subtitle").textContent = "Исследовательский сценарий по истории АПЛ. Выбранная пара не подтверждает наличие матча в расписании.";
       $("manual-selection").hidden = false; $("forecast").hidden = false;
@@ -1318,18 +1342,18 @@ $("event-refresh").addEventListener("click", async () => {
         if (!current()) return;
         const markets={ok:"Рынки обновлены.",partial:"Рынки получены частично; показан доступный сохранённый снимок.",blocked:"Источник ограничил доступ к рынкам.",unavailable:"Не удалось обновить рынки."};
         const stats={ok:"Статистика обновлена.",blocked:"Источник ограничил доступ к статистике; повтор будет выполнен после паузы.",empty:"Источник не предоставил статистику.",unavailable:"Не удалось обновить статистику.",missing_link:"Ссылка на статистику этой встречи не найдена."};
-        status.textContent=`${markets[result.market_state] || "Результат обновления рынков неизвестен."} ${stats[result.statistics_state] || "Результат обновления статистики неизвестен."}`;
+        status.textContent=isAdmin() ? `${markets[result.market_state] || "Результат обновления рынков неизвестен."} ${stats[result.statistics_state] || "Результат обновления статистики неизвестен."}` : result.market_state === "ok" ? "Данные матча обновлены." : "Свежие сведения пока недоступны. Показаны последние полученные данные.";
         return;
       }
       if (result.state==="timeout") { status.textContent="Сборщик не завершил запрос вовремя. Показаны сохранённые данные; попробуйте позже."; return; }
-      status.textContent=result.state==="running" ? "Собираем рынки и статистику этого матча…" : "Запрос в очереди сборщика…";
+      status.textContent=result.state==="running" ? "Обновляем данные матча…" : "Обновление ожидает своей очереди…";
       await new Promise(resolve=>setTimeout(resolve,2000));
     }
     if (current()) status.textContent="Ожидание обновления завершилось. Проверьте состояние сборщика и повторите позже.";
   } catch (error) { if (current()) status.textContent=error.message; }
   finally { if (current()) $("event-refresh").disabled=false; }
 });
-$("market-refresh").addEventListener("click", async () => { clearToast(); loadStatus(); if (await loadCatalogue()) toast("Список обновлён из сохранённых данных. Сбор идёт автоматически."); });
+$("market-refresh").addEventListener("click", async () => { clearToast(); loadStatus(); if (await loadCatalogue()) toast("Список матчей обновлён."); });
 $("event-show-markets").addEventListener("click",() => { setDetailTab("markets"); const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; $("event-tabs").scrollIntoView({behavior:reduced ? "auto" : "smooth",block:"start"}); $("tab-markets").focus({preventScroll:true}); });
 $("history-refresh").addEventListener("click", async () => { clearToast(); $("history-refresh").disabled = true; try { if (await loadHistory()) toast("История обновлена."); } finally { $("history-refresh").disabled = false; } });
 $("status-refresh").addEventListener("click", async () => { clearToast(); $("status-refresh").disabled = true; try { const [ok] = await Promise.all([loadStatus(),loadBacktest().catch(error => showError("backtest-empty",error.message))]); if (ok) toast("Состояние сервиса обновлено."); } finally { $("status-refresh").disabled = false; } });
@@ -1363,7 +1387,7 @@ window.addEventListener('storage',event => {
 setInterval(() => { if (document.visibilityState !== "visible") return; loadStatus(); if (["#matches","#favorites"].includes(state.route)) loadCatalogue(); else if (state.eventId) loadEvent(true); else if(state.route === "#archive") loadArchive(); },10000);
 state.favorites = readFavorites(); $("as-of").value = today;
 try { const key = localStorage.getItem("matchlab:sport:v1"); if (key !== null && (!key || /^[a-z][a-z0-9_-]{0,49}$/.test(key))) state.sport = key; } catch { /* Default to football when storage is unavailable. */ }
-setTheme(document.documentElement.dataset.theme); loadStatus(); route();
+setTheme(document.documentElement.dataset.theme); syncRoleUI(); loadStatus(); route();
 
 function renderArchiveStatus(data) {
   const active=data.connected && !data.source_stale;
@@ -1425,7 +1449,11 @@ $("archive-prev").addEventListener("click",()=>{state.archiveOffset=Math.max(0,s
 $("archive-next").addEventListener("click",()=>{state.archiveOffset+=30;loadArchive()});
 
 document.addEventListener("accountchange",()=>{
+  syncRoleUI();
+  if (!isAdmin() && ["#archive", "#status", "#calculator"].includes(state.route)) { history.replaceState(null,"","#matches"); route(); }
+  moveAIDesk();
   state.explainRequest++;clearAIOutput();syncAIButton();
+  if (state.eventId) { setDetailTab("markets"); loadEvent(true); }
   $("explanation").replaceChildren();$("history-list").replaceChildren();$("saved-analysis-text").replaceChildren();
   if(state.route==="#account") Account.renderPage();
   if(state.route==="#history"){if(Account.user)loadHistory();else $("history-empty").hidden=false;}

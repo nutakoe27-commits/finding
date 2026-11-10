@@ -16,13 +16,14 @@
   <script src="/static/metrika.js?v=20261109-metrika1" defer></script>
   <script src="/static/privacy.js?v=20261109-metrika1" defer></script>
   <script src="/static/account.js?v=20261109-metrika1" defer></script>
-  <link rel="stylesheet" href="/static/featured-events.css?v=20261110-featured1" />
-  <script src="/static/featured-events.js?v=20261110-featured1" defer></script>
-  <script src="/static/app.js?v=20261110-verdict6-2" defer></script>
+  <link rel="stylesheet" href="/static/featured-events.css?v=20261111-source2" />
+  <script src="/static/featured-events.js?v=20261111-source2" defer></script>
+  <script src="/static/app.js?v=20261111-product2" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261110-results1" />
   <script src="/static/admin-results.js?v=20261110-results1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
-  <script src="/static/admin.js?v=20261110-verdict6-2" defer></script>
+  <script src="/static/admin.js?v=20261111-product2" defer></script>
+  <link rel="stylesheet" href="/static/product.css?v=20261111-product2" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -31,7 +32,7 @@
     <div class="workspace-label">СПОРТИВНАЯ АНАЛИТИКА</div>
     <nav aria-label="Основные разделы">
       <a href="#matches" class="nav-link active"><span aria-hidden="true">◉</span> Матчи <span class="nav-count" id="nav-matches">—</span></a>
-      <a href="#archive" class="nav-link"><span aria-hidden="true">◷</span> Архив</a>
+      <a href="#archive" class="nav-link" data-admin-only><span aria-hidden="true">◷</span> Архив</a>
       <a href="#favorites" class="nav-link"><span aria-hidden="true">☆</span> Избранное <span class="nav-count" id="nav-favorites">0</span></a>
       <a href="#history" class="nav-link" aria-label="История разборов"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><span class="nav-history-long" aria-hidden="true">История разборов</span><span class="nav-history-short" aria-hidden="true">История</span></a>
     </nav>
@@ -44,25 +45,25 @@
     <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span><a id="admin-link" href="#admin" hidden>Управление</a><button id="account-button" class="account-button" type="button">Войти</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
-      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Футбол<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Предстоящие встречи, Live и история участников. Данные обновляются без перезагрузки.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Загрузить сохранённые данные; сборщик работает автоматически"><span aria-hidden="true">↻</span> Обновить</button></div>
+      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Выберите матч. Получите аргументы и решение ИИ.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span aria-hidden="true">↻</span> Обновить</button></div>
       <section id="quick-guide" class="quick-guide" aria-labelledby="guide-title" hidden>
         <div class="guide-heading"><div><span class="guide-kicker">ПЕРВЫЙ РАЗ ЗДЕСЬ?</span><h2 id="guide-title">От матча к понятному разбору</h2></div><button id="guide-close" class="guide-close" type="button" aria-label="Скрыть подсказку">×</button></div>
         <ol class="guide-steps"><li><span>01</span><div><strong>Выберите матч</strong><small>Найдите команду или турнир</small></div></li><li><span>02</span><div><strong>Изучите рынки</strong><small>Или выберите конкретный исход</small></div></li><li><span>03</span><div><strong>Получите разбор</strong><small>ИИ объяснит доступные данные</small></div></li></ol>
       </section>
-      <section id="featured-events" class="featured-events" aria-label="События в центре внимания" aria-roledescription="карусель" hidden>
-        <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>В центре внимания</h2><p class="small muted">Ключевые турниры и ближайшие события из собранной линии.</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события">←</button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события">→</button></div></div>
+      <section id="featured-events" class="featured-events" aria-label="Главные события Winline" aria-roledescription="карусель" hidden>
+        <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>Главные события</h2><p class="small muted">Подборка Winline · все виды спорта</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события">←</button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события">→</button></div></div>
         <div id="featured-track" class="featured-track" role="list" tabindex="0" aria-label="Список основных событий"></div>
       </section>
-      <div class="sport-navigation"><div id="sport-tabs" class="sport-tabs" role="group" aria-label="Вид спорта"></div><label class="sr-only" for="sport-filter">Все виды спорта</label><select id="sport-filter"><option value="">Все виды спорта</option><option value="football">Футбол</option><option value="hockey">Хоккей</option><option value="tennis">Теннис</option><option value="basketball">Баскетбол</option></select></div>
-      <div id="catalog-stats" class="catalog-stats" aria-label="Состояние линии"><div><strong id="count-upcoming">—</strong><span>Предстоящих</span></div><div><strong id="count-live">—</strong><span>Live в данных</span></div><div><strong id="count-fresh">—</strong><span>Обновлены недавно</span></div><p id="catalog-updated">Ожидаем данные</p></div>
+      <div class="catalog-section-heading"><h2 id="catalog-list-title">Все матчи</h2><p class="small muted">Найдите команду или выберите турнир</p></div><div class="sport-navigation"><div id="sport-tabs" class="sport-tabs" role="group" aria-label="Вид спорта"></div><label class="sr-only" for="sport-filter">Все виды спорта</label><select id="sport-filter"><option value="">Все виды спорта</option><option value="football">Футбол</option><option value="hockey">Хоккей</option><option value="tennis">Теннис</option><option value="basketball">Баскетбол</option></select></div>
+      <div id="catalog-stats" class="catalog-stats" aria-label="Состояние линии"><div><strong id="count-upcoming">—</strong><span>Предстоящих</span></div><div><strong id="count-live">—</strong><span>Сейчас в игре</span></div><div data-admin-only><strong id="count-fresh">—</strong><span>Обновлены недавно</span></div><p id="catalog-updated" data-admin-only>Ожидаем данные</p></div>
       <div class="catalog-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск участника или турнира</span><input id="match-search" type="search" placeholder="Участник, команда или турнир" autocomplete="off" maxlength="200" /></label><label class="sr-only" for="competition-filter">Турнир</label><select id="competition-filter" class="competition-filter"><option value="">Все турниры</option></select><label class="sr-only" for="day-filter">День матча</label><select id="day-filter"><option value="">Любая дата</option><option value="today">Сегодня</option><option value="tomorrow">Завтра</option></select></div>
-      <div class="catalog-toolbar"><div class="segmented" role="group" aria-label="Статус матчей"><button type="button" class="active" data-phase="upcoming" aria-pressed="true">Предстоящие</button><button type="button" data-phase="live" aria-pressed="false">Live</button><button type="button" data-phase="" aria-pressed="false">Все</button></div><div class="filter-actions"><button id="clear-active-filters" class="clear-filters" type="button" hidden>Сбросить фильтры</button><label class="sort-label">Сортировка <select id="sort-filter"><option value="kickoff">По времени матча</option><option value="freshness">По свежести данных</option></select></label></div></div>
+      <div class="catalog-toolbar"><div class="segmented" role="group" aria-label="Статус матчей"><button type="button" class="active" data-phase="upcoming" aria-pressed="true">Предстоящие</button><button type="button" data-phase="live" aria-pressed="false">Live</button><button type="button" data-phase="" aria-pressed="false">Все</button></div><div class="filter-actions"><button id="clear-active-filters" class="clear-filters" type="button" hidden>Сбросить фильтры</button><label class="sort-label">Сортировка <select id="sort-filter"><option value="kickoff">По времени матча</option><option data-admin-only value="freshness">По свежести данных</option></select></label></div></div>
       <p id="market-list-summary" class="list-caption" aria-live="polite">Загружаем матчи…</p>
       <div id="market-list-error" class="notice error" role="alert" hidden></div>
       <div id="market-event-rows" class="match-list" aria-busy="true"><div class="loading-card">Загружаем линию Winline…</div></div>
       <div id="market-list-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true">◎</span><h2 id="catalog-empty-title">Матчи пока не найдены</h2><p id="catalog-empty-text">Попробуйте другой турнир или сбросьте фильтры.</p><button id="reset-filters" class="secondary-button" type="button">Сбросить фильтры</button></div>
       <div class="pagination"><button id="market-prev" class="secondary-button" type="button" disabled>← Назад</button><span id="catalog-page" class="muted small"></span><button id="market-next" class="secondary-button" type="button" disabled>Дальше →</button></div>
-      <p class="catalog-footnote">Коэффициенты показаны на момент сбора. Время и полнота данных — у каждой встречи.</p>
+      <p class="catalog-footnote">Время матчей — по Москве. Коэффициенты могут меняться.</p>
     </section>
     <section id="view-analysis" data-view hidden>
       <a id="match-back" class="back-link" href="#matches">← К матчам</a>
@@ -75,19 +76,19 @@
         <p id="event-ai-support" class="notice" hidden></p>
       </header>
       <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
-      <details id="team-statistics" class="panel team-statistics"><summary>Статистика участников <span id="team-statistics-status" class="muted"></span></summary><p id="team-statistics-note" class="small muted"></p><a id="team-statistics-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>Статистика Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a><div id="team-statistics-sections"></div></details>
-      <section id="archive-team-history" class="panel archive-team-history" hidden>
+      <details id="team-statistics" data-admin-only class="panel team-statistics"><summary>Статистика участников <span id="team-statistics-status" class="muted"></span></summary><p id="team-statistics-note" class="small muted"></p><a id="team-statistics-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>Статистика Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a><div id="team-statistics-sections"></div></details>
+      <section id="archive-team-history" data-admin-only class="panel archive-team-history" hidden>
         <div class="panel-heading"><h2>История участников</h2><span id="archive-binding" class="small muted"></span></div>
         <p id="archive-team-note" class="small muted" role="status"></p><div id="archive-team-cards" class="archive-team-grid"></div>
         <details id="archive-h2h"><summary>Личные встречи</summary><div id="archive-h2h-list"></div></details>
       </section>
       <div id="ai-mobile-host"></div><div id="detail-error" class="notice error" role="alert" hidden></div>
-      <div id="event-tabs" class="detail-tabs" role="tablist" aria-label="Информация о матче"><button type="button" id="tab-markets" role="tab" aria-selected="true" aria-controls="market-detail" tabindex="0">Все рынки <span id="market-count"></span></button><button type="button" id="tab-analysis" role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Статистика</button></div>
+      <div id="event-tabs" class="detail-tabs" role="tablist" aria-label="Информация о матче"><button type="button" id="tab-markets" role="tab" aria-selected="true" aria-controls="market-detail" tabindex="0">Все рынки <span id="market-count"></span></button><button type="button" id="tab-analysis" data-admin-only role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Статистика</button></div>
       <article id="market-detail" class="panel market-detail" role="tabpanel" aria-labelledby="tab-markets">
         <div class="market-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск по рынкам</span><input id="market-search" type="search" placeholder="Рынок, период или параметр" /></label><label class="sr-only" for="market-group-filter">Группа рынков</label><select id="market-group-filter"><option value="">Все группы</option></select></div>
         <p id="market-search-count" class="small muted" aria-live="polite"></p><div id="market-groups"></div><p id="market-search-empty" class="empty-text" hidden>Такой рынок не найден. Измените запрос или группу.</p>
       </article>
-      <div id="analysis-panel" role="tabpanel" aria-labelledby="tab-analysis" hidden>
+      <div id="analysis-panel" data-admin-only role="tabpanel" aria-labelledby="tab-analysis" hidden>
         <div id="event-analysis-controls" class="panel analysis-start"><div><p class="eyebrow">ОСНОВНОЕ ВРЕМЯ · П1 / Х / П2</p><h2>Статистическая оценка</h2><p id="analysis-availability" class="muted">Проверяем доступность модели…</p></div><button id="event-predict" class="primary-button" type="button" disabled>Рассчитать вероятности <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></button></div>
       <section id="forecast" class="forecast-grid">
         <article id="manual-selection" class="panel selection-panel" hidden>
@@ -257,9 +258,9 @@
 
 
       </div>
-      <article id="saved-analysis" class="panel" hidden><h2 id="saved-analysis-title"></h2><div id="saved-analysis-text" class="explanation"></div><p id="saved-analysis-coverage" class="small muted"></p><div id="saved-analysis-sources"></div><a id="saved-analysis-open" class="secondary-button" href="#matches">Открыть актуальные рынки <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></article>
+      <article id="saved-analysis" class="panel" hidden><h2 id="saved-analysis-title"></h2><div id="saved-analysis-text" class="explanation"></div><p id="saved-analysis-coverage" data-admin-only class="small muted"></p><div id="saved-analysis-sources"></div><a id="saved-analysis-open" class="secondary-button" href="#matches">Вернуться к матчу <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a></article>
     </section>
-    <section id="view-archive" data-view hidden>
+    <section id="view-archive" data-admin-only data-view hidden>
       <div class="page-heading"><div><p class="eyebrow">НАКОПЛЕННЫЕ РЕЗУЛЬТАТЫ</p><h1>Архив матчей<span class="lime">.</span></h1><p class="subtitle">История для сравнения участников и аргументированного разбора. Результаты сохраняются по мере получения от Winline.</p></div><button id="archive-refresh" class="secondary-button" type="button">Обновить</button></div>
       <div class="archive-overview panel"><div><strong id="archive-total">—</strong><span>Результатов в базе</span></div><div><strong id="archive-events-total">—</strong><span>Событий в потоке</span></div><p id="archive-sync-note" class="small muted" role="status">Проверяем накопление данных…</p></div>
       <div class="catalog-tools"><label class="search-field"><span class="sr-only">Поиск по истории</span><input id="archive-search" type="search" maxlength="200" placeholder="Участник или турнир" /></label><label class="sr-only" for="archive-sport">Вид спорта</label><select id="archive-sport"><option value="">Все виды спорта</option></select></div>
@@ -269,11 +270,11 @@
       <p class="catalog-footnote">Наличие в архиве не подтверждает, что результат был известен до начала матча. В разбор передаются только факты, допустимые для его времени.</p>
     </section>
     <section id="view-history" data-view hidden>
-      <div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЕ РАЗБОРЫ</p><h1>История разборов<span class="lime">.</span></h1><p class="subtitle">Последние 20 разборов. История общая для всех посетителей.</p></div><button id="history-refresh" class="secondary-button" type="button">Обновить</button></div>
+      <div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЕ РАЗБОРЫ</p><h1>История разборов<span class="lime">.</span></h1><p class="subtitle">Ваши сохранённые разборы. Вернитесь к аргументам и решениям в любое время.</p></div><button id="history-refresh" class="secondary-button" type="button">Обновить</button></div>
       <div id="history-error" class="notice error" role="alert" hidden></div><div id="history-list" class="history-list"></div>
-      <div id="history-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h2>Здесь появятся разборы</h2><p>Выберите матч и нажмите «Получить разбор ИИ». Ответ сохранится в общей истории.</p><a class="secondary-button" href="#matches">Выбрать матч</a></div>
+      <div id="history-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h2>Здесь появятся разборы</h2><p>Выберите матч и нажмите «Получить разбор ИИ». Ответ сохранится в вашем аккаунте.</p><a class="secondary-button" href="#matches">Выбрать матч</a></div>
     </section>
-    <section id="view-status" data-view hidden>
+    <section id="view-status" data-admin-only data-view hidden>
       <div class="page-heading"><div><p class="eyebrow">ИСТОЧНИКИ И КАЧЕСТВО</p><h1>Состояние сервиса<span class="lime">.</span></h1><p class="subtitle">Обновления линии, подключение ИИ и проверка модели.</p></div><button id="status-refresh" class="secondary-button" type="button">Проверить</button></div>
       <article class="panel service-card"><span class="eyebrow">НАКОПЛЕНИЕ И LIVE</span><h2 id="archive-service-title">Ожидаем подключение</h2><p id="archive-service-note" class="muted"></p><a href="#archive" class="text-link">Открыть архив матчей →</a></article><div class="service-grid"><article class="panel service-card"><span class="eyebrow">СБОРЩИК СТРАНИЦ WINLINE</span><h2 id="worker-title">Проверяем</h2><p id="worker-description" class="muted"></p><p id="worker-progress" class="small muted"></p></article><article class="panel service-card"><span class="eyebrow">РАЗБОР С ИИ</span><h2 id="ai-state">Проверяем настройки</h2><p class="muted">Подключение проверяется при запросе разбора. ИИ получает наблюдаемые рынки, доступную историю участников и ваши заметки.</p></article></div>
       <p class="small muted">Для проверки собственного сценария доступен <a href="#calculator" class="text-link">ручной расчёт по истории АПЛ <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a>.</p>
@@ -385,7 +386,7 @@
       <div id="admin-denied" class="panel" hidden><h2>Нужен аккаунт администратора</h2><p class="muted">Управление сервисом доступно только назначенным администраторам.</p></div>
       <div id="admin-content" hidden>
         <div class="admin-security-line"><span class="status-dot green"></span><span>Действия сохраняются в журнале</span><button id="admin-confirm-access" type="button" class="text-button">Подтвердить пароль</button></div>
-        <nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
+        <div class="admin-tool-links"><a class="secondary-button" href="#archive">Архив матчей ↗</a><a class="secondary-button" href="#status">Состояние сервиса ↗</a><a class="secondary-button" href="#calculator">Ручной расчёт ↗</a></div><nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
         <p id="admin-message" class="account-message" role="status"></p>
         <div data-admin-panel="overview">
           <div class="admin-period"><label for="admin-period">Период</label><select id="admin-period"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select><button id="admin-export" class="text-button" type="button">Скачать отчёт CSV ↓</button></div>
@@ -435,7 +436,7 @@
   <div id="ai-desktop-host">
     <aside id="ai-desk" class="ai-desk" aria-label="Разбор спортивного события с ИИ">
       <div class="ai-desk-heading"><span class="ai-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4 18.4 5.6"/></svg></span><div><span class="eyebrow">ВАШ АНАЛИТИК</span><h2>Разбор с ИИ</h2></div></div>
-      <div id="ai-empty" class="ai-empty"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h3>Выберите событие</h3><p>Выберите событие или коэффициент. ИИ разберёт рынок и объяснит, на что обратить внимание.</p></div>
+      <div id="ai-empty" class="ai-empty"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h3>Выберите событие</h3><p>Выберите матч. ИИ изучит доступные сведения, назовёт претендента или предложит пропустить встречу.</p></div>
       <div id="ai-selection" hidden><p id="ai-match-label" class="ai-match-label"></p><p id="ai-market-label" class="muted small"></p><p id="ai-outcome-label" class="ai-outcome-label" hidden></p><button type="button" id="ai-clear-selection" class="text-button" hidden>Разобрать весь матч</button><p id="ai-snapshot-label" class="small muted"></p></div>
       <details id="ai-notes-details" class="ai-notes"><summary>Добавить сведения о матче</summary><label class="sr-only" for="notes">Ваши сведения о матче</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Например, новость об участнике или составе. Эти сведения будут отмечены как непроверенные."></textarea></details>
       <p class="ai-visibility">Ваши разборы и заметки сохраняются в личном аккаунте.</p>

@@ -73,6 +73,18 @@ class ArchiveSyncTests(unittest.TestCase):
     def tearDown(self):
         self.stack.close()
 
+    def test_featured_order_reaches_receiver_and_clears_on_next_source_snapshot(self):
+        self.data["events"][0]["_featured_rank"] = 5
+        save_snapshot(self.db, self.capture, self.data)
+        state = {}
+        cycle(self.client, self.path, self.root, state)
+        data = self.client.get("/api/bookmakers/featured-events").json()
+        self.assertEqual([(e["source_event_id"],e["featured_rank"]) for e in data["events"]],[("101",5)])
+        self.data["events"][0]["_featured_rank"] = None
+        save_snapshot(self.db, self.capture, self.data)
+        cycle(self.client, self.path, self.root, state)
+        self.assertEqual(self.client.get("/api/bookmakers/featured-events").json()["events"],[])
+
     def test_replicates_all_events_results_selected_markets_and_replays_without_duplicates(
         self,
     ):

@@ -118,6 +118,9 @@ def validate_event(value):
         instant(value["kickoff_at"])
     if type(value.get("is_live")) is not bool:
         raise ValueError("Некорректная фаза")
+    rank = value.get("featured_rank")
+    if rank is not None and (type(rank) is not int or not 0 <= rank < 1000):
+        raise ValueError("Некорректный порядок главных событий")
     if "red_card_presence" in value:
         cards = value["red_card_presence"]
         if (value["sport_id"] != 1 or not value["is_live"] or
@@ -474,6 +477,7 @@ def project(e, markets=None):
         "source": "winline",
         "source_kind": "stream",
         "source_event_id": e["event_id"],
+        "featured_rank": e.get("featured_rank"),
         "sport": sport_key(e["sport_label"], e["sport_id"]),
         "sport_label": e["sport_label"],
         "archive_sport_id": e["sport_id"],

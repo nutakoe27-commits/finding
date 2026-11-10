@@ -1,0 +1,91 @@
+/* Role-specific presentation is closed by default, including before account loading. */
+html:not([data-role="admin"]) [data-admin-only] { display:none!important; }
+.admin-tool-links { display:flex;gap:10px;flex-wrap:wrap;margin:0 0 22px; }
+.admin-tool-links a { font-size:12px; }
+.inline-ai-desk main { margin-right:0; }
+.inline-ai-desk #ai-desktop-host { display:none; }
+.inline-ai-desk #ai-mobile-host { margin:0 0 28px; }
+.inline-ai-desk .ai-desk { max-height:none;overflow:visible;padding:26px;border:1px solid var(--secondary-border);border-radius:18px;background:var(--panel);box-shadow:var(--shadow); }
+.inline-ai-desk .ai-desk-heading { padding-bottom:16px; }
+.inline-ai-desk .ai-match-label { margin-top:18px;font-size:21px;font-weight:650; }
+.inline-ai-desk .ai-desk .primary-button { width:auto;min-width:250px;justify-content:center;gap:28px;min-height:48px;padding:13px 22px;font-size:14px; }
+.inline-ai-desk .ai-notes { margin:18px 0 10px;font-size:13px;max-width:720px; }
+.inline-ai-desk .ai-notes textarea { font-size:14px; }
+.inline-ai-desk .ai-visibility,.inline-ai-desk .ai-hint { font-size:12px; }
+.inline-ai-desk .ai-desk .explanation { font-size:15px;max-height:none;line-height:1.75; }
+.inline-ai-desk .ai-desk .explanation p,.inline-ai-desk .report-facts { max-width:85ch; }
+.inline-ai-desk #ai-snapshot-label { display:none; }
+.inline-ai-desk .event-header { padding-bottom:22px; }
+.inline-ai-desk #tab-markets { font-size:18px;font-weight:650; }
+.inline-ai-desk .event-heading h1 { max-width:32ch; }
+.inline-ai-desk .snapshot-info { display:none!important; }
+.page-heading { padding:30px 0 28px; }
+.topbar-actions { gap:18px; }
+.catalog-section-heading { display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:8px 0 18px; }
+.catalog-section-heading h2 { font-size:24px;font-weight:650;letter-spacing:-.6px; }
+.catalog-section-heading p { margin:0; }
+.catalog-stats { border:0;background:none;padding:0;margin:18px 0 22px;gap:30px; }
+.catalog-stats>div { flex-direction:row;align-items:baseline;gap:8px; }
+.catalog-stats strong { font-size:18px;font-weight:650; }
+.catalog-stats span { font-size:12px; }
+.catalog-tools .search-field { min-height:48px; }
+.catalog-tools input { font-size:14px; }
+.catalog-tools select,.catalog-toolbar select { min-height:44px; }
+.segmented-control button,.phase-tabs button { min-height:40px; }
+.tournament-group { border-radius:14px;overflow:hidden;border:1px solid var(--line);background:var(--panel);margin-bottom:20px; }
+.tournament-heading { padding:15px 20px;background:var(--panel2); }
+.tournament-heading h2 { line-height:1.5;font-size:14px; }
+.match-card { padding:20px;gap:12px 18px;background:var(--panel);border-bottom:1px solid var(--line); }
+.match-card:last-child { border-bottom:0; }
+.match-card-title { font-size:16px;line-height:1.6;font-weight:600; }
+.match-card-meta { font-size:12px;line-height:1.7; }
+.match-actions { gap:10px; }
+.match-ai-button { min-height:42px;font-size:12px; }
+.match-open,.match-bookmaker-link { min-height:30px;display:inline-flex;align-items:center; }
+.match-freshness { font-size:10px; }
+.featured-events { padding:0 0 18px;margin-bottom:22px;border-bottom:1px solid var(--line); }
+.featured-card { max-width:none;background:linear-gradient(130deg,var(--panel),var(--panel2)); }
+.featured-team strong { font-size:17px; }
+.featured-ai { min-height:40px;font-size:12px; }
+.featured-controls button { min-width:42px;min-height:42px; }
+@media(min-width:1351px) {
+  .without-ai-desk .match-card,.inline-ai-desk .match-card { grid-template-columns:28px minmax(180px,1fr) minmax(220px,280px) 130px; }
+}
+@media(max-width:1050px) {
+  .inline-ai-desk #ai-mobile-host .ai-desk { background:var(--panel); }
+}
+@media(max-width:650px) {
+  .sidebar nav { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  html[data-role="admin"] .sidebar nav { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .nav-link { justify-content:center;gap:7px;min-height:46px; }
+  .page-heading { padding:24px 0;align-items:start;gap:12px; }
+  .page-heading .refresh-button { width:42px;min-width:42px;height:42px;padding:9px;font-size:0; }
+  .page-heading .refresh-button span { font-size:23px; }
+  .page-heading h1 { font-size:32px;margin-bottom:9px; }
+  .catalog-section-heading { display:block;margin-bottom:14px; }
+  .catalog-section-heading h2 { font-size:22px;margin-bottom:4px; }
+  .catalog-stats { gap:20px;margin:16px 0; }
+  .catalog-stats strong { font-size:17px; }
+  .match-card { padding:16px 12px;gap:8px 12px; }
+  .match-card-title { font-size:16px; }
+  .match-actions { justify-content:flex-start;gap:12px;flex-wrap:wrap; }
+  .match-ai-button { min-height:44px;padding:10px 15px; }
+  .featured-team strong { font-size:16px; }
+  .inline-ai-desk .ai-desk { padding:18px;border-radius:14px; }
+  .inline-ai-desk .ai-desk .primary-button { width:100%;min-width:0; }
+  .inline-ai-desk .ai-match-label { font-size:18px; }
+  .inline-ai-desk .ai-desk .explanation { font-size:14px; }
+  .admin-tool-links { gap:8px; }.admin-tool-links a { font-size:11px; }
+}
+@media(prefers-reduced-motion:no-preference) {
+  .match-card,.featured-card { transition:background-color .15s,border-color .15s; }
+  .match-card:hover { background:color-mix(in srgb,var(--panel2) 40%,var(--panel)); }
+}
+/* Keep list rows compact; source/affiliate link belongs with the match, below the primary action. */
+@media(min-width:1351px) {
+  .without-ai-desk .match-card,.inline-ai-desk .match-card { align-items:center;padding-top:16px;padding-bottom:16px; }
+  .without-ai-desk .match-info,.inline-ai-desk .match-info { align-self:center; }
+  .without-ai-desk .match-freshness,.inline-ai-desk .match-freshness { grid-column:2; }
+  .match-actions { grid-row:1/3;grid-column:4; }
+  .match-card .headline-box { grid-row:1/3;grid-column:3; }
+}

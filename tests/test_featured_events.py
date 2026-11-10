@@ -1,70 +1,92 @@
-"""Real catalogue selection, truthful previews and bounded public carousel API."""
-from datetime import datetime,timedelta,timezone
+"""Observed source selection survives projection, ingest and public filtering."""
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 import tempfile
 import unittest
-
 from fastapi.testclient import TestClient
 from matchlab.api import create_app
 from matchlab.config import Settings
-from matchlab.featured_events import select,collection
+from matchlab.featured_events import select, collection
 from matchlab.storage import Repository
+from matchlab import archive
+from winline.projection import event as project_source
 from test_product import event
+from test_archive import header
+from browser_archive_smoke import feed
 
 
 class FeaturedEventsTests(unittest.TestCase):
-    def setUp(self):self.now=datetime.now(timezone.utc)
+    def setUp(self): self.now = datetime.now(timezone.utc)
 
-    def e(self,key,**kw):
-        return {'source_event_id':str(key),'home':'A','away':'B','sport':'football','competition':'Лига '+str(key),
-            'phase':'prematch','kickoff_at':(self.now+timedelta(hours=3)).isoformat(),'is_stale':False,**kw}
+    def e(self, key, rank=0, **kw):
+        return {'source_event_id':str(key),'home':'A','away':'B','sport':'football',
+                'competition':'Лига','phase':'prematch','featured_rank':rank,
+                'kickoff_at':(self.now+timedelta(hours=3)).isoformat(),**kw}
 
-    def test_finished_unknown_and_past_events_are_not_promoted(self):
+    def test_only_observed_source_selection_is_promoted(self):
+        values=[self.e(1,None,competition='Лига чемпионов'), self.e(2,4)]
+        self.assertEqual([e['source_event_id'] for e in select(values,now=self.now)],['2'])
+
+    def test_source_order_wins_over_sport_proximity_freshness_and_league(self):
+        values=[self.e(1,3,competition='Лига чемпионов'),self.e(2,1,sport='hockey',is_stale=True),
+                self.e(3,0,kickoff_at=(self.now+timedelta(days=3)).isoformat())]
+        self.assertEqual([e['source_event_id'] for e in select(values,now=self.now)],['3','2','1'])
+
+    def test_deduplicates_and_bounds_without_diversity_reordering(self):
+        values=[self.e(i,i) for i in range(1,10)]
+        selected=select(values+[values[0]],limit=5,now=self.now)
+        self.assertEqual([e['source_event_id'] for e in selected],['1','2','3','4','5'])
+
+    def test_finished_unknown_past_outright_and_invalid_ranks_are_excluded(self):
         values=[self.e(1),self.e(2,phase='finished'),self.e(3,kickoff_at=(self.now-timedelta(hours=1)).isoformat()),
-            self.e(4,event_kind='outright'),self.e(5,home=None),self.e('bad/id')]
+                self.e(4,event_kind='outright'),self.e(5,home=None),self.e('bad/id'),
+                self.e(6,True),self.e(7,-1),self.e(8,1000),self.e(9,'1')]
         self.assertEqual([e['source_event_id'] for e in select(values,now=self.now)],['1'])
 
-    def test_fresh_nearby_competitions_rank_ahead_of_stale_or_distant_events(self):
-        values=[self.e(1,is_stale=True),self.e(2,kickoff_at=(self.now+timedelta(days=3)).isoformat()),
-            self.e(3),self.e(4,competition='Лига чемпионов')]
-        self.assertEqual([e['source_event_id'] for e in select(values,now=self.now)],['4','3','2','1'])
+    def test_legacy_catalogue_is_not_an_editorial_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            repo=Repository(Path(folder)/'test.sqlite3');repo.initialize();repo.import_event_markets(event())
+            self.assertEqual(collection(repo)['events'],[])
 
-    def test_diversity_deduplication_and_bound_do_not_invent_events(self):
-        values=[self.e(i,competition='Один турнир') for i in range(1,10)]+[self.e(20),self.e(21)]
-        selected=select(values+[values[0]],limit=5,now=self.now)
-        self.assertEqual(len(selected),5);self.assertEqual(len({e['source_event_id'] for e in selected}),5)
-        self.assertIn('20',[e['source_event_id'] for e in selected[:4]])
-
-    def test_public_api_preserves_live_scores_and_filters_by_sport_and_phase(self):
+    def test_public_api_returns_mixed_sports_in_exact_source_order(self):
         with tempfile.TemporaryDirectory() as folder:
             settings=Settings(Path(folder));repo=Repository(settings.database);repo.initialize()
-            repo.import_event_markets(event('123'));live=event('124',phase='live');live.update(live_score='2:1',live_clock="2Т 65'")
-            repo.import_event_markets(live)
+            football=header('101');football['featured_rank']=2
+            hockey=header('102',live=True,score='2:1');hockey.update(sport_id=4,sport_label='Хоккей',featured_rank=0)
+            feed(repo,[football,hockey,header('103')])
             with TestClient(create_app(settings)) as client:
-                response=client.get('/api/bookmakers/featured-events?phase=live&sport=football')
-                self.assertEqual(response.status_code,200,response.text);items=response.json()['events']
-                self.assertEqual([e['source_event_id'] for e in items],['124']);self.assertEqual(items[0]['phase'],'live')
-                self.assertEqual(client.get('/api/bookmakers/featured-events?limit=100').status_code,422)
+                data=client.get('/api/bookmakers/featured-events?limit=100').json()
+                self.assertEqual(data['selection'],'winline_homepage')
+                self.assertEqual([e['source_event_id'] for e in data['events']],['102','101'])
+                self.assertEqual(data['events'][0]['live_score'],'2:1')
+                self.assertEqual([e['source_event_id'] for e in client.get('/api/bookmakers/featured-events?sport=football&phase=upcoming').json()['events']],['101'])
                 self.assertEqual(client.get('/api/bookmakers/featured-events?phase=finished').status_code,422)
-                self.assertEqual(client.get('/api/bookmakers/featured-events?sport=hockey').json()['events'],[])
+                self.assertEqual(client.get('/api/bookmakers/featured-events?limit=1000').status_code,422)
 
-    def test_stream_source_preserves_the_actual_live_score(self):
-        from browser_archive_smoke import feed
-        from test_archive import header
+    def test_latest_snapshot_removes_old_featured_membership(self):
         with tempfile.TemporaryDirectory() as folder:
-            repo=Repository(Path(folder)/'matchlab.sqlite3');repo.initialize()
-            feed(repo,[header('101',live=True,score='2:1')])
-            data=collection(repo,sport='football',phase='live')
-            self.assertEqual(data['source_kind'],'stream')
-            self.assertEqual(data['events'][0]['live_score'],'2:1')
+            repo=Repository(Path(folder)/'test.sqlite3');repo.initialize()
+            first=header('101');first['featured_rank']=0;feed(repo,[first])
+            self.assertEqual(len(collection(repo)['events']),1)
+            feed(repo,[header('101')]);self.assertEqual(collection(repo)['events'],[])
 
-    def test_old_legacy_observations_are_not_labeled_fresh(self):
-        with tempfile.TemporaryDirectory() as folder:
-            repo=Repository(Path(folder)/'matchlab.sqlite3');repo.initialize()
-            value=event();value['observed_at']=(self.now-timedelta(minutes=10)).isoformat();repo.import_event_markets(value)
-            data=collection(repo,sport='football')
-            self.assertTrue(data['events'][0]['is_stale'])
-            self.assertEqual(data['events'][0]['source_kind'],'legacy')
+    def test_invalid_transport_rank_is_rejected(self):
+        for rank in (True,-1,1000,'2',1.5):
+            with self.subTest(rank=rank):
+                value=header();value['featured_rank']=rank
+                with self.assertRaises(ValueError):archive.validate_event(value)
 
+    def test_raw_snapshot_rank_survives_projection(self):
+        row={'raw_json':json.dumps({'members':['A','B'],'_featured_rank':7}),
+             'last_seen':self.now.isoformat(),'id':101,'radar_id':None,'sport_id':1,'country_id':1,
+             'championship_id':1,'start_at':(self.now+timedelta(days=1)).isoformat(),
+             'is_live':False,'score':None,'clock':None,'period_scores':None}
+        value=project_source(row,{1:'Футбол'},{1:'РФ'},{1:'Лига'})
+        self.assertEqual(value['featured_rank'],7)
+        archive.validate_event(value)
+        self.assertEqual(archive.project(value)['featured_rank'],7)
+        del row['raw_json'];row['raw_json']='{"members":["A","B"]}'
+        self.assertIsNone(project_source(row,{1:'Футбол'},{},{})['featured_rank'])
 
 if __name__=='__main__':unittest.main()

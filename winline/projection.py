@@ -96,6 +96,7 @@ def event(row, sports, countries, championships):
         "clock": row["clock"],
         "period_scores": row["period_scores"],
         "observed_at": row["last_seen"],
+        "featured_rank": raw.get("_featured_rank"),
         "primary": primary,
         "expected_markets": raw.get("lineCount")
         if row["is_live"]
