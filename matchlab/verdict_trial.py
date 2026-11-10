@@ -12,6 +12,7 @@ from pathlib import Path
 import random
 import secrets
 import sqlite3
+import tempfile
 from urllib.parse import quote as uri_quote
 
 from .bookmakers import instant
@@ -48,7 +49,7 @@ def paired_observation(event,statistics,available_at,quotes):
     return None,None,reason
 
 
-def prepare(db,settings,limit=10,seed=None,exclude_reports=()):
+def prepare(db,settings,limit=10,seed=None,exclude_reports=(),event_ids=()):
     from .model_comparison import historical_quotes
     from .snapshot_evaluation import ReadOnlyInputs
     if not 1<=limit<=100:raise ValueError('Размер теста должен быть от 1 до 100.')
@@ -62,6 +63,7 @@ def prepare(db,settings,limit=10,seed=None,exclude_reports=()):
     quotes=historical_quotes(db);eligible=[];excluded=Counter()
     for candidate in candidates:
         target=candidate['result'];stats=deepcopy(candidate['statistics'])
+        if event_ids and str(candidate['event_id']) not in event_ids:excluded['outside_debug_event_filter']+=1;continue
         if str(target['key']) in excluded_keys:excluded['previously_reviewed_fixture']+=1;continue
         event={k:target[k] for k in ('home','away','competition')}
         event.update(source_event_id=candidate['event_id'],sport='football',sport_label='Футбол',phase='prematch',kickoff_at=target['at'].isoformat())
@@ -75,7 +77,8 @@ def prepare(db,settings,limit=10,seed=None,exclude_reports=()):
     cases=random.Random(seed).sample(eligible,min(limit,len(eligible)))
     inventory.update(historical_price_snapshots=len(quotes),eligible_verdict_inputs=len(eligible),excluded_joint_inputs=dict(excluded))
     return {'format':'matchlab.neural-verdict-test.v1','policy_version':VERSION,'scope':'team_winner_90m',
-        'selection_policy':'random-with-joint-prematch-input-v2',
+        'selection_policy':'targeted-debug-input-v1' if event_ids else 'random-with-joint-prematch-input-v2',
+        'diagnostic_only':bool(event_ids),'event_filter':list(event_ids),
         'created_at':datetime.now(timezone.utc).isoformat(),'state':'prepared' if cases else 'no_eligible_inputs','seed':seed,'requested':limit,
         'selected':len(cases),'model':settings.qwen_model,'max_stake_pct':settings.verdict_max_stake_pct,
         'excluded_reviewed_fixtures':len(excluded_keys),
@@ -91,8 +94,16 @@ def prepare(db,settings,limit=10,seed=None,exclude_reports=()):
 
 
 def save(report,path):
-    from .backtest import save_report
-    save_report(report,path);os.chmod(path,0o600)
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    candidate=None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent,mode='w',encoding='utf-8',delete=False) as stream:
+            candidate=Path(stream.name);os.fchmod(stream.fileno(),0o600)
+            json.dump(report,stream,ensure_ascii=False,indent=2,allow_nan=False)
+            stream.flush();os.fsync(stream.fileno())
+        candidate.replace(path)
+    finally:
+        if candidate is not None:candidate.unlink(missing_ok=True)
 
 
 def metrics(report):
@@ -138,7 +149,7 @@ def run_trial(db,settings,report,path,complete=None):
         packet=case['input']
         if hashlib.sha256(encoded(packet).encode()).hexdigest()!=case['input_sha256']:raise ValueError('Изменён зафиксированный вход.')
         print(f"Вердикт {index}/{len(report['cases'])}: {case['event']['home']} — {case['event']['away']}",flush=True)
-        verdict,generation=generate(settings,packet,complete,historical=True)
+        verdict,generation=generate(settings,packet,complete,historical=True,capture_rejected=True)
         case.update(verdict=verdict,generation=generation,state='completed')
         # Settlement is attached only AFTER this stateless model request finished.
         target=truth.get(case['result_key'])
@@ -153,6 +164,9 @@ def run_trial(db,settings,report,path,complete=None):
         report['metrics']=metrics(report);save(report,path)
         print(f"  Предпочтение: {verdict.get('preference_label') or 'нет'}; решение: {verdict['decision']}; движок: {verdict['engine']}; вызовов: {generation['model_calls']}",flush=True)
         if generation.get('reason'):print('  Причина:',generation['reason'],flush=True)
+        for attempt in generation.get('attempts',[]):
+            detail=attempt.get('validation_details') or {}
+            if detail:print('  Проверка:',detail.get('field','response'),'|',detail.get('rule',''),flush=True)
     report['state']='completed';report['metrics']=metrics(report);save(report,path)
     return report
 
@@ -162,11 +176,13 @@ def main():
     parser.add_argument('--database',type=Path);parser.add_argument('--limit',type=int,default=10)
     parser.add_argument('--seed',type=int);parser.add_argument('--resume',action='store_true');parser.add_argument('--prepare-only',action='store_true')
     parser.add_argument('--exclude-report',type=Path,action='append',default=[],help='Исключить уже просмотренные матчи; можно указать несколько раз.')
-    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10-v3.json'))
+    parser.add_argument('--event-id',action='append',default=[],help='Отладка конкретного события, без заявления о случайной выборке.')
+    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10-v4.json'))
     args=parser.parse_args();settings=Settings.from_env()
     path=args.output;path.parent.mkdir(parents=True,exist_ok=True)
     try:
-        if args.resume and args.exclude_report:raise ValueError('--exclude-report применяется только при подготовке нового файла, без --resume.')
+        if args.resume and (args.exclude_report or args.event_id):raise ValueError('Фильтры применяются только при подготовке нового файла, без --resume.')
+        if any(not i.isdecimal() or len(i)>20 for i in args.event_id):raise ValueError('Нужен цифровой --event-id Winline.')
         if not settings.qwen_configured and not args.prepare_only:raise ValueError('Qwen не настроена.')
         with path.with_suffix('.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -177,8 +193,9 @@ def main():
                     report=json.loads(path.read_text())
                 else:
                     if path.exists():raise ValueError('Файл уже существует. Используйте --resume или другой --output.')
-                    report=prepare(db,settings,args.limit,args.seed,args.exclude_report);save(report,path)
+                    report=prepare(db,settings,args.limit,args.seed,args.exclude_report,args.event_id);save(report,path)
                 print('Зафиксирована выборка:',report['selected'],'seed:',report['seed'],flush=True)
+                if report.get('diagnostic_only'):print('Отладка конкретного события. Этот прогон не является независимой проверкой стратегии.',flush=True)
                 print('Свежие сохранённые коэффициенты:',report['inputs_with_fresh_prices'],
                       '| входов с обязательным пропуском:',report['inputs_requiring_skip'],flush=True)
                 print('Пригодных совместных входов во всей базе:',report.get('source_inventory',{}).get('eligible_verdict_inputs','не проверено'),flush=True)

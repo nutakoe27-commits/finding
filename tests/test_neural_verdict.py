@@ -16,10 +16,10 @@ from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.bookmakers import make_snapshot,instant
 from matchlab.markets import validate_event_markets
-from matchlab.neural_verdict import build_packet,document_quote,generate,validate_reply,render,encoded
+from matchlab.neural_verdict import build_packet,document_quote,generate,validate_reply,render,encoded,system_prompt,VerdictValidationError
 from matchlab.statistics import analysis_statistics
 from matchlab.storage import Repository
-from matchlab.verdict_trial import prepare,run_trial,metrics,paired_observation
+from matchlab.verdict_trial import prepare,run_trial,metrics,paired_observation,save
 from scripts.configure_neural_verdict import configure
 from account_helpers import signed_in
 from test_product import event
@@ -94,6 +94,73 @@ class VerdictTests(unittest.TestCase):
         repair=messages_seen[1]
         self.assertEqual(repair[2]['role'],'assistant')
         self.assertEqual(json.loads(repair[3]['content'])['details'],detail)
+
+    def test_neutral_caveats_are_allowed_but_promises_and_numeric_confidence_are_rejected(self):
+        p=self.packet()
+        for caveat in ('Это не гарантирует победу.','Это не гарантированная победа.','Гарантий успеха нет.',
+                       'Без гарантии выигрыша.','Победу невозможно гарантировать.','У гостей сохраняются шансы на ничью.'):
+            v=reply(p);v['market_context']['text']+=' '+caveat
+            with self.subTest(caveat=caveat):validate_reply(v,p)
+        for claim in ('Гарантированная победа.','Это гарантирует прибыль.','Не не гарантирует победу.',
+                      'Нет гарантий, но выигрыш гарантирован.','Шанс: 70.','Шанс победы 90%.','Это победа без риска.'):
+            v=reply(p);v['market_context']['text']+=' '+claim
+            with self.subTest(claim=claim),self.assertRaisesRegex(ValueError,'verdict_forbidden_claim'):validate_reply(v,p)
+
+    def test_prompt_examples_always_use_existing_facts_for_each_role(self):
+        p=self.packet();prompt=system_prompt(p)
+        market=next(f['id'] for f in p['facts'] if f['kind']=='market')
+        self.assertIn('"market_context":{"fact_ids":["'+market+'"]',prompt)
+        self.assertNotIn('"F9"',prompt);self.assertNotIn('__MARKET_FACTS__',prompt)
+
+    def test_reference_layout_is_normalized_without_inventing_evidence(self):
+        p=self.packet();v=reply(p)
+        v['comparison']['home']['fact_ids']=' f1 '
+        v['reason']['fact_ids']='f1; F2'
+        accepted=validate_reply(v,p)
+        self.assertEqual(accepted['comparison']['home']['fact_ids'],['F1'])
+        self.assertEqual(accepted['reason']['fact_ids'],['F1','F2'])
+        for i in range(4,7):p['facts'].append({**p['facts'][0],'id':'F'+str(i)})
+        v['comparison']['home']['fact_ids']=['F1','F4','F5','F6']
+        self.assertEqual(len(validate_reply(v,p)['comparison']['home']['fact_ids']),4)
+        v['comparison']['home']['fact_ids']=['F999']
+        with self.assertRaises(VerdictValidationError) as caught:validate_reply(v,p)
+        self.assertEqual(caught.exception.details['field'],'comparison.home')
+        self.assertEqual(caught.exception.details['unknown_fact_ids'],['F999'])
+        self.assertIn('F1',caught.exception.details['allowed_fact_ids'])
+
+    def test_repair_gets_all_invalid_fields_not_just_the_first_one(self):
+        p=self.packet();v=reply(p);seen=[]
+        v['comparison']['home']['text']+=' Победа гарантирована.'
+        v['comparison']['away']['fact_ids']=['F999']
+        v['market_context']['text']+=' Это гарантирует выигрыш.'
+        def model(opts,messages):
+            seen.append(messages)
+            return json.dumps(v if len(seen)==1 else reply(p))
+        verdict,g=generate(self.settings,p,model,capture_rejected=True)
+        self.assertEqual(verdict['engine'],'qwen');self.assertEqual(g['model_calls'],2)
+        fields={i['field'] for i in g['attempts'][0]['validation_details']['issues']}
+        self.assertTrue({'comparison.home','comparison.away','market_context'}<=fields)
+        self.assertEqual(json.loads(g['attempts'][0]['rejected_response']),v)
+        self.assertNotIn('rejected_response',g['attempts'][1])
+
+    def test_rejected_answers_are_not_logged_or_stored_in_production_attempts(self):
+        p=self.packet();bad=json.dumps({'RAW_MODEL_MARKER_NOT_FOR_LOGS':'bad response'})
+        with self.assertLogs('uvicorn.error',level='WARNING') as log:
+            _,g=generate(self.settings,p,lambda *args:bad)
+        self.assertNotIn('RAW_MODEL_MARKER_NOT_FOR_LOGS','\n'.join(log.output))
+        self.assertTrue(all('rejected_response' not in a for a in g['attempts']))
+        _,debug=generate(self.settings,p,lambda *args:bad,capture_rejected=True)
+        self.assertTrue(all(a['rejected_response']==bad for a in debug['attempts']))
+
+    def test_trial_report_is_private_before_any_diagnostic_content_is_written(self):
+        original=json.dump;seen=[]
+        def dump(value,stream,**kwargs):
+            import os
+            seen.append(os.fstat(stream.fileno()).st_mode&0o777)
+            return original(value,stream,**kwargs)
+        path=self.path/'private.json'
+        with patch('matchlab.verdict_trial.json.dump',side_effect=dump):save({'debug':'private'},path)
+        self.assertEqual(seen,[0o600]);self.assertEqual(path.stat().st_mode&0o777,0o600)
 
     def test_timeout_is_reported_without_a_second_model_call(self):
         with patch('matchlab.qwen._completion',side_effect=ValueError('Сервис не ответил вовремя.')) as model:
@@ -245,6 +312,12 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(new['selected'],8)
         self.assertTrue({c['result_key'] for c in old['cases']}.isdisjoint(c['result_key'] for c in new['cases']))
         self.assertEqual(new['source_inventory']['excluded_joint_inputs']['previously_reviewed_fixture'],4)
+
+    def test_targeted_debug_case_is_labelled_and_not_presented_as_random_evaluation(self):
+        self.historical(4)
+        with self.repo.connection() as db:plan=prepare(db,self.settings,1,event_ids=['501'])
+        self.assertEqual(plan['selected'],1);self.assertEqual(plan['cases'][0]['event']['source_event_id'],'501')
+        self.assertTrue(plan['diagnostic_only']);self.assertEqual(plan['selection_policy'],'targeted-debug-input-v1')
 
     def test_later_prematch_prices_join_stats_without_rewinding_the_capture(self):
         packet=self.packet();e=packet['event'];stats_at=NOW-timedelta(minutes=30)
