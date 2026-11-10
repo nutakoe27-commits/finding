@@ -439,6 +439,15 @@ def install(app, repo, settings):
             raise HTTPException(422, "Доступны периоды 7, 30 или 90 дней.")
         return overview(repo, days)
 
+    @app.get('/api/admin/forecast-quality')
+    def forecast_quality(request:Request,mode:str='saved',limit:int=10):
+        accounts.admin_user(request)
+        if mode not in ('saved','historical-results') or not 1<=limit<=100:
+            raise HTTPException(422,'Допустимы saved/historical-results и от 1 до 100 матчей.')
+        from .winline_backtest import run
+        with repo.connection() as db:
+            return run(db,mode,limit)
+
     @app.get("/api/admin/users")
     def users(request: Request, search: str = "", offset: int = 0):
         accounts.admin_user(request)

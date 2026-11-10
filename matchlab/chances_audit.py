@@ -5,7 +5,7 @@ import sqlite3
 from urllib.parse import quote
 
 from .bookmakers import instant
-from .chances import norm,score,full_time
+from .chances import norm,football_result,full_time
 
 
 def evaluate(db):
@@ -32,8 +32,8 @@ def evaluate(db):
         for candidate in candidates:
             result=json.loads(candidate[0])
             if all(norm(result.get(k))==norm(event.get(t)) for k,t in [('member1','home'),('member2','away'),('championship','competition')]):
-                pair=score(result.get('score'))
-                if pair: results.append(pair)
+                parsed=football_result(result.get('score'))
+                if parsed is not None: results.append(parsed['full'])
         if len(results)!=1: pending+=1;continue
         h,a=results[0]; outcome='home' if h>a else 'away' if a>h else 'draw'
         observations.append((probabilities,outcome))

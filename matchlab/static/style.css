@@ -1155,6 +1155,13 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
 .report-heading { display:flex; align-items:flex-start; flex-wrap:wrap; gap:8px 12px; }
 .structured-report .report-heading h3 { flex:1; margin:0; min-width:110px; font-size:11px; color:var(--muted); font-weight:500; }
 .report-badge { padding:3px 7px; border:1px solid var(--line); border-radius:6px; color:var(--muted); font-size:10px; line-height:1.4; }
+.report-quality { margin:12px 0; padding:10px; border-left:3px solid var(--accent-text); color:var(--text); font-size:12px; line-height:1.6; }
+.report-distribution { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:15px 0; }
+.report-distribution div { min-width:0; border:1px solid var(--line); border-radius:8px; padding:9px; }
+.report-distribution dt { font-size:11px; color:var(--muted); overflow-wrap:anywhere; }
+.report-distribution dd { margin:6px 0 0; font-size:17px; font-weight:650; font-variant-numeric:tabular-nums; }
+.structured-report .report-sample { margin:5px 0; font-size:11px; color:var(--muted); }
+.structured-report .report-market-explanation { margin:9px 0 0; padding-top:8px; border-top:1px solid var(--line); font-size:12px; }
 .report-winner { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 16px; margin:15px 0 8px; }
 .report-team { min-width:0; font-size:18px; font-weight:650; line-height:1.4; overflow-wrap:anywhere; }
 .report-chance { color:var(--accent-text); font-size:28px; line-height:1.15; letter-spacing:-.7px; font-variant-numeric:tabular-nums; }

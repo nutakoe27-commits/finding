@@ -418,11 +418,11 @@ function reportProbability(parent,value) {
   }
   parent.append(document.createTextNode(value.slice(start)));
 }
-function renderReport(target,parts) {
+function renderReport(target,parts,assessment=null,generation=null) {
   const nodes=[], lead=el("section","report-section report-lead");
   const heading=el("div","report-heading"), byMarket=parts[0].includes("по линии");
   heading.append(el("h3","","Наиболее вероятный исход"));
-  if(/\d+(?:[.,]\d+)?%/.test(parts[0])) heading.append(el("span","report-badge",byMarket ? "По линии" : "Расчёт"));
+  if(/\d+(?:[.,]\d+)?%/.test(parts[0])) heading.append(el("span","report-badge",byMarket ? "По линии" : "Предварительная оценка"));
   lead.append(heading);
   const winner=parts[0].match(/^(.*?)\s+[—–]\s+(>?\d+(?:[.,]\d+)?%)(.*)$/s);
   if(winner) {
@@ -430,6 +430,25 @@ function renderReport(target,parts) {
     const scope=winner[3].replace(/^[\s(]*(?:по линии|оценка)[;,]\s*/,"").replace(/\)[.]?$/,"").trim();
     if(scope) lead.append(el("p","report-scope",scope));
   } else lead.append(el("p","report-no-winner",parts[0]));
+  if(winner && !byMarket) {
+    lead.append(el("p","report-quality","Вероятности модели предварительные: точность процентов ещё не подтверждена проверкой на независимой выборке."));
+    const probabilities=assessment?.outcome_probabilities;
+    if(probabilities && ["home","draw","away"].every(key=>Number.isFinite(probabilities[key]) && probabilities[key]>=0 && probabilities[key]<=1) && Math.abs(probabilities.home+probabilities.draw+probabilities.away-1)<0.00001) {
+      const distribution=el("dl","report-distribution"); distribution.setAttribute("aria-label","Вероятности исходов в основное время");
+      for(const [key,label] of [["home",assessment.participants?.home || "П1"],["draw","Ничья"],["away",assessment.participants?.away || "П2"]]) {
+        const cell=el("div");cell.append(el("dt","",label),el("dd","",`${(probabilities[key]*100).toLocaleString("ru-RU",{minimumFractionDigits:1,maximumFractionDigits:1})}%`));distribution.append(cell);
+      }
+      lead.append(distribution);
+      const best=Math.max(...Object.values(probabilities));
+      if(best<.5) lead.append(el("p","small muted",`Наиболее вероятный из трёх исходов. На остальные вместе приходится ${((1-best)*100).toLocaleString("ru-RU",{maximumFractionDigits:1})}%.`));
+    }
+    for(const person of assessment?.data_quality?.participants || []) {
+      let description=`${person.name}: подтверждённых прошлых матчей — ${person.confirmed_matches}.`;
+      if(person.confirmed_matches && person.history_from && person.history_to) description+=` Период: ${new Date(person.history_from).toLocaleDateString("ru-RU")}–${new Date(person.history_to).toLocaleDateString("ru-RU")}.`;
+      if(person.uses_season) description+=person.season_matches ? ` Сезонная статистика: ${person.season_matches_inferred ? "около " : ""}${person.season_matches} матчей${person.season_matches_inferred ? " (число восстановлено по округлённым средним)" : ""}.` : " Число матчей сезонной статистики не установлено.";
+      lead.append(el("p","report-sample",description));
+    }
+  }
   if(byMarket) lead.append(el("p","report-basis","Архивная оценка по коэффициентам букмекера; в новых разборах коэффициенты не используются."));
   else if(/\d+(?:[.,]\d+)?%/.test(parts[0])) lead.append(el("p","report-basis","Независимая оценка по истории и статистике участников. Коэффициенты букмекера в расчёте не используются."));
   nodes.push(lead);
@@ -438,9 +457,17 @@ function renderReport(target,parts) {
     const list=el("ul",index===1 ? "report-markets" : "report-facts");
     for(const item of reportItems(parts[index])) {
       const li=el("li"); if(index===1) reportProbability(li,item); else li.textContent=item;
+      if(index===1 && !byMarket) {
+        const selected=(assessment?.recommended_markets || [])[list.children.length];
+        const explanations=selected && generation?.market_explanations?.[selected.market_key];
+        if(explanations?.length) li.append(el("p","report-market-explanation",explanations.join(" ")));
+        else if(selected) li.append(el("p","small muted","Отдельное объяснение ИИ для этого рынка не получено."));
+        if(selected && /тайм/i.test(selected.period || "")) li.append(el("p","small muted","Оценка тайма приближённая: отдельной подтверждённой истории таймов нет."));
+      }
       list.append(li);
     }
     section.append(list);nodes.push(section);
+    if(index===1 && !byMarket && winner) section.append(el("p","small muted","Высокая вероятность не доказывает выгодность ставки. Рынки одного матча связаны и не являются независимыми подтверждениями прогноза."));
   }
   if(parts[3]) {
     const details=el("details","report-limitations"); details.open=true;
@@ -448,10 +475,10 @@ function renderReport(target,parts) {
   }
   target.replaceChildren(...nodes);
 }
-function renderAnalysis(target, text) {
+function renderAnalysis(target, text, assessment=null,generation=null) {
   const displayed=analysisDisplayText(text), parts=reportParts(displayed);
   target.classList.toggle("structured-report",Boolean(parts));
-  if(parts) {renderReport(target,parts); return;}
+  if(parts) {renderReport(target,parts,assessment,generation); return;}
   const nodes = []; let paragraph = [], list = null;
   const flush = () => { if (paragraph.length) { const p=el("p"); analysisInline(p,paragraph.join("\n")); nodes.push(p); paragraph=[]; } };
   for (const line of displayed.split(/\r?\n/)) {
@@ -1027,7 +1054,7 @@ async function requestAI() {
     const result=document ? await waitForAnalysisJob(submitted,current) : submitted;
     if(!result) return;
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
-    renderAnalysis($("explanation"),result.text); $("explanation").hidden = false;
+    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation); $("explanation").hidden = false;
     window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
     if (result.context) {
       result.preparation_notice=preparationNotice;
@@ -1084,7 +1111,7 @@ async function loadSavedAnalysis(id) {
     $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
-    renderAnalysis($("saved-analysis-text"),analysis.text);
+    renderAnalysis($("saved-analysis-text"),analysis.text,analysis.context?.probability_assessment,analysis.context?.ai_generation);
     $("saved-analysis-coverage").textContent = (context.market_selection?.policy === "source-popular-v1" ? `Популярные рынки источника: ${context.coverage.analyzed_markets}.` : `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков.`)+" Данные и текст относятся ко времени этого разбора.";
     renderResearchSources($("saved-analysis-sources"), context.web_research);
     $("saved-analysis-open").href = eventRoute(analysis.event);

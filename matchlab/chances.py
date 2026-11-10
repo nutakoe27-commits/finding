@@ -11,6 +11,7 @@ from scipy.stats import poisson
 from .bookmakers import instant
 from .market_math import normalized_1x2
 
+INDEPENDENT_MODEL_VERSION='independent-football-v19'
 
 def norm(value):
     return ' '.join(unicodedata.normalize('NFKC',str(value or '')).casefold().split())
@@ -25,6 +26,23 @@ def score(value):
     if not match: return None
     pair=tuple(map(int,match.groups()))
     return pair if max(pair)<=30 else None
+
+
+def football_result(value):
+    """Accept an archive FT score, optionally corroborated by exactly two halves.
+
+    Extra time, shootouts, unfinished/technical results and inconsistent totals
+    are deliberately not interpreted as regular-time football results.
+    """
+    text=str(value or '').strip()
+    pair=score(text)
+    if pair is not None:return {'full':pair,'half':None}
+    match=re.fullmatch(r'\s*(\d{1,2}\s*:\s*\d{1,2})\s*\(\s*(\d{1,2}\s*:\s*\d{1,2})[\s,;]+(\d{1,2}\s*:\s*\d{1,2})\s*\)\s*',text)
+    if not match:return None
+    full,first,second=(score(part) for part in match.groups())
+    if any(part is None for part in (full,first,second)):return None
+    if tuple(a+b for a,b in zip(first,second))!=full:return None
+    return {'full':full,'half':first}
 
 
 def full_time(market):
@@ -48,8 +66,9 @@ def football_sample(repo, event, as_of):
              norm(event.get('home')),norm(event.get('away')),norm(event.get('home')),norm(event.get('away')))).fetchall()
     result=[]; seen=set()
     for row in rows:
-        data=json.loads(row['payload']); pair=score(data.get('score'))
-        if not pair: continue
+        data=json.loads(row['payload']); parsed=football_result(data.get('score'))
+        if parsed is None: continue
+        pair=parsed['full']
         at=instant(row['start_at'])
         if at>=cutoff: continue
         h,a=norm(data.get('member1')),norm(data.get('member2'))
@@ -128,7 +147,9 @@ def fit_goals(rows, home, away, at, extras=None, season=None):
     for name,(_,_,values,prior,effective) in zip((home,away),samples):
         facts.append({'team':name,'source':'history' if values else 'season','matches':len(values),
             'wins':sum(v['gf']>v['ga'] for v in values),'draws':sum(v['gf']==v['ga'] for v in values),
-            'scored':sum(v['gf'] for v in values),'conceded':sum(v['ga'] for v in values),'season':prior,'effective_matches':effective})
+            'scored':sum(v['gf'] for v in values),'conceded':sum(v['ga'] for v in values),'season':prior,'effective_matches':effective,
+            'history_from':min((v['at'] for v in values),default=at).isoformat() if values else None,
+            'history_to':max((v['at'] for v in values),default=at).isoformat() if values else None})
     return grid,facts
 
 
@@ -237,7 +258,7 @@ def assess(repo, document, context):
     """Public predictions/facts only. Fitted intensities and hyperparameters stay local."""
     event=context['event']; now=instant(context['request_time']['at']); stats=context.get('team_statistics') or {}
     finished=event.get('phase')=='finished' or stats.get('match_phase')=='finished'
-    grid=None; facts=[]; limitations=[]; native=False;history_counts={}
+    grid=None; facts=[]; limitations=[]; native=False;history_counts={};summaries=[]
     if not finished and event.get('kickoff_at') and event.get('sport')=='football' and event.get('phase')=='prematch' and not context['request_time']['kickoff_passed']:
         rows=football_sample(repo,event,now)
         cutoff=min(now,instant(event['kickoff_at'])) if event.get('kickoff_at') else now
@@ -324,17 +345,29 @@ def assess(repo, document, context):
     if not facts:
         if winner: facts.append('Независимая оценка основана на подтверждённых завершённых матчах участников.')
         else: facts.append('В доступных данных нет подтверждённого основания выбрать победителя')
-    return {'winner':winner,'markets':evaluated,'facts':facts,'limitations':limitations,'finished':finished,
+    quality={'status':'preliminary' if native else 'unavailable','calibration':'not_verified',
+             'participants':[],'basis':'history_and_season' if any(r.get('season') for r in summaries) else 'history'}
+    for side,row in zip(('home','away'),summaries):
+        prior=row.get('season') or {}
+        quality['participants'].append({'side':side,'name':event.get(side),'confirmed_matches':row['matches'],
+            'season_matches':prior.get('matches'),'season_matches_inferred':prior.get('matches_inferred',False),
+            'uses_season':bool(prior),'source':row['source'],'history_from':row['history_from'],'history_to':row['history_to']})
+    result={'winner':winner,'markets':evaluated,'facts':facts,'limitations':limitations,'finished':finished,
+            'model_version':INDEPENDENT_MODEL_VERSION,'data_quality':quality,
+            'participants':{'home':event.get('home'),'away':event.get('away')},
             'history_diagnostics':history_counts,'independent_only':True,'outcome_probabilities':distribution,
             'coverage':{'received_markets':len(context['markets']),'evaluated_markets':len({r['market_key'] for r in evaluated})}}
+    result['recommended_markets']=report_markets(result)
+    return result
 
 
 def report_markets(assessment):
     candidates=sorted(assessment['markets'],key=lambda r:(r['basis']!='history',-r['probability']))
-    chosen=[];seen=set()
+    chosen=[];seen=set();families=set()
     for row in candidates:
-        if row['probability']<.55 or row['market_key'] in seen:continue
-        chosen.append(row);seen.add(row['market_key'])
+        family=re.sub(r'\b[12]\s*(?:-?й)?\s*тайм\b','',norm(row.get('market') or row['market_key'])).strip()
+        if row['probability']<.55 or row['market_key'] in seen or family in families:continue
+        chosen.append(row);seen.add(row['market_key']);families.add(family)
         if len(chosen)==3:break
     return chosen
 

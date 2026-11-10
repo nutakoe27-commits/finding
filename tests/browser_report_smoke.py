@@ -66,6 +66,21 @@ async def exercise(base):
                 assert await page.locator('#explanation .report-facts li').count()==2
                 assert EXPLANATION*2 in await page.locator('#explanation .report-facts li').first.inner_text()
                 await expect(page.locator('#explanation .report-chance')).to_have_text('43,2%')
+                assessment={'winner':{'participant':'Таиланд (до23)','probability':.432},
+                    'outcome_probabilities':{'home':.31,'draw':.258,'away':.432},
+                    'participants':{'home':'Вьетнам (до23)','away':'Таиланд (до23)'},
+                    'data_quality':{'participants':[{'name':'Вьетнам (до23)','confirmed_matches':0,'uses_season':True,'season_matches':3,'season_matches_inferred':True}]},
+                    'recommended_markets':[{'market_key':'half','period':'1 тайм'}]}
+                report=detailed.replace('подходящих вариантов для оценки не найдено','Фора · 1 тайм · +1.5 · П2 — 96,2%')
+                generation={'market_explanations':{'half':['Проверенный факт. '+EXPLANATION]}}
+                await page.evaluate('([text,assessment,generation])=>renderAnalysis(document.getElementById("explanation"),text,assessment,generation)',[report,assessment,generation])
+                await expect(page.locator('#explanation .report-badge')).to_have_text('Предварительная оценка')
+                assert await page.locator('#explanation .report-distribution dd').all_inner_texts()==['31,0%','25,8%','43,2%']
+                assert '56,8%' in await page.locator('#explanation .report-lead').inner_text()
+                assert 'около 3' in await page.locator('#explanation .report-sample').inner_text()
+                assert EXPLANATION in await page.locator('#explanation .report-market-explanation').inner_text()
+                assert 'приближённая' in await page.locator('#explanation .report-markets').inner_text()
+                assert await page.locator('#explanation .report-quality').is_visible()
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'detailed arguments')
                 await page.locator('#explanation').screenshot(path=f'/tmp/report-detailed-{theme}-{width}.png')
                 await page.evaluate('()=>renderAnalysis(document.getElementById("explanation"),"# Старый разбор\\n\\n**Вывод:** сохранённый текст.\\n\\n- Первый факт")')

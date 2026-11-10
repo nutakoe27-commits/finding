@@ -12,12 +12,12 @@
   <meta property="og:title" content="prognozich ai — спортивная аналитика" />
   <link rel="icon" href="/static/icon.svg?v=2" type="image/svg+xml" />
   <script src="/static/theme.js?v=20261109-accounts1"></script>
-  <link rel="stylesheet" href="/static/style.css?v=20261109-chunks1" />
+  <link rel="stylesheet" href="/static/style.css?v=20261110-quality1" />
   <script src="/static/metrika.js?v=20261109-metrika1" defer></script>
   <script src="/static/privacy.js?v=20261109-metrika1" defer></script>
   <script src="/static/account.js?v=20261109-metrika1" defer></script>
-  <script src="/static/app.js?v=20261109-chunks1" defer></script>
-  <script src="/static/admin.js?v=20261109-chunks-summary1" defer></script>
+  <script src="/static/app.js?v=20261110-quality1" defer></script>
+  <script src="/static/admin.js?v=20261110-quality1" defer></script>
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -375,7 +375,7 @@
       <div id="admin-denied" class="panel" hidden><h2>Нужен аккаунт администратора</h2><p class="muted">Управление сервисом доступно только назначенным администраторам.</p></div>
       <div id="admin-content" hidden>
         <div class="admin-security-line"><span class="status-dot green"></span><span>Действия сохраняются в журнале</span><button id="admin-confirm-access" type="button" class="text-button">Подтвердить пароль</button></div>
-        <nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
+        <nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
         <p id="admin-message" class="account-message" role="status"></p>
         <div data-admin-panel="overview">
           <div class="admin-period"><label for="admin-period">Период</label><select id="admin-period"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select><button id="admin-export" class="text-button" type="button">Скачать отчёт CSV ↓</button></div>
@@ -384,6 +384,7 @@
           <article class="panel admin-source-card"><h2>Данные и ИИ</h2><div id="admin-service-health"></div></article>
           <article class="panel"><h2>Последние запросы ИИ</h2><div id="admin-ai-list" class="admin-table-wrap"></div></article>
         </div>
+        <div data-admin-panel="quality" hidden><article class="panel"><h2>Проверка на 10 завершённых матчах</h2><p class="muted">Предматчевые прогнозы проверяются по сохранённым до начала снимкам. Реконструкция использует только более ранние результаты и не доказывает доступность данных на тот момент. Нынешняя сезонная статистика завершённого матча в неё не включается.</p><div class="button-row"><button id="quality-saved" class="primary-button" type="button">Проверить сохранённые прогнозы</button><button id="quality-historical" class="secondary-button" type="button">Реконструкция по архиву</button></div><div id="quality-result" aria-live="polite"></div></article></div>
         <div data-admin-panel="users" hidden><div class="admin-section-heading"><h2>Пользователи</h2><label class="search-field"><span class="sr-only">Поиск по логину</span><input id="admin-user-search" type="search" maxlength="50" placeholder="Найти по логину"/></label></div><p id="admin-user-total" class="small muted"></p><div id="admin-users" class="admin-table-wrap panel"></div><div class="pagination"><button id="admin-users-prev" class="secondary-button" type="button">← Назад</button><button id="admin-users-next" class="secondary-button" type="button">Дальше →</button></div></div>
         <div data-admin-panel="push" hidden>
           <div class="admin-section-heading"><h2>Push-уведомления</h2><span id="admin-push-state" class="subtle-badge"></span></div><p id="admin-push-note" class="muted"></p>

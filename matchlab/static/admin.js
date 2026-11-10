@@ -109,7 +109,28 @@ window.Admin = (() => {
     $("admin-audit").replaceChildren(table(["Время","Кто","Действие","Объект"],data.events.map(i=>[when(i.at),i.username||"Системная команда",actions[i.action]||i.action,(i.target||"—").slice(0,32)])));
     $("admin-audit-prev").disabled=auditOffset===0;$("admin-audit-next").disabled=auditOffset+data.events.length>=data.total;
   }
-  const loaders={overview:loadOverview,users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  async function loadQuality(mode){
+    const target=$("quality-result");target.replaceChildren(node("p","muted","Проверяем сохранённые данные…"));
+    $("quality-saved").disabled=true;$("quality-historical").disabled=true;
+    try {
+      const report=await api('/api/admin/forecast-quality?limit=10&mode='+mode);target.replaceChildren();
+      const number=value=>(value*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%';
+      target.append(node('h3','',mode==='saved'?'Сохранённые предматчевые прогнозы':'Ретроспективная реконструкция · не предматчевый тест'));
+      target.append(node('p','',`Оценено ${report.evaluated} из ${report.requested}. Выбрано: ${report.selected}. Ожидают однозначного результата: ${report.pending}.`));
+      const metrics=report.metrics;
+      if(metrics) target.append(node('p','',`Исход угадан: ${metrics.favorite_hits} из ${metrics.evaluated} (${number(metrics.accuracy)}). Интервал неопределённости доли попаданий: ${metrics.accuracy_wilson_95.map(number).join('–')}. Brier: ${metrics.brier_3way.toFixed(3)}, равномерный ориентир: ${metrics.uniform_baseline.brier_3way.toFixed(3)}. Log loss: ${metrics.log_loss.toFixed(3)}, ориентир: ${metrics.uniform_baseline.log_loss.toFixed(3)}. Для Brier и log loss меньше — лучше.`));
+      else target.append(node('p','notice','Подходящих прогнозов для проверки пока нет. Матчи с недостаточными данными не заменяются более удобными примерами.'));
+      const wrap=node('div','admin-table-wrap');wrap.append(table(['Матч','Начало','П1 / Х / П2','Счёт','Исход'],report.matches.map(row=>[
+        `${row.home} — ${row.away}`,when(row.kickoff_at),row.probabilities?['home','draw','away'].map(k=>number(row.probabilities[k])).join(' / '):'Недостаточно истории',row.actual_score,row.favorite_hit===null?'Не оценён':row.favorite_hit?'Совпал':'Не совпал'])));target.append(wrap);
+      const limitations=node('ul','small muted');report.limitations.forEach(text=>limitations.append(node('li','',text)));target.append(limitations);
+      if(report.excluded_forecasts.other_model_version) target.append(node('p','small muted',`Прогнозов других версий расчёта исключено: ${report.excluded_forecasts.other_model_version}.`));
+      target.append(button('Скачать JSON отчёта',()=>{const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=`winline-10-${mode}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+    } catch(error) {target.replaceChildren(node('p','account-message is-error',error.message));}
+    finally {$("quality-saved").disabled=false;$("quality-historical").disabled=false;}
+  }
+  $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
+  $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
+  const loaders={overview:loadOverview,quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
   async function load(){const id=++request;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;

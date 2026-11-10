@@ -1,6 +1,7 @@
 """End-to-end registration gate, compact statistics, private history and admin UI."""
 
 import asyncio
+import json
 import os
 import shutil
 import socket
@@ -222,6 +223,22 @@ async def exercise(base, repo):
                 await page.screenshot(
                     path=f"/tmp/matchlab-admin-{theme}-{width}.png", full_page=True
                 )
+                await page.locator('[data-admin-tab="quality"]').click()
+                await page.locator('#quality-saved').click()
+                await expect(page.locator('#quality-result')).to_contain_text('Оценено')
+                await expect(page.locator('#quality-result')).to_contain_text('Сохранённые предматчевые прогнозы')
+                await page.locator('#quality-historical').click()
+                await expect(page.locator('#quality-result')).to_contain_text('Ретроспективная реконструкция')
+                await expect(page.locator('#quality-result')).to_contain_text('24 часа')
+                quality_report=json.loads((ROOT/'evaluation_results/winline/2026-11-10-pilot/report.json').read_text())
+                await page.route('**/api/admin/forecast-quality?limit=10&mode=historical-results',lambda route:route.fulfill(json=quality_report))
+                await page.locator('#quality-historical').click()
+                await expect(page.locator('#quality-result')).to_contain_text('Оценено 9 из 10')
+                await expect(page.locator('#quality-result')).to_contain_text('Исход угадан: 5 из 9')
+                assert await page.locator('#quality-result tbody tr').count()==10
+                assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(width,'quality report overflow')
+                await page.locator('#quality-result button').click()
+                await page.screenshot(path=f'/tmp/matchlab-quality-{theme}-{width}.png',full_page=True)
                 await page.locator('[data-admin-tab="promos"]').click()
                 await page.locator("#admin-promo-code").fill(f"BROWSER_{index}")
                 await page.locator("#admin-promo-title").fill("Первый запуск")

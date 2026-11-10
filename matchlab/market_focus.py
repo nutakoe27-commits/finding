@@ -191,6 +191,8 @@ def focus_context(context,limit=8):
     if result.get('probability_assessment') is not None:
         assessed=result['probability_assessment']
         assessed['markets']=[r for r in assessed.get('markets',[]) if r.get('market_key') in kept and r.get('market_key') not in context_only]
+        from .chances import report_markets
+        assessed['recommended_markets']=report_markets(assessed)
         winner_key=(assessed.get('winner') or {}).get('market_key')
         if winner_key and (winner_key not in kept or winner_key in context_only):assessed['winner']=None
         evaluated={r['market_key'] for r in assessed['markets']}
