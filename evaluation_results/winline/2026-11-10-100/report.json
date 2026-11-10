@@ -1,0 +1,3326 @@
+{
+  "format": "matchlab.winline-evaluation.v1",
+  "model_version": "independent-football-v19",
+  "generated_at": "2026-11-10T07:44:18.835341+00:00",
+  "mode": "historical-results",
+  "state": "small_sample",
+  "requested": 100,
+  "selected": 100,
+  "evaluated": 94,
+  "pending": 0,
+  "metrics": {
+    "evaluated": 94,
+    "favorite_hits": 45,
+    "accuracy": 0.4787234042553192,
+    "accuracy_wilson_95": [
+      0.3805716814684006,
+      0.5785458536929418
+    ],
+    "mean_favorite_probability": 0.4903003353926239,
+    "brier_3way": 0.6331864278151422,
+    "log_loss": 1.0505149012575925,
+    "uniform_baseline": {
+      "brier_3way": 0.6666666666666666,
+      "log_loss": 1.0986122886681098
+    }
+  },
+  "matches": [
+    {
+      "result_key": "e70b73b64ba9c05568953d9770058a074f8a9b2435d82a6c773026d36fded353",
+      "kickoff_at": "2026-11-08T16:45:29.999000+00:00",
+      "home": "Бен Акноун",
+      "away": "Белуиздад",
+      "competition": "Алжир. Лига 1",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3113486964969754,
+        "draw": 0.28527712359195945,
+        "away": 0.40337417991106517
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T16:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Бен Акноун",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Белуиздад",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "04365448256e24936e62d1490617b85f8b99c9ca47b5d8e4374ea0dd36b6327c",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Сарчи",
+      "away": "Муниципал Санта-Ана",
+      "competition": "Коста-Рика. 2-й Дивизион",
+      "actual_score": "4:2",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5652045945381994,
+        "draw": 0.2227635026843589,
+        "away": 0.21203190277744166
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сарчи",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Муниципал Санта-Ана",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "124c376e99c0d51944b58ef21006655e4ebfdd09c000d430974a02771759ced0",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Лацио (ж)",
+      "away": "Наполи (ж)",
+      "competition": "Италия. Серия А, Женщины",
+      "actual_score": "0:0",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.2128901318493231,
+        "draw": 0.25605289034595613,
+        "away": 0.5310569778047208
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Лацио (ж)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Наполи (ж)",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "16d80e6cbcf0c8126986305e363960f98139593c975446b3f6eacbefe3dd4b70",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Сан Андреу (до19)",
+      "away": "Барселона (до19)",
+      "competition": "Испания. Молодежный Дивизион",
+      "actual_score": "1:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3466592391811638,
+        "draw": 0.26831764088820825,
+        "away": 0.385023119930628
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сан Андреу (до19)",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Барселона (до19)",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "4151cc30d6aa966d34563a5ccb2386b03da84f9b559f22437f7beac5755d249a",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Виктория Плзень",
+      "away": "Спарта Прага",
+      "competition": "Чехия. 1-я Лига",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.43586404620051566,
+        "draw": 0.25124663649333445,
+        "away": 0.31288931730615
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Виктория Плзень",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Спарта Прага",
+          "confirmed_matches": 8
+        }
+      ]
+    },
+    {
+      "result_key": "477f659ff500717ec48ee1d135a97887d1c73a199c4955b785994445fb2aefba",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Валенсия Месталья",
+      "away": "Лорка Депортива",
+      "competition": "Испания. Сегунда Федерасьон",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.4136358584075529,
+        "draw": 0.24592015221039829,
+        "away": 0.34044398938204873
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Валенсия Месталья",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Лорка Депортива",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "4dee1fc62e31d2991fe55d8ab82faf5474e01c17d5de7896c195f4c8011dbbc5",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Спартак Кострома",
+      "away": "Нижний Новгород",
+      "competition": "Россия. 1-я Лига",
+      "actual_score": "0:4",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2677146894472142,
+        "draw": 0.26000030152821535,
+        "away": 0.4722850090245705
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Спартак Кострома",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Нижний Новгород",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "53ac6dcfafac54e682a9dac45abfb80681f89e09c8f70f06602f126dc2e8b2f3",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Манреса",
+      "away": "Барселона Б",
+      "competition": "Испания. Сегунда Федерасьон",
+      "actual_score": "0:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.45330513489361,
+        "draw": 0.2622928201318114,
+        "away": 0.2844020449745785
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Манреса",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Барселона Б",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "6d253c18c3e75346ea7710bbc90e7a4ab59f25563a3e8d953969e87a012ba117",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Картахинес",
+      "away": "Эскорпионес Белен",
+      "competition": "Коста-Рика. Примера",
+      "actual_score": "4:2",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5193107783296909,
+        "draw": 0.21388431630538413,
+        "away": 0.26680490536492496
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Картахинес",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Эскорпионес Белен",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "73849b8bccec6da522f5df518cf97f2ca7b4117ef125d890290d7b439891a47a",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Томарес (до19)",
+      "away": "Малага (до19)",
+      "competition": "Испания. Молодежный Дивизион",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.4163933722108674,
+        "draw": 0.2341256974012564,
+        "away": 0.3494809303878761
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Томарес (до19)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Малага (до19)",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "776c719f1fedcfe06a885ce2a1a280a29ff0ff71e2a1baade59564f6eb1c9366",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Субиса",
+      "away": "Чантреа",
+      "competition": "Испания. Терсера",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.4561486519493179,
+        "draw": 0.22853749913602908,
+        "away": 0.315313848914653
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Субиса",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Чантреа",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "82203b50b3f2989b7fa601a8b7d3f383d09d63fac5cbd08a38690d76a27f1e3c",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Мидтьюлланн",
+      "away": "Сённерйюск",
+      "competition": "Дания. Суперлига",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.6514478944492437,
+        "draw": 0.1740301359989444,
+        "away": 0.17452196955181185
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Мидтьюлланн",
+          "confirmed_matches": 8
+        },
+        {
+          "side": "away",
+          "name": "Сённерйюск",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "84205bfba9043c06944aee964a122a912a84b1e50caa47f55d228ba39171d2a6",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Пафос",
+      "away": "Омония 29 Мая",
+      "competition": "Кипр. 1-й Дивизион",
+      "actual_score": "4:2",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.43847078831918707,
+        "draw": 0.2513007216581807,
+        "away": 0.31022849002263214
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Пафос",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Омония 29 Мая",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "8fc3dc1243b89dc84fd39167714fdcb86a0d61410618ec44e0b7217e03456bda",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Сантучу (до19)",
+      "away": "Марео Логроньо (до19)",
+      "competition": "Испания. Молодежный Дивизион",
+      "actual_score": "7:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.4207226244661774,
+        "draw": 0.2515288290216279,
+        "away": 0.32774854651219465
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сантучу (до19)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Марео Логроньо (до19)",
+          "confirmed_matches": 1
+        }
+      ]
+    },
+    {
+      "result_key": "99e970d3232fca62eb687850265820b25163fb16735cbcdd3de15a692d4c722f",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Реал М 2 (ж)",
+      "away": "Атлетико Мадрид Б (ж)",
+      "competition": "Испания. 2-й Дивизион, Женщины",
+      "actual_score": "3:3",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.32733115659411044,
+        "draw": 0.24774511690017237,
+        "away": 0.42492372650571725
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Реал М 2 (ж)",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Атлетико Мадрид Б (ж)",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "9c14cf192f23dd3d86bea11a5f17847f679cb93c6543e61a5c0bf11e0189bf1b",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "ЧФР Клуж",
+      "away": "Университатя Крайова",
+      "competition": "Румыния. Лига 1",
+      "actual_score": "0:0",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.2062509798235063,
+        "draw": 0.24838299626855,
+        "away": 0.5453660239079436
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "ЧФР Клуж",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Университатя Крайова",
+          "confirmed_matches": 8
+        }
+      ]
+    },
+    {
+      "result_key": "b8310be45435b36fdf2bfecde7d80ff6a8b002a70f51045d62cb87c78d002209",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Комарно",
+      "away": "Земплин Михаловце",
+      "competition": "Словакия. Суперлига",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.27156392760472325,
+        "draw": 0.2644436751029765,
+        "away": 0.4639923972923002
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Комарно",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Земплин Михаловце",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "c2dae35643dffd20ce58a5dcea7d9ba8beca42dd68ca166982290ae7c70c9d3c",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Гедиавей",
+      "away": "Лингере",
+      "competition": "Сенегал. Премьер Лига",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.36880435586668187,
+        "draw": 0.4565446171823361,
+        "away": 0.17465102695098222
+      },
+      "favorite": "draw",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Гедиавей",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Лингере",
+          "confirmed_matches": 1
+        }
+      ]
+    },
+    {
+      "result_key": "d818e593c126bded217756d0e6e5b2f1a8ed69fde3e4720cd0cb595a02953953",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Интер М",
+      "away": "Комо",
+      "competition": "Италия. Серия A",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.2613936162191372,
+        "draw": 0.22260220733101146,
+        "away": 0.5160041764498513
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Интер М",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Комо",
+          "confirmed_matches": 8
+        }
+      ]
+    },
+    {
+      "result_key": "e007fd4e12f720d6500ea422166aba2f40d671992607ab08fc2a1c841ca0ec99",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Вараждин",
+      "away": "Динамо Загреб",
+      "competition": "Хорватия. Премьер Лига",
+      "actual_score": "1:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2533449239013641,
+        "draw": 0.25365601135450616,
+        "away": 0.4929990647441297
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Вараждин",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Динамо Загреб",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "e6d80b213f2056d06a59c38e18097404370fd263423dfd6cf8ad6419e80bb6c8",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Бетис (до19)",
+      "away": "Кордоба (до19)",
+      "competition": "Испания. Молодежный Дивизион",
+      "actual_score": "3:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.6259989794364297,
+        "draw": 0.19020650930627186,
+        "away": 0.1837945112572984
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Бетис (до19)",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Кордоба (до19)",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "f30c992875a0a148cf3cfea327160ec2f251ddbe96897b39e98aaa0708a927dc",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "АПОЭЛ",
+      "away": "Арис Лимассол",
+      "competition": "Кипр. 1-й Дивизион",
+      "actual_score": "3:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.46257230215132616,
+        "draw": 0.23559127983237807,
+        "away": 0.30183641801629574
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "АПОЭЛ",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Арис Лимассол",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "f74e8fc440bc2b0caf5d5437ca2046accb9252af3a9a8de7be38199853ade67c",
+      "kickoff_at": "2026-11-08T17:00:29.999000+00:00",
+      "home": "Олимпико Де Хорибга",
+      "away": "Мулудиа Ужда",
+      "competition": "Марокко. Лига Ботола 2",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.4759073476398868,
+        "draw": 0.25422058419125304,
+        "away": 0.2698720681688602
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Олимпико Де Хорибга",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Мулудиа Ужда",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "3787969ffaed4659555d3a7f0d4def3cb2480765301bf23752853e1466e2f01e",
+      "kickoff_at": "2026-11-08T17:15:29.999000+00:00",
+      "home": "Мерида",
+      "away": "Атлетик Бильбао Б",
+      "competition": "Испания. Примера Федерасьон",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.6075241708765838,
+        "draw": 0.21190489743900878,
+        "away": 0.18057093168440738
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Мерида",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Атлетик Бильбао Б",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "58836bf79ecc6a8791d213dd8ac0d24f029ecbee7b8d86c3c07c8d47f6918f68",
+      "kickoff_at": "2026-11-08T17:15:29.999000+00:00",
+      "home": "Культураль Леонеса",
+      "away": "Понферрадина",
+      "competition": "Испания. Примера Федерасьон",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.4865383144720685,
+        "draw": 0.28599579301549366,
+        "away": 0.2274658925124377
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Культураль Леонеса",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Понферрадина",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "dbef21d9cd2e6e6127aff2c96085155ac9bf87d832948e599effe9059e5c84bf",
+      "kickoff_at": "2026-11-08T17:15:29.999000+00:00",
+      "home": "Мирандес",
+      "away": "Кориа",
+      "competition": "Испания. Примера Федерасьон",
+      "actual_score": "0:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.5186571294047576,
+        "draw": 0.2667594011583515,
+        "away": 0.2145834694368908
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Мирандес",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Кориа",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "172df8adca95b851428909cb6c71df1787a13f2e5cbaa86b4f3de78b162d8ee7",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Бенфика (до23)",
+      "away": "Фаренсе (до23)",
+      "competition": "Португалия. Молодежная Лига (до23)",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.43383398388748734,
+        "draw": 0.21519764103891542,
+        "away": 0.35096837507359735
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Бенфика (до23)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Фаренсе (до23)",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "221d4bf39145cf356b3bd0cead26f351af8d9ec6d56a583a9be6c081f2179ecb",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Спортинг Хихон",
+      "away": "Вальядолид",
+      "competition": "Испания. Сегунда",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.4610242942836552,
+        "draw": 0.21648021083827568,
+        "away": 0.32249549487806894
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Спортинг Хихон",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Вальядолид",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "6470422577ce9df949a539a095a3f97da2e21a8f45c0e3093b16bf0c889cbfa9",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Сельта",
+      "away": "Леванте",
+      "competition": "Испания. Ла Лига",
+      "actual_score": "0:0",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.4228717982887817,
+        "draw": 0.2609788155050772,
+        "away": 0.31614938620614114
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сельта",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Леванте",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "7859ea155308b5926510df09ea524c69a619ee6dd154c6ccc66945bfa9632ac4",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Вильярреал",
+      "away": "Хетафе",
+      "competition": "Испания. Ла Лига",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5185299231217144,
+        "draw": 0.22098308000295996,
+        "away": 0.26048699687532567
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Вильярреал",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Хетафе",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "8d11d4947394db88fa7b67d8b8df6fd133698173b574f4792ad3c9779101c11d",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Готэм (ж)",
+      "away": "Сиэтл Рейн (ж)",
+      "competition": "США. NWSL, Женщины",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.32074063447037277,
+        "draw": 0.3042651976639997,
+        "away": 0.37499416786562745
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Готэм (ж)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Сиэтл Рейн (ж)",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "a0d4f660f692ca13b013c955b723fe806301f740e034cec9ca354395e9817f7f",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Эгнатия Рогожина",
+      "away": "Вора",
+      "competition": "Албания. Суперлига",
+      "actual_score": "5:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.42001672297867015,
+        "draw": 0.2558585579225163,
+        "away": 0.3241247190988135
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Эгнатия Рогожина",
+          "confirmed_matches": 8
+        },
+        {
+          "side": "away",
+          "name": "Вора",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "eded5cdb7c807f236268ea3d3bdb57eb8ab25d577e12a3f4c2bd86fccac1a184",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Юнион Сент-Жиллуаз",
+      "away": "Генк",
+      "competition": "Бельгия. Высшая Лига",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.6305526786307053,
+        "draw": 0.19006096977309989,
+        "away": 0.1793863515961948
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Юнион Сент-Жиллуаз",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Генк",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "fca499487feead38dd628d9c95c78114db0effeb11e37ce1329edb6905433604",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Сан-Хуан Атлетико де Монкада",
+      "away": "Пералада",
+      "competition": "Испания. Терсера",
+      "actual_score": "3:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.46804359740645374,
+        "draw": 0.23703990173779854,
+        "away": 0.2949165008557477
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сан-Хуан Атлетико де Монкада",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Пералада",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "fea73120c15e4ad16c82190609daab3c9ca471f024524d24013ca57e77a27ea2",
+      "kickoff_at": "2026-11-08T17:30:29.999000+00:00",
+      "home": "Алгар",
+      "away": "Алькантарилья",
+      "competition": "Испания. Терсера",
+      "actual_score": "1:7",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.4821265581607321,
+        "draw": 0.25090247628758794,
+        "away": 0.26697096555167965
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Алгар",
+          "confirmed_matches": 1
+        },
+        {
+          "side": "away",
+          "name": "Алькантарилья",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "3f183c66ac58fa2c0471ff5b0f126c3a03426cc661fe9407613f9a837980ff76",
+      "kickoff_at": "2026-11-08T17:45:29.999000+00:00",
+      "home": "Балтика",
+      "away": "Динамо Махачкала",
+      "competition": "Россия. РПЛ",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.5752733847136284,
+        "draw": 0.2554122818263668,
+        "away": 0.1693143334600046
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T17:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Балтика",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Динамо Махачкала",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "09af3aa96e5eb18575cca58c176672cb17d16aebfe9bc7feb2dad3757e109f3b",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Сокорро",
+      "away": "Эстансиано",
+      "competition": "Бразилия. Сержипано, Серия А2",
+      "actual_score": "2:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.6257007896808225,
+        "draw": 0.19506716823635117,
+        "away": 0.1792320420828263
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сокорро",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Эстансиано",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "0a15c8666e10a4e8d90d4a1ec92113f4fd317af2699f8dea47ad8fb576c2b4f5",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Белфорд Роксо РЖ",
+      "away": "Фрибургенсе РЖ",
+      "competition": "Бразилия. Кариока, Серия B2",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.41325927119065975,
+        "draw": 0.21811303716562944,
+        "away": 0.3686276916437109
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Белфорд Роксо РЖ",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Фрибургенсе РЖ",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "274c3d087ffb6d72ae997cef43ec837a4ebb415ce041642809ea0e56259087ec",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Реал Бетис С",
+      "away": "Конил",
+      "competition": "Испания. Терсера",
+      "actual_score": "4:3",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.43072526147685425,
+        "draw": 0.27954705558229354,
+        "away": 0.28972768294085227
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Реал Бетис С",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Конил",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "2bc2f6cdf923cc5fd178f6e1f25b0919ac948c36fc11ffcd6aab923ef556795f",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Витория Гимарайнш",
+      "away": "Порту",
+      "competition": "Португалия. Премьер Лига",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3317053841663859,
+        "draw": 0.27851154000620937,
+        "away": 0.3897830758274049
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Витория Гимарайнш",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Порту",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "394d71fb4062ee59fdaebc8d107bcdb91cc5fedb47cc259ccbd2174ad552e648",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Нюбленсе",
+      "away": "Коло-Коло",
+      "competition": "Чили. Примера",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.45075093774925107,
+        "draw": 0.21404771448924836,
+        "away": 0.33520134776150046
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Нюбленсе",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Коло-Коло",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "532eeb14d69bff268e6920543778efe5a0a30aaf78a56d301beb805bebb1cc15",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Кокимбо Унидо (ж)",
+      "away": "Коло-Коло (ж)",
+      "competition": "Чили. Примера, Женщины",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "5c667210f05d8e3e8a5a27a48c2bb4a57e7e47ffccaf54e3a995abf9cdc20ce6",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Лос Чанкас",
+      "away": "Альянца Лима",
+      "competition": "Перу. Пример Дивизион",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.3530329508069676,
+        "draw": 0.262323780153829,
+        "away": 0.3846432690392033
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Лос Чанкас",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Альянца Лима",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "5f24635995ddbe9a516f3107f7dff7217ab790c9a2b10198460f2c2966529242",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Монтанезез",
+      "away": "Лос-Кабос Юнайтед",
+      "competition": "Мексика. Лига Примера Премьер",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.393517095447456,
+        "draw": 0.23118965007950318,
+        "away": 0.3752932544730408
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Монтанезез",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Лос-Кабос Юнайтед",
+          "confirmed_matches": 1
+        }
+      ]
+    },
+    {
+      "result_key": "620128f5be66b9872e3abfca8871b7e1a608b6e98c64dd7704cb1c2313b04d7a",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Альянца Лима (ж)",
+      "away": "Спортинг Кристал (ж)",
+      "competition": "Перу. Национальная Лига, Женщины",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5496283250995821,
+        "draw": 0.1893722076769905,
+        "away": 0.2609994672234272
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Альянца Лима (ж)",
+          "confirmed_matches": 1
+        },
+        {
+          "side": "away",
+          "name": "Спортинг Кристал (ж)",
+          "confirmed_matches": 1
+        }
+      ]
+    },
+    {
+      "result_key": "62094fe17d758e8a4a2709b1d7d24a4de0d34d42df7ee5ff58925720c1b70361",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Паранаваи",
+      "away": "Атлетико Паранаэнсе",
+      "competition": "Бразилия. Кубок Паранаэнсе",
+      "actual_score": "0:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3554763723305188,
+        "draw": 0.2704643537558513,
+        "away": 0.3740592739136298
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Паранаваи",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Атлетико Паранаэнсе",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "96f462d502b39661d47d5171d22b4feb1f9a9ff4e74b2968c47886686cdd00ce",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "ФАР Рабат",
+      "away": "Дифаа Эль Джадида",
+      "competition": "Марокко. Лига Ботола",
+      "actual_score": "3:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.2884660491324452,
+        "draw": 0.2898890889156946,
+        "away": 0.42164486195186024
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "ФАР Рабат",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Дифаа Эль Джадида",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "9f1f64e763b405d5a9a9e4974ac55e54be6bfa60ae59e124d7610aed3840cc6c",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Бешикташ",
+      "away": "Генчлербирлиги",
+      "competition": "Турция. Суперлига",
+      "actual_score": "3:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.3039156063787247,
+        "draw": 0.22581106347817,
+        "away": 0.47027333014310513
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Бешикташ",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Генчлербирлиги",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "b122818f781f4d9f8a1fa718e87e6ca4590f4d4ed3bbe954ee151ff18af239b1",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Леонес Негрос",
+      "away": "Алакранес Дуранго",
+      "competition": "Мексика. Лига Развития МХ",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.31680874786075447,
+        "draw": 0.25724334875707333,
+        "away": 0.42594790338217237
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Леонес Негрос",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Алакранес Дуранго",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "ba61353a264c25f04fb81d77687e53de463972b80cbd56a3ec8526dce6612b36",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Ипиранга",
+      "away": "Пескейра ПЕ",
+      "competition": "Бразилия. Пернамбукано",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "cb5963dd2c662e9eeb35de58253282b4748621fa19377c57d55c5cc42634185f",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Войводина",
+      "away": "Црвена Звезда",
+      "competition": "Сербия. Суперлига",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3942328936514567,
+        "draw": 0.24606389299332357,
+        "away": 0.35970321335521965
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Войводина",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Црвена Звезда",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "d3d60e20460b27467ef26645f41dfd1251b5fa53114f106d11162fc91e5aabd6",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Сентрал",
+      "away": "Белу-Жардин ПЕ",
+      "competition": "Бразилия. Пернамбукано",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "d44a24b9cb79e95c0ec846c8f8045190212567f431f22f2f732108e6329d4c84",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Спортинг Лиссабон Б",
+      "away": "Тондела",
+      "competition": "Португалия. 2-я Лига",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.5828757800124406,
+        "draw": 0.20811084469623473,
+        "away": 0.2090133752913249
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Спортинг Лиссабон Б",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Тондела",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "e051b3fb56467cf504f8a88c4965f901bc99163319126cb55a2cb43cb6819baa",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Вашаш",
+      "away": "Ференцварош",
+      "competition": "Венгрия. Премьер Лига",
+      "actual_score": "0:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.19235180840100394,
+        "draw": 0.21478169772872788,
+        "away": 0.5928664938702681
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Вашаш",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Ференцварош",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "f2eaf522dc9cb93ac3a261e5e6a8477ac1660de6d58fc589e882ff16cc20ba68",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Универсидад де Чили",
+      "away": "Кобресал",
+      "competition": "Чили. Примера",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.8038301682590041,
+        "draw": 0.12202760820860574,
+        "away": 0.07414222353239018
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Универсидад де Чили",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Кобресал",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "fc44cd0a5bcdb8c1b78ed33bc79fa560a8f50c1182b9cf06c090ab96287a6560",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Пеньяроль (ж)",
+      "away": "Ливерпуль Монтевидео (ж)",
+      "competition": "Уругвай. Национальная Лига, Женщины",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "fdd4444e86f055eba836d96bf59ac5f32913e27e3d0011cff740f93caf838771",
+      "kickoff_at": "2026-11-08T18:00:29.999000+00:00",
+      "home": "Тала Аль-Гаиш",
+      "away": "Асьют Петролеум",
+      "competition": "Египет. Кубок",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.4497413925664285,
+        "draw": 0.23640009096138107,
+        "away": 0.31385851647219043
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Тала Аль-Гаиш",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Асьют Петролеум",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "a80319077915bbf12553dfafe24daf8c44b046b520e184fd4fd9972bb9f6bac8",
+      "kickoff_at": "2026-11-08T18:15:29.999000+00:00",
+      "home": "Локерен Темсе",
+      "away": "Дендер",
+      "competition": "Бельгия. Челленджер Про Лига",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.530479695082167,
+        "draw": 0.2563448682074572,
+        "away": 0.21317543671037606
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Локерен Темсе",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Дендер",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "eaeaa7c151a487efa5bc0783b62c5b936171dfd6cec6223b98ecb638c4049c0b",
+      "kickoff_at": "2026-11-08T18:15:29.999000+00:00",
+      "home": "Фредрикстад",
+      "away": "Бранн",
+      "competition": "Норвегия. Элитсерия",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.2872768867369161,
+        "draw": 0.19533808135892908,
+        "away": 0.5173850319041547
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Фредрикстад",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Бранн",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "eb8e5b208ad1a45b71eb742bbdf8c4a52dec9c94edebf81045a380ffd455e436",
+      "kickoff_at": "2026-11-08T18:15:29.999000+00:00",
+      "home": "Сент-Трюйден",
+      "away": "Зульте Варегем",
+      "competition": "Бельгия. Высшая Лига",
+      "actual_score": "4:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.58772192834196,
+        "draw": 0.18125853113245594,
+        "away": 0.23101954052558396
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сент-Трюйден",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Зульте Варегем",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "6c2ff4337486f373a33bec012b23abde99c93515580af67eb5c612493513817e",
+      "kickoff_at": "2026-11-08T18:30:29.999000+00:00",
+      "home": "Хапоэль Беер-Шева",
+      "away": "Хапоэль Тель-Авив",
+      "competition": "Израиль. Премьер Лига",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.222059919498929,
+        "draw": 0.19635468782667104,
+        "away": 0.5815853926743999
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Хапоэль Беер-Шева",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Хапоэль Тель-Авив",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "87184ebf747b0b0ef11e545d2fce1fe337417a476729b55bb8fcb2945cc290c8",
+      "kickoff_at": "2026-11-08T18:30:29.999000+00:00",
+      "home": "Атлетико Итумбиара",
+      "away": "Ройял",
+      "competition": "Бразилия. Гояно, 3-й Дивизион",
+      "actual_score": "4:0",
+      "actual_outcome": "home",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T18:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "8bff2a49af73b0e3f2c81940193b5b4ed7e855b353af326e24e1bc7e3369ce41",
+      "kickoff_at": "2026-11-08T18:30:29.999000+00:00",
+      "home": "Вюрцбургер Кикерс",
+      "away": "Хоффенхайм 2",
+      "competition": "Германия. 3-я Бундеслига",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.5520073726007453,
+        "draw": 0.2110760269312922,
+        "away": 0.23691660046796253
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Вюрцбургер Кикерс",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Хоффенхайм 2",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "dcb4905141c9f6b4d26b47913e28f2314c1fa56f583611c20df2351a8d593fcc",
+      "kickoff_at": "2026-11-08T18:30:29.999000+00:00",
+      "home": "Виченца",
+      "away": "Кремонезе",
+      "competition": "Италия. Серия B",
+      "actual_score": "1:4",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.343374680042122,
+        "draw": 0.2587554524189355,
+        "away": 0.3978698675389426
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Виченца",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Кремонезе",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "dd7de83f84be6b99755b446e215dcc2a8a17efe3f04e355939d54a467720140d",
+      "kickoff_at": "2026-11-08T18:30:29.999000+00:00",
+      "home": "Хоффенхайм",
+      "away": "Шальке",
+      "competition": "Германия. Бундеслига",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.6276599945996862,
+        "draw": 0.2222509265217871,
+        "away": 0.1500890788785265
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Хоффенхайм",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Шальке",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "083fafa889e0c451b78528c477794861e4e341bd6590a38335858f931eb4f82d",
+      "kickoff_at": "2026-11-08T18:45:29.999000+00:00",
+      "home": "Марсашлокк",
+      "away": "Хамрун Спартанс",
+      "competition": "Мальта. Премьер Лига",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.290516654321367,
+        "draw": 0.25066216942305963,
+        "away": 0.4588211762555733
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T18:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Марсашлокк",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Хамрун Спартанс",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "b60fbef8e1d7dafe0e5780b700024c87ad00276c095d33d92bfda447857ceaf7",
+      "kickoff_at": "2026-11-08T18:45:29.999000+00:00",
+      "home": "Аукас",
+      "away": "Индепендьенте дель Валье",
+      "competition": "Эквадор. Серия А",
+      "actual_score": "2:4",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2820184022468516,
+        "draw": 0.27992518625654333,
+        "away": 0.43805641149660524
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T18:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Аукас",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Индепендьенте дель Валье",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "1b1e6826090bb60848a70ec682421c4cb0137f354194bfef9e2859c96f95dbf2",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Провинсиал Овалле",
+      "away": "Сантьяго Монинг",
+      "competition": "Чили. Сегунда",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.47193134539828496,
+        "draw": 0.23312962659878358,
+        "away": 0.29493902800293137
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Провинсиал Овалле",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Сантьяго Монинг",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "5e092a3c1ae50be790c5b8dc24f29e7704f04431bb74659ca310c2f89d7e6307",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Атлетик Клаб МЖ",
+      "away": "Атлетико Гоияниенсе ГО",
+      "competition": "Бразилия. Серия B",
+      "actual_score": "2:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.44433094677796786,
+        "draw": 0.3003695202747488,
+        "away": 0.25529953294728314
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Атлетик Клаб МЖ",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Атлетико Гоияниенсе ГО",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "82a1f9491af6fb3e9a6058b1d567359f47c3bf9ea63f211d07a2acb5fabec2ce",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Индепендьенте Санта-Фе",
+      "away": "Депортиво Пасто",
+      "competition": "Колумбия. Примера А",
+      "actual_score": "5:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.39500087517934473,
+        "draw": 0.30446729272135253,
+        "away": 0.3005318320993026
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Индепендьенте Санта-Фе",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Депортиво Пасто",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "aec5a0e9233e4e98f855961279233aedb956815c9ab3bdfb4f692188ad6f2aaa",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Эскальдес",
+      "away": "Интер Эскальдес",
+      "competition": "Андорра. Примера Дивизион",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.3442603691161016,
+        "draw": 0.25714538972538586,
+        "away": 0.3985942411585127
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Эскальдес",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Интер Эскальдес",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "bbf433dc9527d25c8774cfce0f05d89ad9b9f018985ba2d33a51cc5cc2f4cd6a",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Олимпиакос",
+      "away": "ПАОК",
+      "competition": "Греция. Суперлига",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.735562886311451,
+        "draw": 0.1619617928472184,
+        "away": 0.1024753208413307
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Олимпиакос",
+          "confirmed_matches": 8
+        },
+        {
+          "side": "away",
+          "name": "ПАОК",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "dd96ad55df98066011ecd9b31c1995b9ebf6d6736c6b60a40049f54c470edc96",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Насьональ Потоси",
+      "away": "Реал Потоси",
+      "competition": "Боливия. Профессиональный Дивизион",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.5298907925260414,
+        "draw": 0.24633505889903679,
+        "away": 0.223774148574922
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Насьональ Потоси",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Реал Потоси",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "fc91d8c010cf5fd3c6b29b727b4d7ac9b8a05e522a1c10e37450a0ad5f74f3ba",
+      "kickoff_at": "2026-11-08T19:00:29.999000+00:00",
+      "home": "Утрехт",
+      "away": "НЕК Неймеген",
+      "competition": "Нидерланды. Высшая Лига",
+      "actual_score": "2:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.3470530308201347,
+        "draw": 0.22219139669999166,
+        "away": 0.4307555724798736
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T19:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Утрехт",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "НЕК Неймеген",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "5a029d3a184a7362b6ee491ac8b9885c4ab631d825d26503f687044f916ca261",
+      "kickoff_at": "2026-11-08T19:15:29.999000+00:00",
+      "home": "Лех",
+      "away": "Заглембе Любин",
+      "competition": "Польша. Высшая Лига",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.5372095216505344,
+        "draw": 0.22541411088380617,
+        "away": 0.23737636746565932
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Лех",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Заглембе Любин",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "8aab847b6e87faee31585ed3b04d55f5654ee677417ede7a294fcd7c9f289972",
+      "kickoff_at": "2026-11-08T19:15:29.999000+00:00",
+      "home": "Сталь Мелец",
+      "away": "Рух Хожув",
+      "competition": "Польша. 1-я Лига",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.23466110596691517,
+        "draw": 0.28841854027498176,
+        "away": 0.47692035375810315
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сталь Мелец",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Рух Хожув",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "c3488101d265be50f8ade6977d19aa12d369dc8a48fc9ae9a61240f95c568e14",
+      "kickoff_at": "2026-11-08T19:30:29.999000+00:00",
+      "home": "Реал Мурсия",
+      "away": "Альхесирас",
+      "competition": "Испания. Примера Федерасьон",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.46335578125950405,
+        "draw": 0.29011940894314536,
+        "away": 0.2465248097973505
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Реал Мурсия",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Альхесирас",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "0acc1b8713e202e6cc01228b524ef78fd745fe722824941038439b9f78aa99e2",
+      "kickoff_at": "2026-11-08T19:45:29.999000+00:00",
+      "home": "Фиорентина",
+      "away": "Ювентус",
+      "competition": "Италия. Серия A",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.3549923744835971,
+        "draw": 0.23267508143368382,
+        "away": 0.4123325440827192
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T19:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Фиорентина",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Ювентус",
+          "confirmed_matches": 8
+        }
+      ]
+    },
+    {
+      "result_key": "9f9f902b0fce8fa4e4c8467bff383a7898f5e1615c54bdc47964ef54f057cdd4",
+      "kickoff_at": "2026-11-08T19:45:29.999000+00:00",
+      "home": "Ланс",
+      "away": "Марсель",
+      "competition": "Франция. Лига 1",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2837655944376545,
+        "draw": 0.23134579374663627,
+        "away": 0.4848886118157094
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T19:45:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Ланс",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Марсель",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "036e5be542d4f5d36cd77d3300c6f69a6d53974abc203c755ae861a5e6e9dab3",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Портмор Юнайтед",
+      "away": "Тру-Джус",
+      "competition": "Ямайка. Премьер Лига",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2550957519361696,
+        "draw": 0.24867276425842091,
+        "away": 0.4962314838054094
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Портмор Юнайтед",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Тру-Джус",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "46799e05cfea9091c2572a5cdca8aef33d7d469cc0b8164c55571f947298ad0d",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Марсилио Диас",
+      "away": "Фигейренсе",
+      "competition": "Бразилия. Кубок Санта Катарина",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5276043982564238,
+        "draw": 0.21662108827197185,
+        "away": 0.2557745134716045
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Марсилио Диас",
+          "confirmed_matches": 2
+        },
+        {
+          "side": "away",
+          "name": "Фигейренсе",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "8baaf3eb857f9d22659c7fec4043a9e728d42384bfcbe5143b96b386da456114",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Атлетико М",
+      "away": "Барселона",
+      "competition": "Испания. Ла Лига",
+      "actual_score": "1:2",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.40622633767171745,
+        "draw": 0.24099156781675668,
+        "away": 0.352782094511526
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Атлетико М",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Барселона",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "b3418ebf0c47db185c58eba5eaff093b4bb5196da4b5de617803a1cbfc128007",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Пасуш де Феррейра",
+      "away": "Трофенсе",
+      "competition": "Португалия. 3-я Лига",
+      "actual_score": "4:3",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5394929623336275,
+        "draw": 0.2386066745964518,
+        "away": 0.22190036306992078
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Пасуш де Феррейра",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Трофенсе",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "c9ca3aa4d1f161517d119b54184392b89fab252887044ba489d25ca49ec3d9ce",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Монтего Бэй Юнайтед",
+      "away": "Молинес",
+      "competition": "Ямайка. Премьер Лига",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.57519101804048,
+        "draw": 0.21386692582352526,
+        "away": 0.2109420561359947
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Монтего Бэй Юнайтед",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Молинес",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "c9f16369d5ae1bbfd6b068e12ff916f01c981dd78fcb5873cd60488f2b2de1af",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Раджа Касабланка",
+      "away": "Иттихад Танжер",
+      "competition": "Марокко. Лига Ботола",
+      "actual_score": "2:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.3860219368027772,
+        "draw": 0.29644601256263076,
+        "away": 0.317532050634592
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Раджа Касабланка",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Иттихад Танжер",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "db28af1d636c4aed3304accfc23ad555481bd71e9eae500f1c8a0e09d6201d8c",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Вашингтон Спирит (ж)",
+      "away": "Портленд Торнс (ж)",
+      "competition": "США. NWSL, Женщины",
+      "actual_score": "4:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.3279512018064898,
+        "draw": 0.2875505134757249,
+        "away": 0.3844982847177852
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Вашингтон Спирит (ж)",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Портленд Торнс (ж)",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "e13b812b5954378e2479f548f1db7be36acec2128f7fe5b06159ccd9e868e005",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Серро Портеньо",
+      "away": "Реколета",
+      "competition": "Парагвай. Примера Дивизион",
+      "actual_score": "1:1",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.3459600508969844,
+        "draw": 0.2630642759488645,
+        "away": 0.390975673154151
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Серро Портеньо",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Реколета",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "efc417882552e0af30ba410b0e72e1bf1a3e784f28084429c98fcfec78255879",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Хувентуд Антониана",
+      "away": "Чиполлетти",
+      "competition": "Аргентина. Торнео Федераль А",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.5626239691489936,
+        "draw": 0.2869901397119924,
+        "away": 0.15038589113901407
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Хувентуд Антониана",
+          "confirmed_matches": 3
+        },
+        {
+          "side": "away",
+          "name": "Чиполлетти",
+          "confirmed_matches": 3
+        }
+      ]
+    },
+    {
+      "result_key": "fcb2ea4ce54dcf94748e7250a5733be7a4ed89e0ebd5d77cb69a424ec259d234",
+      "kickoff_at": "2026-11-08T20:00:29.999000+00:00",
+      "home": "Маунт Плезант",
+      "away": "Тиволи Гарденс",
+      "competition": "Ямайка. Премьер Лига",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.512299773958931,
+        "draw": 0.23029001695370271,
+        "away": 0.2574102090873664
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Маунт Плезант",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Тиволи Гарденс",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "45a8a69e14d212fe1fb986429e857fe504b5373fcb4e104fb77a6e83fa63f5f0",
+      "kickoff_at": "2026-11-08T20:30:29.999000+00:00",
+      "home": "Спорт Бойс",
+      "away": "УТК де Кахамарка",
+      "competition": "Перу. Пример Дивизион",
+      "actual_score": "0:0",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.53874189159532,
+        "draw": 0.21897279073052875,
+        "away": 0.24228531767415126
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T20:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Спорт Бойс",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "УТК де Кахамарка",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "4b7b491ec4b063dfbd3964ab28f356b6074bb2f431f3e2dd55c46e497117fc21",
+      "kickoff_at": "2026-11-08T20:30:29.999000+00:00",
+      "home": "Депортес Юнион Ла Калера",
+      "away": "Уачипато",
+      "competition": "Чили. Примера",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5630426354603065,
+        "draw": 0.25107571707388765,
+        "away": 0.18588164746580615
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Депортес Юнион Ла Калера",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Уачипато",
+          "confirmed_matches": 2
+        }
+      ]
+    },
+    {
+      "result_key": "619ba8fcfd8e69a5d1d0698fbfa2822501321982945bcd8acab4df6ba70373be",
+      "kickoff_at": "2026-11-08T20:30:29.999000+00:00",
+      "home": "Эштрела",
+      "away": "Бенфика",
+      "competition": "Португалия. Премьер Лига",
+      "actual_score": "2:3",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.15595964041037907,
+        "draw": 0.21743608676675044,
+        "away": 0.6266042728228705
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Эштрела",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Бенфика",
+          "confirmed_matches": 7
+        }
+      ]
+    },
+    {
+      "result_key": "7dd7f684d6a659adac40eab152570a4f7a5eadaf17906d7ec62053662258a439",
+      "kickoff_at": "2026-11-08T20:30:29.999000+00:00",
+      "home": "Риу Аве",
+      "away": "Брага",
+      "competition": "Португалия. Премьер Лига",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.2919695861104678,
+        "draw": 0.25645905597585833,
+        "away": 0.45157135791367375
+      },
+      "favorite": "away",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T20:30:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Риу Аве",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Брага",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "167bbfd07e3fca3094cf53ae2ee3f2d5bfdd204f571ea03860e5f204c77ddcad",
+      "kickoff_at": "2026-11-08T21:00:29.999000+00:00",
+      "home": "Португеза",
+      "away": "Метрополитанос",
+      "competition": "Венесуэла. Примера Дивизион",
+      "actual_score": "2:2",
+      "actual_outcome": "draw",
+      "probabilities": {
+        "home": 0.21531023264390678,
+        "draw": 0.26289772120578353,
+        "away": 0.5217920461503096
+      },
+      "favorite": "away",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T21:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Португеза",
+          "confirmed_matches": 7
+        },
+        {
+          "side": "away",
+          "name": "Метрополитанос",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "300bee786e15be0ddff4018af6bc053ea1fb5a3b905aba16ecf7300766cb24c2",
+      "kickoff_at": "2026-11-08T21:00:29.999000+00:00",
+      "home": "Сармьенто де ла Банда",
+      "away": "Альварадо",
+      "competition": "Аргентина. Торнео Федераль А",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.613924706244608,
+        "draw": 0.24497030195291397,
+        "away": 0.14110499180247818
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T21:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Сармьенто де ла Банда",
+          "confirmed_matches": 4
+        },
+        {
+          "side": "away",
+          "name": "Альварадо",
+          "confirmed_matches": 4
+        }
+      ]
+    },
+    {
+      "result_key": "63896529367d198a105ec74694ddcf4f499adfa0f18fdb491ffcbe5121654eb7",
+      "kickoff_at": "2026-11-08T21:00:29.999000+00:00",
+      "home": "Миктлан",
+      "away": "Сайакше",
+      "competition": "Гватемала. Примера Дивизион",
+      "actual_score": "2:1",
+      "actual_outcome": "home",
+      "probabilities": null,
+      "favorite": null,
+      "favorite_hit": null,
+      "forecast_at": "2026-11-08T21:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": []
+    },
+    {
+      "result_key": "a5fb654522af008171e0cc6991609dfbda1b0eb02389bbdab011d148d3e55cc3",
+      "kickoff_at": "2026-11-08T21:00:29.999000+00:00",
+      "home": "Платенсе",
+      "away": "Депортиво Генесис",
+      "competition": "Гондурас. Национальная Лига",
+      "actual_score": "2:4",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.4560188713912899,
+        "draw": 0.21993964790416815,
+        "away": 0.32404148070454175
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T21:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Платенсе",
+          "confirmed_matches": 8
+        },
+        {
+          "side": "away",
+          "name": "Депортиво Генесис",
+          "confirmed_matches": 5
+        }
+      ]
+    },
+    {
+      "result_key": "e4e38bd009c6d6639606a0aceff9a59a8cc3d3d84b109ded744ff026871706f4",
+      "kickoff_at": "2026-11-08T21:00:29.999000+00:00",
+      "home": "Кобан Империал",
+      "away": "Шелаху",
+      "competition": "Гватемала. Национальная Лига",
+      "actual_score": "0:1",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.5510536643836044,
+        "draw": 0.23759515661545572,
+        "away": 0.21135117900093983
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T21:00:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Кобан Империал",
+          "confirmed_matches": 6
+        },
+        {
+          "side": "away",
+          "name": "Шелаху",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "7cc0499e78ec47f9ab0a49546fe67995f3467a43bdcca94baaafb9e924079f51",
+      "kickoff_at": "2026-11-08T21:05:29.999000+00:00",
+      "home": "Ягуарес де Кордоба",
+      "away": "Атлетико Букараманга",
+      "competition": "Колумбия. Примера А",
+      "actual_score": "0:4",
+      "actual_outcome": "away",
+      "probabilities": {
+        "home": 0.40759346120867324,
+        "draw": 0.28563619284036273,
+        "away": 0.30677034595096403
+      },
+      "favorite": "home",
+      "favorite_hit": false,
+      "forecast_at": "2026-11-08T21:05:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Ягуарес де Кордоба",
+          "confirmed_matches": 5
+        },
+        {
+          "side": "away",
+          "name": "Атлетико Букараманга",
+          "confirmed_matches": 6
+        }
+      ]
+    },
+    {
+      "result_key": "9796dce887655aae054fd04d9bceaa4dbfaf3e9858a324482237ba2398f5cac4",
+      "kickoff_at": "2026-11-08T21:15:29.999000+00:00",
+      "home": "Боливар",
+      "away": "Стронгест",
+      "competition": "Боливия. Профессиональный Дивизион",
+      "actual_score": "1:0",
+      "actual_outcome": "home",
+      "probabilities": {
+        "home": 0.5243439258556988,
+        "draw": 0.24382319883922354,
+        "away": 0.23183287530507757
+      },
+      "favorite": "home",
+      "favorite_hit": true,
+      "forecast_at": "2026-11-08T21:15:29.999000+00:00",
+      "model_version": "independent-football-v19",
+      "market_results": [],
+      "statistics_snapshot": false,
+      "popular_markets_observed": false,
+      "sample": [
+        {
+          "side": "home",
+          "name": "Боливар",
+          "confirmed_matches": 10
+        },
+        {
+          "side": "away",
+          "name": "Стронгест",
+          "confirmed_matches": 5
+        }
+      ]
+    }
+  ],
+  "available_football_results": 13958,
+  "excluded_results": {
+    "unsupported_or_ambiguous_score": 225
+  },
+  "excluded_forecasts": {
+    "insufficient_prior_history": 6
+  },
+  "calibration_verified": false,
+  "profitability_verified": false,
+  "selection": "latest valid completed results, fixed before model eligibility; unscored fixtures are not replaced",
+  "limitations": [
+    "100 матчей — первичная проверка, а не подтверждение точности процентов; для калибровки нужна значительно большая независимая выборка.",
+    "Выборки разных рынков одного матча связаны; доходность без исторических цен не проверяется.",
+    "Ретроспективная реконструкция, а не сохранённый предматчевый прогноз: доступность и версии источника на тот момент не доказаны.",
+    "Использованы только более ранние результаты с отступом 24 часа. Нынешние сезонные средние, таблица, форма и статистика целевого матча исключены.",
+    "Полных предматчевых снимков статистики и популярных рынков нет: проверяется только 1X2, восемь рынков не придумываются."
+  ],
+  "source": {
+    "kind": "retained_public_winline_archive",
+    "captured_at": "2026-11-08T23:42:14.937998+00:00",
+    "sha256": "c5c9747928ed667a728c779d4c65f84487bea1466f5b209879567a2d7bb6738a",
+    "raw_football_results": 14183,
+    "production_database": false,
+    "prematch_statistics_snapshots_available": false,
+    "qwen_called": false
+  },
+  "descriptive_analysis": {
+    "cohort_kickoff_from": "2026-11-08T16:45:29.999000+00:00",
+    "cohort_kickoff_to": "2026-11-08T21:15:29.999000+00:00",
+    "competitions_evaluated": 67,
+    "actual_outcomes": {
+      "away": 32,
+      "home": 39,
+      "draw": 23
+    },
+    "predicted_favorites": {
+      "away": 33,
+      "home": 60,
+      "draw": 1
+    },
+    "favorite_probability_groups": [
+      {
+        "lower": 0,
+        "upper": 0.4,
+        "matches": 13,
+        "mean_probability": 0.3884010595559169,
+        "hits": 7,
+        "hit_rate": 0.5384615384615384
+      },
+      {
+        "lower": 0.4,
+        "upper": 0.5,
+        "matches": 43,
+        "mean_probability": 0.4470458512593452,
+        "hits": 19,
+        "hit_rate": 0.4418604651162791
+      },
+      {
+        "lower": 0.5,
+        "upper": 0.6,
+        "matches": 28,
+        "mean_probability": 0.5452585574005891,
+        "hits": 12,
+        "hit_rate": 0.42857142857142855
+      },
+      {
+        "lower": 0.6,
+        "upper": 0.7,
+        "matches": 8,
+        "mean_probability": 0.6261766858426188,
+        "hits": 6,
+        "hit_rate": 0.75
+      },
+      {
+        "lower": 0.7,
+        "upper": 1,
+        "matches": 2,
+        "mean_probability": 0.7696965272852275,
+        "hits": 1,
+        "hit_rate": 0.5
+      }
+    ],
+    "mean_prior_matches_per_team": 4.287234042553192,
+    "fixtures_with_either_team_below_five_prior_matches": 70,
+    "pilot_is_subset": true,
+    "model_changed_since_pilot": false
+  }
+}

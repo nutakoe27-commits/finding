@@ -39,7 +39,8 @@ def results(db):
             if at>=datetime.now(timezone.utc):rejected['future']+=1;continue
             identity=(at,norm(h),norm(a),norm(competition))
             record={'key':row['result_key'],'home':h,'away':a,'competition':competition,'at':at,
-                    'goals':parsed['full'],'half':parsed['half'],'observed_at':row.get('observed_at',row.get('first_seen'))}
+                    'goals':parsed['full'],'half':parsed['half'],'observed_at':row.get('observed_at',row.get('first_seen')),
+                    'statistics_id':str(value['idRadar']) if value.get('idRadar') else None}
             if identity in identities and (identities[identity] is None or identities[identity]['goals']!=record['goals']):
                 identities[identity]=None;rejected['conflicting_results']+=1
             elif identity not in identities:identities[identity]=record
@@ -156,9 +157,13 @@ def metrics(cases):
 
 
 def run(db,mode='saved',limit=10):
-    if mode not in ('saved','historical-results') or type(limit) is not int or not 1<=limit<=100:raise ValueError('Режим saved/historical-results; размер выборки от 1 до 100.')
+    if mode not in ('saved','historical-results','recorded-statistics') or type(limit) is not int or not 1<=limit<=100:raise ValueError('Режим saved/historical-results/recorded-statistics; размер выборки от 1 до 100.')
     rows,invalid=results(db)
-    cases,rejected,pending=(saved_cases(db,rows,limit) if mode=='saved' else historical_cases(rows,limit))
+    inventory={}
+    if mode=='recorded-statistics':
+        from .snapshot_evaluation import recorded_cases
+        cases,rejected,pending,inventory=recorded_cases(db,rows,limit)
+    else:cases,rejected,pending=(saved_cases(db,rows,limit) if mode=='saved' else historical_cases(rows,limit))
     summary=metrics(cases);output=[]
     for case in cases:
         target=case['result'];p=case['probabilities'];h,a=target['goals'];truth='home' if h>a else 'away' if a>h else 'draw'
@@ -170,12 +175,18 @@ def run(db,mode='saved',limit=10):
             'state':'small_sample' if summary else 'no_evaluable_forecasts','requested':limit,'selected':len(cases),
             'evaluated':summary['evaluated'] if summary else 0,'pending':pending,'metrics':summary,'matches':output,
             'available_football_results':len(rows),'excluded_results':invalid,'excluded_forecasts':rejected,
+            'snapshot_inventory':inventory,
             'calibration_verified':False,'profitability_verified':False,
-            'selection':'latest completed eligible saved fixtures of current model version; first forecast per fixture' if mode=='saved' else 'latest valid completed results, fixed before model eligibility; unscored fixtures are not replaced',
+            'selection':{'saved':'latest completed eligible saved fixtures of current model version; first forecast per fixture',
+                'historical-results':'latest valid completed results, fixed before model eligibility; unscored fixtures are not replaced',
+                'recorded-statistics':'latest completed fixtures with recorded prematch statistics; earliest retained valid snapshot per fixture; selected before model eligibility'}[mode],
             'limitations':[
-                '10 матчей — первичная проверка, а не подтверждение точности процентов; для калибровки нужна значительно большая независимая выборка.',
+                f'{limit} матчей — первичная проверка, а не подтверждение точности процентов; для калибровки нужна значительно большая независимая выборка.',
                 'Выборки разных рынков одного матча связаны; доходность без исторических цен не проверяется.',
                 *(['Проверены только сохранённые до начала вероятности и статистика; новые страницы завершённых матчей не скачиваются.'] if mode=='saved' else [
+                    'Текущая модель пересчитана на записанной до начала статистике; это воспроизведение исторического входа, а не фактически выданный тогда прогноз.',
+                    'Архивная история берётся только из записей с временем наблюдения и получения не позже снимка; более поздние версии исключены.',
+                    'Проверяется независимый исход 1X2. Нейросеть не вызывается, качество её объяснений и восемь рынков этим прогоном не проверяются.'] if mode=='recorded-statistics' else [
                     'Ретроспективная реконструкция, а не сохранённый предматчевый прогноз: доступность и версии источника на тот момент не доказаны.',
                     'Использованы только более ранние результаты с отступом 24 часа. Нынешние сезонные средние, таблица, форма и статистика целевого матча исключены.',
                     'Полных предматчевых снимков статистики и популярных рынков нет: проверяется только 1X2, восемь рынков не придумываются.'])]}
@@ -202,7 +213,7 @@ def evaluate_path(path,mode='saved',limit=10):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database',type=Path);parser.add_argument('--limit',type=int,default=10)
-    parser.add_argument('--mode',choices=('saved','historical-results'),default='saved')
+    parser.add_argument('--mode',choices=('saved','historical-results','recorded-statistics'),default='saved')
     parser.add_argument('--output',type=Path,default=Path('data/evaluations/winline-10.json'))
     args=parser.parse_args()
     if args.database is None:
