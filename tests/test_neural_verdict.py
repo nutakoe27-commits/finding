@@ -119,8 +119,8 @@ class VerdictTests(unittest.TestCase):
         accepted=validate_reply(v,p)
         self.assertEqual(accepted['comparison']['home']['fact_ids'],['F1'])
         self.assertEqual(accepted['reason']['fact_ids'],['F1','F2'])
-        for i in range(4,7):p['facts'].append({**p['facts'][0],'id':'F'+str(i)})
-        v['comparison']['home']['fact_ids']=['F1','F4','F5','F6']
+        for i in range(104,107):p['facts'].append({**p['facts'][0],'id':'F'+str(i)})
+        v['comparison']['home']['fact_ids']=['F1','F104','F105','F106']
         self.assertEqual(len(validate_reply(v,p)['comparison']['home']['fact_ids']),4)
         v['comparison']['home']['fact_ids']=['F999']
         with self.assertRaises(VerdictValidationError) as caught:validate_reply(v,p)

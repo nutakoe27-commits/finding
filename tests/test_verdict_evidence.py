@@ -90,13 +90,13 @@ class EvidenceTests(unittest.TestCase):
             'text':'1.42\nЗабитые мячи\n1.08\n1.75\nГолов пропущено\n1.42'},
             {'title':'Статистика сезона','filters':['За матч','Хозяева / Гости'],
              'text':'1\nЗабитые мячи\n0.67\n1.33\nГолов пропущено\n1.5'}]
-        facts={f['side']:f for f in self.packet()['facts'] if f.get('scope')=='venue'}
+        facts={f['side']:f for f in self.packet()['facts'] if f.get('scope')=='venue' and f['kind']=='statistics'}
         self.assertEqual(facts['home']['venue_vs_overall'],{'for':'lower','against':'lower'})
         self.assertEqual(facts['away']['venue_vs_overall'],{'for':'lower','against':'higher'})
         self.assertIn('забивает меньше; пропускает меньше',facts['home']['text'])
         self.assertIn('забивает меньше; пропускает больше',facts['away']['text'])
         self.stats['sections'][1]['text']=self.stats['sections'][0]['text']
-        equal=[f for f in self.packet()['facts'] if f.get('scope')=='venue']
+        equal=[f for f in self.packet()['facts'] if f.get('scope')=='venue' and f['kind']=='statistics']
         self.assertTrue(all(f['venue_vs_overall']=={'for':'equal','against':'equal'} for f in equal))
 
     def test_latest_history_summary_never_merges_cup_results_into_league_form(self):

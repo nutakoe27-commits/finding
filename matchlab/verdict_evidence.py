@@ -61,7 +61,7 @@ def collect(repo,event,statistics,as_of,add):
             label='Средние за матч' if mode=='rate' else 'Суммарные показатели сезона'
             where='общее' if venue=='overall' else 'хозяева / гости'
             literal=f"{label} ({where}), {event.get(side)}: забито {rate['for']:g}, пропущено {rate['against']:g}."
-            metadata={}
+            metadata={'measurement':mode,'metrics':dict(rate)}
             overall=(views.get(('rate','overall')) or {}).get(side)
             if mode=='rate' and venue=='venue' and overall:
                 directions={k:'lower' if rate[k]<overall[k] else 'higher' if rate[k]>overall[k] else 'equal' for k in ('for','against')}
@@ -84,19 +84,21 @@ def collect(repo,event,statistics,as_of,add):
             kept=group[:remaining];remaining-=len(kept)
             if len(kept)<len(group):warnings.append('История участников сокращена до последних подтверждённых встреч.')
             if not kept:continue
-            outcomes=[]
+            outcomes=[];matches=[]
             for row in kept:
                 h,a=row['goals'];gf,ga=(h,a) if row['home']==name else (a,h)
                 outcomes.append('win' if gf>ga else 'loss' if gf<ga else 'draw')
+                matches.append({'date':str(row['at'].date()),'score':f'{h}:{a}',
+                    'goals_for':gf,'goals_against':ga,'difference':gf-ga,'outcome':outcomes[-1]})
             words={'win':'победа','loss':'поражение','draw':'ничья'}
             latest='; '.join(f"{r['at'].date()} — {words[o]}" for r,o in zip(kept[:2],outcomes[:2]))
-            lines=[f"{r['at'].date()}: {r['home']} — {r['away']} {r['goals'][0]}:{r['goals'][1]}; исход: {words[o]}" for r,o in zip(kept,outcomes)]
+            lines=[f"{r['at'].date()}: {r['home']} — {r['away']} {m['score']}; исход: {words[m['outcome']]}; разница мячей для этой команды: {m['difference']:+g}" for r,m in zip(kept,matches)]
             scope='same_competition' if same else 'other_competitions'
             label='В текущем турнире' if same else 'Другие турниры или турнир не подтверждён; отдельно от формы в текущей лиге'
             literal=(label+', '+str(event.get(side))+'.\nПорядок дат: сначала новые встречи. '
                 'Все исходы указаны для этой команды и только для показанной истории.\n'
                 'Последние известные исходы: '+latest+'.\n'+'\n'.join(lines))
-            add('history',literal,side=side,scope=scope,history_order='newest_first',outcomes=outcomes)
+            add('history',literal,side=side,scope=scope,history_order='newest_first',outcomes=outcomes,matches=matches)
     names=aliases(event,statistics)
     for section in (statistics or {}).get('sections',[]):
         title=str(section.get('title') or '')
