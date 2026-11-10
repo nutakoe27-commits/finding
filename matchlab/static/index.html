@@ -16,11 +16,13 @@
   <script src="/static/metrika.js?v=20261109-metrika1" defer></script>
   <script src="/static/privacy.js?v=20261109-metrika1" defer></script>
   <script src="/static/account.js?v=20261109-metrika1" defer></script>
-  <script src="/static/app.js?v=20261110-verdict5" defer></script>
+  <link rel="stylesheet" href="/static/featured-events.css?v=20261110-featured1" />
+  <script src="/static/featured-events.js?v=20261110-featured1" defer></script>
+  <script src="/static/app.js?v=20261110-verdict6-2" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261110-results1" />
   <script src="/static/admin-results.js?v=20261110-results1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
-  <script src="/static/admin.js?v=20261110-results1" defer></script>
+  <script src="/static/admin.js?v=20261110-verdict6-2" defer></script>
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -47,6 +49,10 @@
         <div class="guide-heading"><div><span class="guide-kicker">ПЕРВЫЙ РАЗ ЗДЕСЬ?</span><h2 id="guide-title">От матча к понятному разбору</h2></div><button id="guide-close" class="guide-close" type="button" aria-label="Скрыть подсказку">×</button></div>
         <ol class="guide-steps"><li><span>01</span><div><strong>Выберите матч</strong><small>Найдите команду или турнир</small></div></li><li><span>02</span><div><strong>Изучите рынки</strong><small>Или выберите конкретный исход</small></div></li><li><span>03</span><div><strong>Получите разбор</strong><small>ИИ объяснит доступные данные</small></div></li></ol>
       </section>
+      <section id="featured-events" class="featured-events" aria-label="События в центре внимания" aria-roledescription="карусель" hidden>
+        <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>В центре внимания</h2><p class="small muted">Ключевые турниры и ближайшие события из собранной линии.</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события">←</button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события">→</button></div></div>
+        <div id="featured-track" class="featured-track" role="list" tabindex="0" aria-label="Список основных событий"></div>
+      </section>
       <div class="sport-navigation"><div id="sport-tabs" class="sport-tabs" role="group" aria-label="Вид спорта"></div><label class="sr-only" for="sport-filter">Все виды спорта</label><select id="sport-filter"><option value="">Все виды спорта</option><option value="football">Футбол</option><option value="hockey">Хоккей</option><option value="tennis">Теннис</option><option value="basketball">Баскетбол</option></select></div>
       <div id="catalog-stats" class="catalog-stats" aria-label="Состояние линии"><div><strong id="count-upcoming">—</strong><span>Предстоящих</span></div><div><strong id="count-live">—</strong><span>Live в данных</span></div><div><strong id="count-fresh">—</strong><span>Обновлены недавно</span></div><p id="catalog-updated">Ожидаем данные</p></div>
       <div class="catalog-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск участника или турнира</span><input id="match-search" type="search" placeholder="Участник, команда или турнир" autocomplete="off" maxlength="200" /></label><label class="sr-only" for="competition-filter">Турнир</label><select id="competition-filter" class="competition-filter"><option value="">Все турниры</option></select><label class="sr-only" for="day-filter">День матча</label><select id="day-filter"><option value="">Любая дата</option><option value="today">Сегодня</option><option value="tomorrow">Завтра</option></select></div>
@@ -66,6 +72,7 @@
         <div id="event-primary" class="event-primary" hidden></div>
         <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Запросить свежие данные по этому матчу">Обновить</button><button id="event-show-markets" class="text-button" type="button">Все рынки ↓</button><details class="snapshot-info" hidden><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
         <p id="event-refresh-status" class="small muted" role="status" aria-live="polite"></p>
+        <p id="event-ai-support" class="notice" hidden></p>
       </header>
       <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
       <details id="team-statistics" class="panel team-statistics"><summary>Статистика участников <span id="team-statistics-status" class="muted"></span></summary><p id="team-statistics-note" class="small muted"></p><a id="team-statistics-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>Статистика Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a><div id="team-statistics-sections"></div></details>

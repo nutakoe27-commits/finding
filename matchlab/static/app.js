@@ -482,7 +482,7 @@ function renderNeuralVerdict(target,verdict,generation) {
   heading.append(el('h3','','Вердикт'),el('span','report-badge',isModel?(verdict.data_forced_skip?'Пропуск: недостаточно данных':'Экспериментальное мнение ИИ'):'Решение ограничено данными'));
   lead.append(heading);
   if(Object.prototype.hasOwnProperty.call(verdict,'preference')) {
-    lead.append(el('p','small muted','Предпочтительная команда'),el('p','verdict-preference',verdict.preference_label || 'Недостаточно оснований для выбора команды'));
+    lead.append(el('p','small muted','Претендент'),el('p','verdict-preference',verdict.preference_label || 'Никто'));
     lead.append(el('p','small muted','Предпочтение по победителю отделено от решения о ставке.'),el('h3','','Решение'));
   }
   lead.append(el('p','verdict-choice',bet?`Рассмотреть победу команды «${verdict.selection_label}»`:'Пропустить матч'));
@@ -491,7 +491,7 @@ function renderNeuralVerdict(target,verdict,generation) {
     lead.append(el('p','verdict-stake',`Лимит риска: до ${verdict.stake_percent.toLocaleString('ru-RU',{maximumFractionDigits:4})}% игрового банка на эту ставку`));
     if(Number.isFinite(verdict.odds)) lead.append(el('p','small muted',`Коэффициент в снимке: ${verdict.odds.toLocaleString('ru-RU')}`));
   }
-  if(!isModel) lead.append(el('p','small muted',verdict.engine==='model_error'?'Ответ ИИ не прошёл проверку или не получен. Это защитный пропуск, а не выбор нейросети.':verdict.engine==='timing_guard'?(generation?.reason==='quote_expired'?'Наблюдение коэффициентов устарело во время ожидания.':'Матч начался во время ожидания ответа.'):'Подтверждённого входа для выбора команды недостаточно.'));
+  if(!isModel) lead.append(el('p','small muted',verdict.reason?.text || (verdict.engine==='model_error'?'Не удалось подтвердить вывод ИИ. Оснований для рекомендации нет — пропускаем матч.':verdict.engine==='timing_guard'?(generation?.reason==='quote_expired'?'Наблюдение коэффициентов устарело во время ожидания.':'Матч начался во время ожидания ответа.'):'Подтверждённого входа для выбора команды недостаточно.')));
   if(verdict.data_forced_skip && verdict.limitations?.length) lead.append(el('p','small muted',verdict.limitations.join(' ')));
   const sections=[];
   if(verdict.comparison) {
@@ -703,6 +703,9 @@ function renderCatalogue(result) {
   showError("market-list-error", "");
   state.catalogSource=result.source_kind || null;
   const favoriteView = state.route === "#favorites";
+  FeaturedEvents.update({visible:!favoriteView&&state.marketOffset===0&&!$("match-search").value.trim()&&!$("competition-filter").value&&!$("day-filter").value,
+    sport:state.sport,phase:state.phase,neural:state.analysisMode==='neural-verdict',route:eventRoute,
+    onAI:event=>{window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id,null,true,event.source_kind==='stream'?'stream':'legacy');}});
   if (result.summary) {
     renderSports(result.sports || state.sports);
     $("nav-matches").textContent = result.summary.upcoming;
@@ -753,7 +756,7 @@ function renderCatalogue(result) {
       else quoteBox.append(el("div","odds-placeholder","Коэффициенты — в рынках события"));
       card.append(quoteBox);
       const actions = el("div", "match-actions");
-      const ai = el("button", "match-ai-button", "Разбор ИИ"); ai.type = "button";
+      const ai = el("button", "match-ai-button", state.analysisMode==='neural-verdict'&&event.phase==='live'?"О разборе ИИ":"Разбор ИИ"); ai.type = "button";
       ai.addEventListener("click", () => {window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id, null, true);});
       const markets = el("a", "match-open", event.source_kind === "stream" ? "Матч и рынки →" : `${event.coverage.captured_markets} рынков →`); markets.href = eventRoute(event);
       const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
@@ -790,6 +793,10 @@ function clearAIOutput() {
   showError("ai-request-error", "");
 }
 function syncAIButton() {
+  const d=state.marketDocument,note=$('event-ai-support');
+  const unsupported=state.analysisMode==='neural-verdict' && d && (d.phase!=='prematch'||d.sport!=='football'||(d.kickoff_at&&new Date(d.kickoff_at)<=new Date()));
+  note.hidden=!unsupported;
+  if(unsupported)note.textContent=d.phase==='live'?'Матч уже идёт. Счёт и рынки доступны, но текущий ИИ-режим работает только до начала футбольного матча. Претендент — никто; решение — пропустить.':d.phase==='finished'?'Матч завершён. Решение о ставке больше не применяется.':d.sport!=='football'?'Текущий ИИ-режим поддерживает только предматчевый футбол. Для этого события решение — пропустить.':'Предматчевый статус не подтверждён. Решение — пропустить.';
   $("explain-button").disabled = state.aiBusy || !state.ai || (!state.marketDocument && !state.forecast);
   $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : state.analysisMode==='neural-verdict'?"Получить вердикт ИИ":"Получить разбор ИИ";
   $("ai-wait").hidden = !(state.aiBusy && state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest);
@@ -878,12 +885,12 @@ function renderResearchSources(target, research) {
 function eventRoute(event) { return `#${event.source_kind === "stream" ? "stream" : "match"}/${event.source_event_id}`; }
 function eventAPI(id) { return `${state.streamEvent ? "/api/archive/events/" : "/api/bookmakers/events/"}${id}`; }
 function isEventRoute() { return /^#(?:match|stream)\//.test(state.route); }
-function openSelection(id, side = null, auto = false) {
+function openSelection(id, side = null, auto = false, source = null) {
   if (auto && !Account.user) {
-    Account.ensure(()=>openSelection(id,side,auto)).then(allowed=>{if(allowed)openSelection(id,side,auto)}); return;
+    Account.ensure(()=>openSelection(id,side,auto,source)).then(allowed=>{if(allowed)openSelection(id,side,auto,source)}); return;
   }
   state.pendingSelection = {id, side, auto};
-  const stream=state.marketDocument ? state.marketDocument.source_kind === "stream" : state.catalogSource === "stream";
+  const stream=source ? source==='stream' : state.marketDocument ? state.marketDocument.source_kind === "stream" : state.catalogSource === "stream";
   const target=`#${stream ? "stream" : "match"}/${id}`;
   if (state.route === target) applyPendingSelection(); else location.hash=target;
 }
@@ -1050,7 +1057,8 @@ async function requestAI() {
     const pending=document ? (await api('/api/analysis-jobs/current',{cache:'no-store'})).job : null;
     if(pending && (pending.event_id !== eventId || pending.source !== (state.streamEvent ? "archive" : "bookmakers")))
       throw new Error("Для вашего аккаунта уже готовится другой разбор. Результат появится в истории.");
-    if(document && !pending) {
+    const unsupported=state.analysisMode==='neural-verdict' && document && (document.phase!=='prematch' || document.sport!=='football' || (document.kickoff_at && new Date(document.kickoff_at)<=new Date()));
+    if(document && !pending && !unsupported) {
       const prefix=eventAPI(eventId);
       try {
         // The server also starts watching this event's markets before queueing statistics.

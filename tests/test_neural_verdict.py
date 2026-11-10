@@ -239,7 +239,7 @@ class VerdictTests(unittest.TestCase):
         verdict,g=generate(self.settings,p,lambda opts,messages:json.dumps(reply(p,'skip')))
         self.assertEqual(verdict['preference'],'home');self.assertIsNone(verdict['selection'])
         self.assertEqual(verdict['stake_percent'],0);self.assertEqual(g['state'],'ready')
-        self.assertIn('Предпочтение:',render(verdict));self.assertIn('Пропустить матч',render(verdict))
+        self.assertIn('Претендент:',render(verdict));self.assertIn('Пропустить матч',render(verdict))
         value=reply(p,'skip',preference=None)
         self.assertIsNone(validate_reply(value,p)['preference'])
         value=reply(p,'bet',preference=None)

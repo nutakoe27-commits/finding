@@ -526,24 +526,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def explain_stream_event(event_id:str,request:EventExplainRequest,http_request:Request):
         return explain_event_impl(event_id,request,True,http_request)
 
+    @app.get('/api/bookmakers/featured-events')
+    def featured_events(sport:str='',phase:str='',limit:int=10):
+        if len(sport)>40 or phase not in ('','upcoming','live') or not 1<=limit<=12:
+            raise HTTPException(422,'Некорректные параметры подборки.')
+        from .featured_events import collection
+        return collection(repo,sport=sport,phase=phase,limit=limit)
+
     def event_analysis_inputs(event_id,request,stream):
         from .statistics import analysis_statistics
-        if not settings.qwen_configured:
-            raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if not event_id.isdigit() or len(event_id) > 20:
             raise HTTPException(422, "Некорректный ID события.")
         document = archive.document(repo,event_id) if stream else repo.event_markets(event_id)
         if not document:
             raise HTTPException(404, "Матч ещё не собран.")
+        unsupported=settings.event_analysis_mode=='neural-verdict' and (document.get('phase')!='prematch' or
+            document.get('sport')!='football' or (document.get('kickoff_at') and instant(document['kickoff_at'])<=datetime.now(timezone.utc)))
+        if not settings.qwen_configured and not unsupported:
+            raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if ((stream and request.content_version and request.content_version!=document.get("content_version")) or
             (not stream and request.observed_at and request.observed_at != document["observed_at"])):
             raise HTTPException(409, "Снимок матча обновился. Обновите рынки и повторите запрос.")
         preparation=None
-        if request.statistics_job_id:
+        if request.statistics_job_id and not unsupported:
             preparation=repo.statistics_request(event_id,request.statistics_job_id)
             if not preparation or preparation['state']!='finished':
                 raise HTTPException(409,'Получение статистики ещё не завершено. Повторите разбор.')
-        saved_statistics=stream_statistics(event_id)['statistics'] if stream else repo.statistics(event_id)
+        saved_statistics=None if unsupported else stream_statistics(event_id)['statistics'] if stream else repo.statistics(event_id)
         if not stream and saved_statistics and saved_statistics['statistics_id']!=statistics_id_from_url(document.get('statistics_url') or ''):
             saved_statistics=None
         team_statistics=analysis_statistics(saved_statistics)
