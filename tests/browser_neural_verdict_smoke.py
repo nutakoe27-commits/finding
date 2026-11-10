@@ -60,6 +60,7 @@ async def exercise(base,repo):
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак')
                     assert await page.locator('#explanation .report-facts li').count()==2
                     assert await page.locator('#explanation .verdict-counterargument').is_visible()
+                    await expect(page.locator('#explanation .verdict-counterargument h3')).to_have_text('Что может помешать победе «Спартак»')
                     assert await page.locator('#explanation .verdict-market_context').is_visible()
                     assert await page.locator('#explanation .verdict-reason').is_visible()
                     await expect(page.locator('#explanation .verdict-stake')).to_contain_text('0,25%')
@@ -84,6 +85,10 @@ async def exercise(base,repo):
                         await expect(page.locator('#saved-analysis-text .verdict-choice')).to_have_text('Пропустить матч')
                         assert await page.locator('#saved-analysis-text .verdict-stake').count()==0
                         await expect(page.locator('#saved-analysis-text .verdict-preference')).to_have_text('Спартак')
+                    for side,label in [('away','Зенит'),(None,None)]:
+                        changed=deepcopy(verdict);changed.update(preference=side,preference_label=label)
+                        await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,null,v)',changed)
+                        await expect(page.locator('#saved-analysis-text .verdict-counterargument h3')).to_have_text('Что может помешать победе «Зенит»' if side else 'Что мешает выбрать сторону')
                     unsafe=deepcopy(verdict);unsafe['comparison']['home']['text']='<img src=x onerror=window.verdictInjected=1>'
                     await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,null,v)',unsafe)
                     assert await page.locator('#saved-analysis-text img').count()==0

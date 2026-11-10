@@ -499,7 +499,8 @@ function renderNeuralVerdict(target,verdict,generation) {
     const list=el('ul','report-facts');for(const side of ['home','away']) if(verdict.comparison[side]) list.append(el('li','',verdict.comparison[side].text));section.append(list);sections.push(section);
     for(const [key,label] of [['counterargument','Встречный довод'],['market_context','Линия букмекера'],['reason','Причина решения']]) {
       if(!verdict[key]?.text) continue;
-      const part=el('section',`report-section verdict-${key}`);part.append(el('h3','',label));
+      const heading=key==='counterargument' && Object.prototype.hasOwnProperty.call(verdict,'preference') ? (verdict.preference_label?`Что может помешать победе «${verdict.preference_label}»`:'Что мешает выбрать сторону') : label;
+      const part=el('section',`report-section verdict-${key}`);part.append(el('h3','',heading));
       if(key==='market_context' && verdict.line_odds && ['home','draw','away'].every(s=>Number.isFinite(verdict.line_odds[s])))
         part.append(el('p','small muted',`Коэффициенты в снимке: П1 — ${verdict.line_odds.home.toLocaleString('ru-RU')} · Х — ${verdict.line_odds.draw.toLocaleString('ru-RU')} · П2 — ${verdict.line_odds.away.toLocaleString('ru-RU')}`));
       part.append(el('p','',verdict[key].text));sections.push(part);

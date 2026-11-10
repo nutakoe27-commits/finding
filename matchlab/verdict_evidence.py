@@ -60,7 +60,15 @@ def collect(repo,event,statistics,as_of,add):
         for side,rate in (views.get((mode,venue)) or {}).items():
             label='Средние за матч' if mode=='rate' else 'Суммарные показатели сезона'
             where='общее' if venue=='overall' else 'хозяева / гости'
-            add('statistics',f"{label} ({where}), {event.get(side)}: забито {rate['for']:g}, пропущено {rate['against']:g}.",side=side,scope=venue)
+            literal=f"{label} ({where}), {event.get(side)}: забито {rate['for']:g}, пропущено {rate['against']:g}."
+            metadata={}
+            overall=(views.get(('rate','overall')) or {}).get(side)
+            if mode=='rate' and venue=='venue' and overall:
+                directions={k:'lower' if rate[k]<overall[k] else 'higher' if rate[k]>overall[k] else 'equal' for k in ('for','against')}
+                words={'lower':'меньше','higher':'больше','equal':'столько же'}
+                literal+=f" По сравнению с общим средним этой команды: забивает {words[directions['for']]}; пропускает {words[directions['against']]}. Сравнение относится к разным фильтрам источника."
+                metadata['venue_vs_overall']=directions
+            add('statistics',literal,side=side,scope=venue,**metadata)
     rows=football_sample(repo,event,as_of) if repo is not None and event.get('sport')=='football' else []
     feed=normalize(context,as_of,rows,broad=True);all_rows={}
     for row in rows+feed['rows']:
@@ -76,10 +84,19 @@ def collect(repo,event,statistics,as_of,add):
             kept=group[:remaining];remaining-=len(kept)
             if len(kept)<len(group):warnings.append('История участников сокращена до последних подтверждённых встреч.')
             if not kept:continue
-            lines=[f"{r['at'].date()}: {r['home']} — {r['away']} {r['goals'][0]}:{r['goals'][1]}" for r in kept]
+            outcomes=[]
+            for row in kept:
+                h,a=row['goals'];gf,ga=(h,a) if row['home']==name else (a,h)
+                outcomes.append('win' if gf>ga else 'loss' if gf<ga else 'draw')
+            words={'win':'победа','loss':'поражение','draw':'ничья'}
+            latest='; '.join(f"{r['at'].date()} — {words[o]}" for r,o in zip(kept[:2],outcomes[:2]))
+            lines=[f"{r['at'].date()}: {r['home']} — {r['away']} {r['goals'][0]}:{r['goals'][1]}; исход: {words[o]}" for r,o in zip(kept,outcomes)]
             scope='same_competition' if same else 'other_competitions'
             label='В текущем турнире' if same else 'Другие турниры или турнир не подтверждён; отдельно от формы в текущей лиге'
-            add('history',label+', '+str(event.get(side))+':\n'+'\n'.join(lines),side=side,scope=scope)
+            literal=(label+', '+str(event.get(side))+'.\nПорядок дат: сначала новые встречи. '
+                'Все исходы указаны для этой команды и только для показанной истории.\n'
+                'Последние известные исходы: '+latest+'.\n'+'\n'.join(lines))
+            add('history',literal,side=side,scope=scope,history_order='newest_first',outcomes=outcomes)
     names=aliases(event,statistics)
     for section in (statistics or {}).get('sections',[]):
         title=str(section.get('title') or '')

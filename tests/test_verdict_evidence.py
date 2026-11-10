@@ -7,6 +7,7 @@ from unittest.mock import patch
 from matchlab.neural_verdict import build_packet
 from matchlab.verdict_evidence import aliases,standing_rows
 from matchlab.statistics import analysis_statistics
+from matchlab.bookmakers import make_snapshot
 from verdict_helpers import statistics
 
 
@@ -62,6 +63,60 @@ class EvidenceTests(unittest.TestCase):
         facts=[f for f in packet['facts'] if f['kind']=='history' and f['side']=='home']
         self.assertEqual([f['scope'] for f in facts],['same_competition','other_competitions'])
         self.assertNotIn('чужой клуб',facts[0]['text']);self.assertIn('чужой клуб',facts[1]['text'])
+
+    def test_history_marks_participant_outcomes_and_latest_wins_in_date_order(self):
+        rows=[{'home':'спартак','away':'клуб а','goals':(2,0),'at':self.at-timedelta(days=1),'same_competition':True},
+              {'home':'клуб б','away':'спартак','goals':(1,2),'at':self.at-timedelta(days=2),'same_competition':True},
+              {'home':'спартак','away':'клуб в','goals':(1,3),'at':self.at-timedelta(days=3),'same_competition':True},
+              {'home':'клуб г','away':'спартак','goals':(2,1),'at':self.at-timedelta(days=4),'same_competition':True}]
+        with patch('matchlab.chances.football_sample',return_value=[rows[2],rows[0],rows[3],rows[1]]):packet=self.packet(repo=object())
+        fact=next(f for f in packet['facts'] if f['kind']=='history' and f['side']=='home')
+        self.assertEqual(fact['history_order'],'newest_first')
+        self.assertEqual(fact['outcomes'],['win','win','loss','loss'])
+        self.assertIn('Последние известные исходы: '+str(rows[0]['at'].date())+' — победа; '+str(rows[1]['at'].date())+' — победа.',fact['text'])
+        self.assertLess(fact['text'].index('клуб а'),fact['text'].index('клуб б'))
+        self.assertIn('исход: поражение',fact['text'])
+
+    def test_away_wins_losses_and_draws_are_not_reversed_by_score_orientation(self):
+        rows=[{'home':'соперник','away':'спартак','goals':score,'at':self.at-timedelta(days=i+1),'same_competition':True}
+              for i,score in enumerate(((0,2),(3,1),(1,1)))]
+        with patch('matchlab.chances.football_sample',return_value=rows):packet=self.packet(repo=object())
+        fact=next(f for f in packet['facts'] if f['kind']=='history' and f['side']=='home')
+        self.assertEqual(fact['outcomes'],['win','loss','draw'])
+        self.assertIn('соперник — спартак 0:2; исход: победа',fact['text'])
+
+    def test_attack_and_conceded_comparisons_keep_separate_directions(self):
+        self.stats['sections']=[{'title':'Статистика сезона','filters':['За матч','Общее'],
+            'text':'1.42\nЗабитые мячи\n1.08\n1.75\nГолов пропущено\n1.42'},
+            {'title':'Статистика сезона','filters':['За матч','Хозяева / Гости'],
+             'text':'1\nЗабитые мячи\n0.67\n1.33\nГолов пропущено\n1.5'}]
+        facts={f['side']:f for f in self.packet()['facts'] if f.get('scope')=='venue'}
+        self.assertEqual(facts['home']['venue_vs_overall'],{'for':'lower','against':'lower'})
+        self.assertEqual(facts['away']['venue_vs_overall'],{'for':'lower','against':'higher'})
+        self.assertIn('забивает меньше; пропускает меньше',facts['home']['text'])
+        self.assertIn('забивает меньше; пропускает больше',facts['away']['text'])
+        self.stats['sections'][1]['text']=self.stats['sections'][0]['text']
+        equal=[f for f in self.packet()['facts'] if f.get('scope')=='venue']
+        self.assertTrue(all(f['venue_vs_overall']=={'for':'equal','against':'equal'} for f in equal))
+
+    def test_latest_history_summary_never_merges_cup_results_into_league_form(self):
+        rows=[{'home':'спартак','away':'соперник а','goals':(0,1),'at':self.at-timedelta(days=5),'same_competition':True},
+              {'home':'спартак','away':'соперник б','goals':(4,0),'at':self.at-timedelta(days=1),'same_competition':False}]
+        with patch('matchlab.chances.football_sample',return_value=rows):packet=self.packet(repo=object())
+        facts={f['scope']:f for f in packet['facts'] if f['kind']=='history' and f['side']=='home'}
+        self.assertEqual(facts['same_competition']['outcomes'],['loss'])
+        self.assertEqual(facts['other_competitions']['outcomes'],['win'])
+
+    def test_evidence_budget_preserves_required_market_when_history_fills_the_packet(self):
+        quote=make_snapshot('winline','League','Спартак','Зенит',self.event['kickoff_at'],self.at.isoformat(),
+                            [2.5,3.4,2.8],'https://winline.ru/stavki/sport/futbol/123')
+        def fill(repo,event,statistics,at,add):
+            for i in range(40):add('history',str(i)+' '+('Сведения о прошлых матчах. '*35),side='home' if i%2==0 else 'away')
+            return []
+        with patch('matchlab.verdict_evidence.collect',side_effect=fill):packet=build_packet(None,self.event,self.stats,self.at,quote)
+        self.assertEqual(len([f for f in packet['facts'] if f['kind']=='market']),1)
+        self.assertFalse(packet['policy']['force_skip'])
+        self.assertTrue(any('сокращена' in note for note in packet['limitations']))
 
     def test_cutting_a_long_history_is_recorded_on_the_fact_and_in_limitations(self):
         rows=[{'home':'спартак','away':'соперник'+str(i)+'а'*190,'goals':(1,0),
