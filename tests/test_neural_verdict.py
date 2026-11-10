@@ -83,7 +83,7 @@ class VerdictTests(unittest.TestCase):
 
     def test_repair_receives_the_failed_answer_and_specific_unsupported_numbers(self):
         packet=self.packet();messages_seen=[]
-        bad=reply(packet);bad['arguments'][0]['text']=EXPLANATION+' Забито 9999 голов.'
+        bad=reply(packet);bad['comparison']['home']['text']=EXPLANATION+' Забито 9999 голов.'
         def model(opts,messages):
             messages_seen.append(messages)
             return json.dumps(bad if len(messages_seen)==1 else reply(packet))
@@ -105,11 +105,11 @@ class VerdictTests(unittest.TestCase):
         packet=self.packet()
         for mutation in ('draw','budget','percentage','number','reference'):
             value=reply(packet)
-            if mutation=='draw':value['selection']='draw'
+            if mutation=='draw':value['preference']='draw'
             elif mutation=='budget':value['stake_percent']=20
-            elif mutation=='percentage':value['arguments'][0]['text']=EXPLANATION+' Шанс победы 90%.'
-            elif mutation=='number':value['arguments'][0]['text']=EXPLANATION+' Забито 9999 голов.'
-            else:value['arguments'][0]['fact_ids']=['F999']
+            elif mutation=='percentage':value['comparison']['home']['text']=EXPLANATION+' Шанс победы 90%.'
+            elif mutation=='number':value['comparison']['home']['text']=EXPLANATION+' Забито 9999 голов.'
+            else:value['comparison']['home']['fact_ids']=['F999']
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):validate_reply(value,packet)
 
     def test_budget_is_not_increased_by_model_text_and_thinking_is_disabled_per_call(self):
@@ -119,6 +119,28 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(verdict['stake_percent'],.15);self.assertFalse(seen[0].qwen_enable_thinking)
         value=reply(p);value['stake_level']='high'
         with self.assertRaises(ValueError):validate_reply(value,p)
+
+    def test_preference_survives_a_deliberate_skip_without_becoming_a_stake(self):
+        p=self.packet()
+        verdict,g=generate(self.settings,p,lambda opts,messages:json.dumps(reply(p,'skip')))
+        self.assertEqual(verdict['preference'],'home');self.assertIsNone(verdict['selection'])
+        self.assertEqual(verdict['stake_percent'],0);self.assertEqual(g['state'],'ready')
+        self.assertIn('Предпочтение:',render(verdict));self.assertIn('Пропустить матч',render(verdict))
+        value=reply(p,'skip',preference=None)
+        self.assertIsNone(validate_reply(value,p)['preference'])
+        value=reply(p,'bet',preference=None)
+        with self.assertRaises(ValueError):validate_reply(value,p)
+
+    def test_both_sides_market_and_concrete_reason_are_required(self):
+        p=self.packet()
+        for mutation in ('side','market','missing_counter','reason','one_sided_reason'):
+            v=reply(p,'skip')
+            if mutation=='side':v['comparison']['away']['fact_ids']=v['comparison']['home']['fact_ids']
+            elif mutation=='market':v['market_context']['fact_ids']=v['comparison']['home']['fact_ids']
+            elif mutation=='missing_counter':v.pop('counterargument')
+            elif mutation=='reason':v['reason']['code']='supporting_evidence'
+            else:v['reason']['fact_ids']=v['comparison']['home']['fact_ids']
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):validate_reply(v,p)
 
     def test_fixture_start_cancels_live_recommendation_but_not_blind_historical_replay(self):
         p=self.packet();p['event']['kickoff_at']=(NOW-timedelta(days=1)).isoformat()
@@ -214,6 +236,16 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(plan['selected'],4);self.assertEqual(plan['inputs_with_fresh_prices'],4)
         self.assertEqual(plan['inputs_requiring_skip'],0)
 
+    def test_reviewed_fixtures_are_excluded_before_a_new_holdout_sample(self):
+        self.historical()
+        with self.repo.connection() as db:
+            old=prepare(db,self.settings,4,seed=42)
+            path=self.path/'reviewed-v2.json';path.write_text(json.dumps(old))
+            new=prepare(db,self.settings,10,seed=42,exclude_reports=[path])
+        self.assertEqual(new['selected'],8)
+        self.assertTrue({c['result_key'] for c in old['cases']}.isdisjoint(c['result_key'] for c in new['cases']))
+        self.assertEqual(new['source_inventory']['excluded_joint_inputs']['previously_reviewed_fixture'],4)
+
     def test_later_prematch_prices_join_stats_without_rewinding_the_capture(self):
         packet=self.packet();e=packet['event'];stats_at=NOW-timedelta(minutes=30)
         stats={'observed_at':stats_at.isoformat()}
@@ -302,6 +334,25 @@ class VerdictTests(unittest.TestCase):
         m=result['metrics']
         self.assertEqual((m['bets'],m['won'],m['lost']),(3,1,2))
         self.assertEqual(m['paper_total_staked'],.75);self.assertEqual(m['paper_final_bank'],99.75)
+
+    def test_preference_accuracy_is_separate_from_bets_and_draw_is_a_miss(self):
+        self.historical()
+        with self.repo.connection() as db:
+            plan=prepare(db,self.settings,3,seed=42)
+            for c,score in zip(plan['cases'],('2:0','0:2','1:1')):
+                row=db.execute('SELECT payload FROM archive_latest_results WHERE result_key=?',(c['result_key'],)).fetchone()
+                target=json.loads(row['payload']);target['score']=score
+                db.execute('UPDATE archive_latest_results SET payload=? WHERE result_key=?',(json.dumps(target),c['result_key']))
+            model=lambda opts,messages:json.dumps(reply(json.loads(messages[1]['content']),'skip'))
+            result=run_trial(db,self.settings,plan,self.path/'preferences.json',model)
+        m=result['metrics']
+        self.assertEqual((m['preference_evaluated'],m['preference_hits'],m['preference_without_bet']),(3,1,3))
+        self.assertAlmostEqual(m['preference_accuracy'],1/3)
+        self.assertEqual(m['bets'],0);self.assertIsNone(m['hit_rate_on_bets']);self.assertEqual(m['paper_final_bank'],100)
+        result['cases'][0]['verdict']['engine']='timing_guard';result['cases'][0]['generation']['reason']='quote_expired'
+        self.assertEqual(metrics(result)['preference_evaluated'],3)
+        result['cases'][1]['verdict']['engine']='timing_guard';result['cases'][1]['generation']['reason']='fixture_started'
+        self.assertEqual(metrics(result)['preference_evaluated'],2)
 
 
 if __name__=='__main__':unittest.main()

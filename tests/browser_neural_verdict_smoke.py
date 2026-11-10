@@ -57,11 +57,18 @@ async def exercise(base,repo):
                     await page.locator('#explain-button').click()
                     await expect(page.locator('#explanation')).to_be_visible(timeout=30000)
                     await expect(page.locator('#explanation .verdict-choice')).to_have_text('Рассмотреть победу команды «Спартак»')
+                    await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак')
+                    assert await page.locator('#explanation .report-facts li').count()==2
+                    assert await page.locator('#explanation .verdict-counterargument').is_visible()
+                    assert await page.locator('#explanation .verdict-market_context').is_visible()
+                    assert await page.locator('#explanation .verdict-reason').is_visible()
                     await expect(page.locator('#explanation .verdict-stake')).to_contain_text('0,25%')
                     assert await page.locator('#explanation .report-chance,#explanation .report-distribution').count()==0
                     assert '%' not in await page.locator('#explanation .report-facts').inner_text()
                     assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width)
-                    await page.locator('#explanation').screenshot(path=f'/tmp/neural-verdict-{theme}-{width}.png')
+                    assert await page.locator('#explanation .verdict-preference').evaluate('n=>parseFloat(getComputedStyle(n).fontSize)')>=20
+                    if width<1100:assert await page.locator('#explanation .verdict-preference').evaluate('n=>n.getBoundingClientRect().top')>=100
+                    await page.screenshot(path=f'/tmp/neural-verdict-{theme}-{width}.png')
                     analysis=await page.evaluate('state.aiAnalysis')
                     assert analysis['analysis_type']=='neural_verdict'
                     assert analysis['context']['neural_input']['quote']['odds']['home']==2.5
@@ -76,10 +83,18 @@ async def exercise(base,repo):
                         await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,{reason:"quote_expired"},v)',verdict)
                         await expect(page.locator('#saved-analysis-text .verdict-choice')).to_have_text('Пропустить матч')
                         assert await page.locator('#saved-analysis-text .verdict-stake').count()==0
-                    unsafe=deepcopy(verdict);unsafe['arguments'][0]['text']='<img src=x onerror=window.verdictInjected=1>'
+                        await expect(page.locator('#saved-analysis-text .verdict-preference')).to_have_text('Спартак')
+                    unsafe=deepcopy(verdict);unsafe['comparison']['home']['text']='<img src=x onerror=window.verdictInjected=1>'
                     await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,null,v)',unsafe)
                     assert await page.locator('#saved-analysis-text img').count()==0
                     assert not await page.evaluate('Boolean(window.verdictInjected)')
+                    legacy=deepcopy(analysis['context']['neural_verdict'])
+                    for key in ('preference','preference_label','comparison','counterargument','market_context','reason','line_odds'):legacy.pop(key,None)
+                    legacy['version']='neural-verdict-v2';legacy['arguments']=legacy['arguments'][:2]
+                    await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,null,v)',legacy)
+                    await expect(page.locator('#saved-analysis-text .verdict-choice')).to_contain_text('Спартак')
+                    assert await page.locator('#saved-analysis-text .verdict-preference').count()==0
+                    assert await page.locator('#saved-analysis-text .report-facts li').count()==2
                     assert not errors,errors
                     await context.close()
             finally:await browser.close()

@@ -480,7 +480,12 @@ function renderNeuralVerdict(target,verdict,generation) {
   const lead=el('section','report-section report-lead'),heading=el('div','report-heading');
   const isModel=verdict.engine==='qwen',bet=verdict.decision==='bet' && Number.isFinite(verdict.stake_percent) && verdict.stake_percent>0 && verdict.stake_percent<=.5;
   heading.append(el('h3','','Вердикт'),el('span','report-badge',isModel?(verdict.data_forced_skip?'Пропуск: недостаточно данных':'Экспериментальное мнение ИИ'):'Решение ограничено данными'));
-  lead.append(heading,el('p','verdict-choice',bet?`Рассмотреть победу команды «${verdict.selection_label}»`:'Пропустить матч'));
+  lead.append(heading);
+  if(Object.prototype.hasOwnProperty.call(verdict,'preference')) {
+    lead.append(el('p','small muted','Предпочтительная команда'),el('p','verdict-preference',verdict.preference_label || 'Недостаточно оснований для выбора команды'));
+    lead.append(el('p','small muted','Предпочтение по победителю отделено от решения о ставке.'),el('h3','','Решение'));
+  }
+  lead.append(el('p','verdict-choice',bet?`Рассмотреть победу команды «${verdict.selection_label}»`:'Пропустить матч'));
   if(bet) {
     lead.append(el('p','report-scope','Победа команды в основное время'));
     lead.append(el('p','verdict-stake',`Лимит риска: до ${verdict.stake_percent.toLocaleString('ru-RU',{maximumFractionDigits:4})}% игрового банка на эту ставку`));
@@ -488,9 +493,25 @@ function renderNeuralVerdict(target,verdict,generation) {
   }
   if(!isModel) lead.append(el('p','small muted',verdict.engine==='model_error'?'Ответ ИИ не прошёл проверку или не получен. Это защитный пропуск, а не выбор нейросети.':verdict.engine==='timing_guard'?(generation?.reason==='quote_expired'?'Наблюдение коэффициентов устарело во время ожидания.':'Матч начался во время ожидания ответа.'):'Подтверждённого входа для выбора команды недостаточно.'));
   if(verdict.data_forced_skip && verdict.limitations?.length) lead.append(el('p','small muted',verdict.limitations.join(' ')));
-  const section=el('section','report-section');section.append(el('h3','','Аргументы'));
-  const list=el('ul','report-facts');for(const item of verdict.arguments || []) list.append(el('li','',item.text));section.append(list);
-  target.replaceChildren(lead,section,el('p','verdict-risk-note',verdict.risk_note || 'Проигрыш возможен при любом вердикте.'));
+  const sections=[];
+  if(verdict.comparison) {
+    const section=el('section','report-section');section.append(el('h3','','Сравнение команд'));
+    const list=el('ul','report-facts');for(const side of ['home','away']) if(verdict.comparison[side]) list.append(el('li','',verdict.comparison[side].text));section.append(list);sections.push(section);
+    for(const [key,label] of [['counterargument','Встречный довод'],['market_context','Линия букмекера'],['reason','Причина решения']]) {
+      if(!verdict[key]?.text) continue;
+      const part=el('section',`report-section verdict-${key}`);part.append(el('h3','',label));
+      if(key==='market_context' && verdict.line_odds && ['home','draw','away'].every(s=>Number.isFinite(verdict.line_odds[s])))
+        part.append(el('p','small muted',`Коэффициенты в снимке: П1 — ${verdict.line_odds.home.toLocaleString('ru-RU')} · Х — ${verdict.line_odds.draw.toLocaleString('ru-RU')} · П2 — ${verdict.line_odds.away.toLocaleString('ru-RU')}`));
+      part.append(el('p','',verdict[key].text));sections.push(part);
+    }
+  } else {
+    const section=el('section','report-section');section.append(el('h3','','Аргументы'));
+    const list=el('ul','report-facts');for(const item of verdict.arguments || []) list.append(el('li','',item.text));section.append(list);sections.push(section);
+  }
+  if(!verdict.data_forced_skip && verdict.limitations?.length) {
+    const details=el('details','report-limitations');details.append(el('summary','','Ограничения данных'),el('p','',verdict.limitations.join(' ')));sections.push(details);
+  }
+  target.replaceChildren(lead,...sections,el('p','verdict-risk-note',verdict.risk_note || 'Проигрыш возможен при любом вердикте.'));
 }
 function renderAnalysis(target, text, assessment=null,generation=null,verdict=null) {
   target.classList.remove('verdict-report');
@@ -1086,6 +1107,8 @@ async function requestAI() {
     else if (request === state.explainRequest) showError("ai-request-error", error.message);
   } finally {
     state.aiBusy = false; stopAIWait(); $("explanation").setAttribute("aria-busy", "false"); syncAIButton();
+    if(request===state.explainRequest && !$("explanation").hidden && $("explanation").classList.contains('verdict-report') && matchMedia('(max-width:1100px)').matches)
+      $("explanation").scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
   }
 }
 async function calculateEvent() {

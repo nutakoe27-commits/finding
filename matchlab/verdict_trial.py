@@ -48,15 +48,21 @@ def paired_observation(event,statistics,available_at,quotes):
     return None,None,reason
 
 
-def prepare(db,settings,limit=10,seed=None):
+def prepare(db,settings,limit=10,seed=None,exclude_reports=()):
     from .model_comparison import historical_quotes
     from .snapshot_evaluation import ReadOnlyInputs
     if not 1<=limit<=100:raise ValueError('Размер теста должен быть от 1 до 100.')
     seed=secrets.randbits(32) if seed is None else seed
     candidates,inventory=input_candidates(db)
+    excluded_keys=set()
+    for path in exclude_reports:
+        old=json.loads(Path(path).read_text())
+        if old.get('format')!='matchlab.neural-verdict-test.v1' or not isinstance(old.get('cases'),list):raise ValueError('Неподдерживаемый отчёт исключения.')
+        excluded_keys.update(str(c['result_key']) for c in old['cases'] if c.get('result_key') is not None)
     quotes=historical_quotes(db);eligible=[];excluded=Counter()
     for candidate in candidates:
         target=candidate['result'];stats=deepcopy(candidate['statistics'])
+        if str(target['key']) in excluded_keys:excluded['previously_reviewed_fixture']+=1;continue
         event={k:target[k] for k in ('home','away','competition')}
         event.update(source_event_id=candidate['event_id'],sport='football',sport_label='Футбол',phase='prematch',kickoff_at=target['at'].isoformat())
         at,market,reason=paired_observation(event,stats,candidate['as_of'],quotes)
@@ -72,6 +78,7 @@ def prepare(db,settings,limit=10,seed=None):
         'selection_policy':'random-with-joint-prematch-input-v2',
         'created_at':datetime.now(timezone.utc).isoformat(),'state':'prepared' if cases else 'no_eligible_inputs','seed':seed,'requested':limit,
         'selected':len(cases),'model':settings.qwen_model,'max_stake_pct':settings.verdict_max_stake_pct,
+        'excluded_reviewed_fixtures':len(excluded_keys),
         'inputs_with_fresh_prices':sum(bool(c['input']['options']) for c in cases),
         'inputs_requiring_skip':sum(c['input']['policy']['force_skip'] for c in cases),
         'source_inventory':inventory,'cases':cases,'real_money_used':False,
@@ -93,6 +100,10 @@ def metrics(report):
     bets=[c for c in done if c['verdict']['decision']=='bet']
     settled=[c for c in bets if c.get('settlement') in ('win','loss')]
     stake=sum(c.get('paper_stake',0) for c in settled);profit=sum(c.get('paper_profit',0) for c in settled)
+    preferences=[c for c in done if c['verdict'].get('preference') in ('home','away') and
+                 (c['verdict']['engine']=='qwen' or (c['verdict']['engine']=='timing_guard' and c['generation'].get('reason')=='quote_expired'))
+                 and c.get('actual_outcome') in ('home','away','draw')]
+    preference_hits=sum(c['verdict']['preference']==c['actual_outcome'] for c in preferences)
     return {'selected':report['selected'],'completed':len(done),'bets':len(bets),'skipped':len(done)-len(bets),
             'won':sum(c.get('settlement')=='win' for c in settled),'lost':sum(c.get('settlement')=='loss' for c in settled),
             'hit_rate_on_bets':sum(c.get('settlement')=='win' for c in settled)/len(settled) if settled else None,
@@ -100,6 +111,10 @@ def metrics(report):
             'skip_engines':dict(Counter(c['verdict']['engine'] for c in done if c['verdict']['decision']=='skip')),
             'forced_data_skips':sum(c['verdict']['data_forced_skip'] for c in done),
             'model_calls':sum(c['generation']['model_calls'] for c in done),
+            'preference_evaluated':len(preferences),'preference_hits':preference_hits,
+            'preference_accuracy':preference_hits/len(preferences) if preferences else None,
+            'preference_coverage':len(preferences)/len(done) if done else 0,
+            'preference_without_bet':sum(c['verdict']['decision']=='skip' for c in preferences),
             'paper_initial_bank':100,'paper_total_staked':stake,'paper_net_profit':profit,'paper_final_bank':100+profit,
             'paper_roi':profit/stake if stake else None}
 
@@ -136,7 +151,7 @@ def run_trial(db,settings,report,path,complete=None):
                             paper_profit=stake*(verdict['odds']-1) if won else -stake)
         else:case['settlement']='result_unavailable'
         report['metrics']=metrics(report);save(report,path)
-        print(f"  Решение: {verdict['decision']}; движок: {verdict['engine']}; вызовов: {generation['model_calls']}",flush=True)
+        print(f"  Предпочтение: {verdict.get('preference_label') or 'нет'}; решение: {verdict['decision']}; движок: {verdict['engine']}; вызовов: {generation['model_calls']}",flush=True)
         if generation.get('reason'):print('  Причина:',generation['reason'],flush=True)
     report['state']='completed';report['metrics']=metrics(report);save(report,path)
     return report
@@ -146,10 +161,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--database',type=Path);parser.add_argument('--limit',type=int,default=10)
     parser.add_argument('--seed',type=int);parser.add_argument('--resume',action='store_true');parser.add_argument('--prepare-only',action='store_true')
-    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10.json'))
+    parser.add_argument('--exclude-report',type=Path,action='append',default=[],help='Исключить уже просмотренные матчи; можно указать несколько раз.')
+    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10-v3.json'))
     args=parser.parse_args();settings=Settings.from_env()
     path=args.output;path.parent.mkdir(parents=True,exist_ok=True)
     try:
+        if args.resume and args.exclude_report:raise ValueError('--exclude-report применяется только при подготовке нового файла, без --resume.')
         if not settings.qwen_configured and not args.prepare_only:raise ValueError('Qwen не настроена.')
         with path.with_suffix('.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
@@ -160,7 +177,7 @@ def main():
                     report=json.loads(path.read_text())
                 else:
                     if path.exists():raise ValueError('Файл уже существует. Используйте --resume или другой --output.')
-                    report=prepare(db,settings,args.limit,args.seed);save(report,path)
+                    report=prepare(db,settings,args.limit,args.seed,args.exclude_report);save(report,path)
                 print('Зафиксирована выборка:',report['selected'],'seed:',report['seed'],flush=True)
                 print('Свежие сохранённые коэффициенты:',report['inputs_with_fresh_prices'],
                       '| входов с обязательным пропуском:',report['inputs_requiring_skip'],flush=True)

@@ -1172,6 +1172,10 @@ input::placeholder,textarea::placeholder { color:var(--muted); opacity:.85; }
 .structured-report .report-markets li { margin:0; padding:11px 12px; background:var(--panel2); border:1px solid var(--line); border-radius:8px; font-size:12px; line-height:1.7; }
 .report-probability { color:var(--text); font-weight:750; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .structured-report .verdict-choice { margin:16px 0 8px; font-size:21px; line-height:1.4; font-weight:650; overflow-wrap:anywhere; }
+.structured-report .verdict-preference { margin:4px 0 6px; font-size:23px; line-height:1.4; font-weight:650; overflow-wrap:anywhere; }
+.verdict-report { scroll-margin-top:120px; }
+.verdict-report .report-lead>h3 { margin-top:20px; }
+.verdict-report .report-section:not(.report-lead)>p { font-size:12px; line-height:1.8; }
 .structured-report .verdict-stake { margin:14px 0 0; padding:11px 12px; border:1px solid var(--secondary-border); border-radius:8px; font-size:13px; line-height:1.6; }
 .structured-report .verdict-risk-note { margin:0; color:var(--muted); font-size:11px; line-height:1.7; }
 .structured-report ul.report-facts { margin:0; padding-left:17px; }

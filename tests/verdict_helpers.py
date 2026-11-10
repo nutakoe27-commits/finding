@@ -15,12 +15,18 @@ def statistics(identifier='123',stats_id='72334410',at=None):
             'text':'Статистика сезона\n1.2\nЗабитые мячи\n1.5\n1.0\nГолов пропущено\n1.4'}]}
 
 
-def reply(packet,decision=None):
+def reply(packet,decision=None,preference='home'):
     decision=decision or ('skip' if packet['policy']['force_skip'] else 'bet')
-    support=[f['id'] for f in packet['facts'] if f['kind'] in ('statistics','history')]
-    ids=support[:2] or [packet['facts'][0]['id']]
-    return {'decision':decision,'selection':'home' if decision=='bet' else None,'stake_level':'small' if decision=='bet' else None,
-            'arguments':[{'fact_ids':ids,'text':EXPLANATION}]}
+    support={s:[f['id'] for f in packet['facts'] if f['kind'] in ('statistics','history') and f.get('side')==s] for s in ('home','away')}
+    ids=[(support[s] or [packet['facts'][0]['id']])[0] for s in support]
+    markets=[f['id'] for f in packet['facts'] if f['kind']=='market']
+    return {'preference':preference,'decision':decision,'stake_level':'small' if decision=='bet' else None,
+        'comparison':{'home':{'fact_ids':[ids[0]],'text':EXPLANATION},
+                      'away':{'fact_ids':[ids[1]],'text':'Гости забивают чаще по доступным показателям, однако пропускают больше хозяев. Это встречный довод, требующий учёта при выборе стороны.'}},
+        'counterargument':{'fact_ids':[ids[1]],'text':'Атака гостей служит встречным доводом к предпочтению хозяев: выбранная сторона может столкнуться с сопротивлением результативного соперника.'},
+        'market_context':{'fact_ids':markets[:1],'text':'В сохранённой линии коэффициент хозяев ниже коэффициента гостей. Это согласуется с предпочтением хозяев, но само по себе не подтверждает качество выбора.'},
+        'reason':{'code':'supporting_evidence' if decision=='bet' else 'conflicting_evidence','fact_ids':ids,
+                  'text':'Более надёжная защита хозяев даёт основание для их предпочтения с учётом встречного довода об атаке гостей.' if decision=='bet' else 'Преимущество хозяев в защите сталкивается с более результативной атакой гостей. Этого сопоставления недостаточно для решения о ставке.'}}
 
 
 def complete(settings,messages):return json.dumps(reply(json.loads(messages[1]['content'])),ensure_ascii=False)
