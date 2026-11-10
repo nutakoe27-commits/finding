@@ -5,8 +5,9 @@ import json
 
 from .bookmakers import instant
 from .markets import headline_market
+from .freshness import quote_ttl
 
-ANALYSIS_VERSION = 'relevant-market-analysis-v15'
+ANALYSIS_VERSION = 'grounded-facts-analysis-v16'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None,archive_history=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -37,7 +38,7 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
     return {"event": {key: document.get(key) for key in ("source_event_id", "source_kind", "sport", "sport_label", "event_kind", "title", "home", "away", "competition", "phase", "kickoff_at", "url", "live_score", "live_clock", "period_scores", "red_card_presence", "final_result", "source_present")},
             "request_time": {"at": current.isoformat(), "kickoff_passed": bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)},
             "snapshot": {"observed_at": document["observed_at"], "capture_started_at": document["capture_started_at"], "content_version":document.get("content_version"),
-                         "age_seconds": age, "is_stale": age > (45 if document.get("source_kind")=="stream" else 180) or document.get("source_present") is False, "complete": document["coverage"]["complete"]},
+                         "age_seconds": age, "is_stale": age > quote_ttl(document) or document.get("source_present") is False, "complete": document["coverage"]["complete"]},
             "selection": {"market_key": market_key, "outcome_key": outcome_key},
             "markets": markets,
             "coverage": {"analyzed_markets": len(markets), "analyzed_outcomes": count,
@@ -52,7 +53,7 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
 
 def request_key(document: dict, market_key, outcome_key, notes: str, team_statistics=None,archive_history=None) -> str:
     current = datetime.now(timezone.utc)
-    stale = (current - instant(document["capture_started_at"])).total_seconds() > (45 if document.get("source_kind")=="stream" else 180) or document.get("source_present") is False
+    stale = (current - instant(document["capture_started_at"])).total_seconds() > quote_ttl(document) or document.get("source_present") is False
     started = bool(document.get("kickoff_at") and instant(document["kickoff_at"]) <= current)
     value = [ANALYSIS_VERSION, document["source_event_id"], document.get('sport','football'), document.get("content_version",document["observed_at"]), None if document.get("source_kind")=="stream" else document["capture_started_at"],
              {key:document.get(key) for key in ('home','away','title','event_kind','competition','kickoff_at','coverage')},

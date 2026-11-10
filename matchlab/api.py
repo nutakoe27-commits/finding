@@ -600,6 +600,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 logging.getLogger('uvicorn.error').info('AI markets selected: markets=%s/%s outcomes=%s/%s',
                     context['coverage']['analyzed_markets'],context['coverage']['stored_markets'],
                     context['coverage']['analyzed_outcomes'],context['coverage']['stored_outcomes'])
+                selection=context['market_selection']
+                logging.getLogger('uvicorn.error').info('AI market availability: eligible=%s stale=%s context_only=%s',
+                    selection['eligible_markets'],selection['stale_markets'],len(selection['context_only_keys']))
             try:
                 text = qwen.explain_event(generation_settings or settings, context)
             except ValueError as exc:

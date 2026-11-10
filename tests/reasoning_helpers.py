@@ -5,6 +5,7 @@ import json
 def reply(payload):
     stage=payload['stage']
     if stage in ('evidence','evidence_repair'):
+        if payload.get('facts'):return {'fact_ids':[payload['facts'][0]['id']]}
         records=[r for r in payload['records'] if not isinstance(r['data'],str) or r['data'].strip()]
         if not records:return {'observations':[]}
         record=records[0]
@@ -12,8 +13,7 @@ def reply(payload):
         return {'observations':[{'text':'Данные источника сопоставлены с условиями матча и рынка.',
             'quotes':[{'source':record['id'],'quote':literal[:160]}]}]}
     if stage=='reduce':return {'evidence_ids':[e['id'] for e in payload['candidates'][:payload['selection_limit']]]}
-    if stage=='synthesis':return {'arguments':[{'text':'Данные источников сопоставлены с условиями матча; оценки требуют учёта доступной истории.',
-        'evidence_ids':[payload['evidence'][0]['id']]}]}
+    if stage=='synthesis':return {'evidence_ids':[payload['evidence'][0]['id']]}
     raise AssertionError(stage)
 
 

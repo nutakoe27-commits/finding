@@ -323,8 +323,9 @@ class ArchiveTests(unittest.TestCase):
             return '{"observations":[{"text":"Факт","quotes":[{"source":"missing","quote":"invented"}]}]}'
         with patch('matchlab.qwen._completion',side_effect=invalid):
             saved=self.client.post('/api/archive/events/101/explain',json={}).json()
-        self.assertEqual(saved['context']['ai_generation']['reason'],'quotation_mismatch')
+        self.assertEqual(saved['context']['ai_generation']['state'],'unavailable')
         saved['context']['ai_generation']['reason']='context_limit'
+        saved['context']['ai_generation']['attempts']=[{'call':1,'stage':'evidence','status':'invalid_response','validation':'quotation_mismatch'}]
         with self.repo.connection() as db:
             db.execute('UPDATE event_analyses SET payload=? WHERE id=?',(json.dumps(saved),saved['id']))
             row=db.execute('SELECT id,details FROM ai_usage ORDER BY rowid DESC LIMIT 1').fetchone()

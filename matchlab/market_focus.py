@@ -8,7 +8,7 @@ import unicodedata
 
 from .markets import headline_market
 
-POLICY='relevant-markets-v1'
+POLICY='relevant-markets-v2'
 FAMILIES=('winner','double_chance','both_score','total','handicap','draw_no_bet','team_total_home','team_total_away')
 SIDE_MARKETS=re.compile(r'углов|карточ|удар|офсайд|фол|пенальти|эйс|двойн\w*\s+ошиб|брейк|подач|чет.?нечет|ч[её]тност|точн\w*\s+сч[её]т|игрок|player|corner|booking',re.I)
 PART=re.compile(r'тайм|четверт|период|половин|half|quarter|period|(?:\b[1-9]\s*(?:-?\s*[йям])?\s*(?:сет|гейм|раунд|set|game|round))|(?:\b[1-9]\s*[тпqh]\b)',re.I)
@@ -151,10 +151,15 @@ def focus_context(context,limit=8):
     if not chosen:
         for market in markets:
             if available(market) and not row_kind(market):add(market['key'],'fallback');break
-    if len(chosen)==len(markets):return context
+    context_only=[]
+    if not chosen and headline:
+        add(headline['key'],'context_only_headline',True)
+        context_only=[headline['key']]
+    if len(chosen)==len(markets) and not context_only:return context
     result=deepcopy(context)
     result['markets']=deepcopy(chosen)
     kept=set(reasons)
+    if context_only:result['market_implied']=None
     if headline and headline['key'] not in kept:
         result['market_implied']=None;result['primary_market_key']=None
     selected_outcomes=sum(len(m.get('outcomes',[])) for m in chosen)
@@ -164,13 +169,17 @@ def focus_context(context,limit=8):
     coverage.update(analyzed_markets=len(chosen),analyzed_outcomes=selected_outcomes)
     if result.get('probability_assessment') is not None:
         assessed=result['probability_assessment']
-        assessed['markets']=[r for r in assessed.get('markets',[]) if r.get('market_key') in kept]
-        if (assessed.get('winner') or {}).get('market_key') not in kept:assessed['winner']=None
+        assessed['markets']=[r for r in assessed.get('markets',[]) if r.get('market_key') in kept and r.get('market_key') not in context_only]
+        if (assessed.get('winner') or {}).get('market_key') not in kept or (assessed.get('winner') or {}).get('market_key') in context_only:assessed['winner']=None
         evaluated={r['market_key'] for r in assessed['markets']}
         assessed.setdefault('coverage',{}).update(considered_markets=len(markets),received_markets=len(chosen),evaluated_markets=len(evaluated))
         if kept<=evaluated:
             assessed['limitations']=[v for v in assessed.get('limitations',[]) if v!='Для части рынков вероятность не рассчитана: условия или модель не поддерживаются.']
+        if context_only:
+            assessed.setdefault('limitations',[]).append('Свежих доступных рынков нет; сохранённая основная линия приведена только для контекста, прогноз по её ценам не формируется.')
     result['market_selection']={'policy':POLICY,'limit':limit,'available_markets':len(markets),'selected_markets':len(chosen),
         'excluded_markets':len(markets)-len(chosen),'selected_keys':list(reasons),'reasons':reasons,
-        'market_bytes_before':encoded_size(markets),'market_bytes_after':encoded_size(chosen)}
+        'market_bytes_before':encoded_size(markets),'market_bytes_after':encoded_size(chosen),
+        'context_only_keys':context_only,'eligible_markets':sum(available(m) for m in markets),
+        'stale_markets':sum(bool(m.get('is_stale')) for m in markets)}
     return result

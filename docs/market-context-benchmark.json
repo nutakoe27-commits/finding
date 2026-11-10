@@ -1,5 +1,6 @@
 {
   "kind": "size_only_reconstructed_example",
+  "protocol": "v15_quotation_protocol_before_fact_selection",
   "source": "Public stored market, statistics and history endpoints of prognozich.online",
   "source_event_id": "17076645",
   "market_observed_at": "2026-11-09T17:54:27.339807+00:00",

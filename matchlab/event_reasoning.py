@@ -46,6 +46,22 @@ Return {"observations":[{"text":"brief supported argument","quotes":[{"source":"
 Provide 1-2 Russian arguments, text <=100 characters each, with ONE literal quote <=60 characters each.
 Copy a quote from the cited record's data, never scope or another record. Do not translate, round or paraphrase it.
 Drop or correct unsupported claims; invent no sources, numbers or percentages. If none are supported return observations=[].'''
+FACT_DIRECT=RULES+'''
+Read ALL records and choose the most relevant verified facts supporting or limiting the forecast.
+Return ONLY {"fact_ids":["F1","F2"]}, 1-3 different IDs from facts.
+The server will insert their exact verified text and numbers into the report.
+Do not write arguments, quotations, calculations, new numbers or any extra JSON fields.
+Compare periods, filters, participant identities and freshness before selecting facts.'''
+FACT_EXTRACT=FACT_DIRECT+'''
+This is one fragment. Choose up to 2 facts relevant to it; fact_ids=[] is allowed.'''
+FACT_REPAIR=RULES+'''
+The previous output failed verification. Choose supported arguments only from facts.
+Return ONLY {"fact_ids":["F1","F2"]}, 1-3 different existing IDs.
+Do not copy, rewrite or calculate any numbers or quotations. No extra JSON fields.'''
+FACT_SYNTHESIZE=RULES+'''
+Compare the evidence and forecast. Select 1-3 complementary evidence items for the final report.
+Return ONLY {"evidence_ids":["E1","F2"]}, using existing IDs and no extra fields.
+Their verified wording and numbers will be rendered by the server. Include useful limitations and counterevidence.'''
 
 
 def encoded(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -172,7 +188,25 @@ def record_limit(budget):
     return max(200,min(3600,budget.limit//4,max(1800,getattr(budget.settings,'qwen_batch_tokens',4096)//8)))
 
 
-def verified_observations(reply,records):
+def trusted_facts(context):
+    result=[]
+    for i,fact in enumerate((context.get('probability_assessment') or {}).get('facts',[])[:16]):
+        if not isinstance(fact,str) or not fact.strip() or len(fact)>350:continue
+        result.append({'id':f'F{i+1}','text':fact,'quotes':[{'source':f'F{i+1}',
+                       'path':'/probability_assessment/facts/'+str(i),'quote':fact}],'unverified':False})
+    return result
+
+
+def direct_system(context):return FACT_DIRECT if trusted_facts(context) else DIRECT
+
+
+def verified_observations(reply,records,facts=None):
+    if isinstance(reply,dict) and 'fact_ids' in reply:
+        ids=reply['fact_ids'];lookup={f['id']:f for f in facts or []}
+        if set(reply)!={'fact_ids'} or not isinstance(ids,list) or len(ids)>3 or any(not isinstance(i,str) or i not in lookup for i in ids) or len(set(ids))!=len(ids):
+            raise ValueError('Invalid fact selection')
+        return [{k:v for k,v in lookup[i].items() if k!='id'} for i in ids]
+    if facts:raise ValueError('Invalid fact selection')
     values=reply.get('observations');sources={r['id']:r for r in records}
     if not isinstance(values,list) or len(values)>3:raise ValueError('Invalid evidence response')
     result=[]
@@ -199,6 +233,12 @@ def verified_observations(reply,records):
 
 
 def synthesis_arguments(reply,evidence):
+    if isinstance(reply,dict) and 'evidence_ids' in reply:
+        ids=reply['evidence_ids'];lookup={e['id']:e for e in evidence}
+        if set(reply)!={'evidence_ids'} or not isinstance(ids,list) or not 1<=len(ids)<=3 or any(not isinstance(i,str) or i not in lookup for i in ids) or len(set(ids))!=len(ids):
+            raise ValueError('Invalid argument citation')
+        texts=[('По неподтверждённым сообщениям: ' if lookup[i]['unverified'] else '')+lookup[i]['text'] for i in ids]
+        return texts,[{'text':text,'evidence_ids':[i]} for i,text in zip(ids,texts)]
     rows=reply.get('arguments');lookup={e['id']:e for e in evidence}
     if not isinstance(rows,list) or not 1<=len(rows)<=3:raise ValueError('Invalid final analysis')
     result=[];citations=[]
@@ -222,7 +262,10 @@ def evidence_payload(context,records):
     scope['as_of']=(context.get('request_time') or {}).get('at')
     scope['snapshot']={k:(context.get('snapshot') or {}).get(k) for k in ('observed_at','is_stale')}
     scope['statistics_phase']=(context.get('team_statistics') or {}).get('match_phase')
-    return {'stage':'evidence','match':scope,'records':records}
+    result={'stage':'evidence','match':scope,'records':records}
+    facts=trusted_facts(context)
+    if facts:result['facts']=[{'id':f['id'],'text':f['text']} for f in facts]
+    return result
 
 
 def analyze(settings,context,complete,request):
@@ -230,10 +273,14 @@ def analyze(settings,context,complete,request):
     start=time.monotonic();deadline=start+getattr(settings,'qwen_analysis_timeout',120)
     budget=Budget(settings,request)
     source_records=records_for(context,limit=record_limit(budget))
+    facts=trusted_facts(context)
+    direct_prompt=direct_system(context)
+    extract_prompt=FACT_EXTRACT if facts else EXTRACT
+    final_prompt=FACT_SYNTHESIZE if facts else SYNTHESIZE
     build=lambda records:evidence_payload(context,records)
     scope=build([])['match']
-    single_pass=budget.fits(DIRECT,build(source_records),512)
-    batches=[source_records] if single_pass else budget.batches(source_records,EXTRACT,build,768)
+    single_pass=budget.fits(direct_prompt,build(source_records),512)
+    batches=[source_records] if single_pass else budget.batches(source_records,extract_prompt,build,768)
     lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={};repairs=0
     logger=logging.getLogger('uvicorn.error')
     def mark_valid():
@@ -247,7 +294,7 @@ def analyze(settings,context,complete,request):
         reasons={'Unsupported quotation':'quotation_mismatch','Unsupported numeric claim':'unsupported_number',
                  'Unsupported final numbers':'unsupported_number','Invalid evidence response':'evidence_schema',
                  'Invalid evidence format':'evidence_schema','Invalid argument citation':'argument_schema',
-                 'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema'}
+                 'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema','Invalid fact selection':'fact_reference'}
         detail.update(status='invalid_response',validation=reasons.get(str(error),'unexpected_response'))
         logger.warning('Qwen part invalid: call=%s stage=%s validation=%s',detail['call'],detail['stage'],detail['validation'])
     def invoke(system,payload,output=768,final=False,timeout=None):
@@ -282,24 +329,27 @@ def analyze(settings,context,complete,request):
 
     def repair(reply,records):
         nonlocal repairs
-        values=reply.get('observations') if isinstance(reply,dict) else None
-        if not isinstance(values,list) or not 1<=len(values)<=3:raise ValueError('Unsupported quotation')
-        ids={q.get('source') for v in values if isinstance(v,dict) for q in (v.get('quotes') or [])
-             if isinstance(q,dict) and isinstance(q.get('source'),str)}
-        selected=[r for r in records if r['id'] in ids]
-        if not selected or len(selected)>4:raise ValueError('Unsupported quotation')
+        if facts:
+            selected=[];prompt=FACT_REPAIR
+        else:
+            values=reply.get('observations') if isinstance(reply,dict) else None
+            if not isinstance(values,list) or not 1<=len(values)<=3:raise ValueError('Unsupported quotation')
+            ids={q.get('source') for v in values if isinstance(v,dict) for q in (v.get('quotes') or [])
+                 if isinstance(q,dict) and isinstance(q.get('source'),str)}
+            selected=[r for r in records if r['id'] in ids]
+            if not selected or len(selected)>4:raise ValueError('Unsupported quotation')
+            prompt=REPAIR
         payload=evidence_payload(context,selected)
-        payload.update(stage='evidence_repair',claims=[v.get('text','')[:350] for v in values if isinstance(v,dict) and isinstance(v.get('text'),str)])
+        payload['stage']='evidence_repair'
         repair_budget=copy(budget)
         repair_budget.settings=replace(settings,qwen_batch_tokens=min(8192,settings.qwen_batch_tokens))
-        if not repair_budget.fits(REPAIR,payload,512):raise ValueError('Unsupported quotation')
+        if not repair_budget.fits(prompt,payload,512):raise ValueError('Unsupported quotation')
         if deadline-time.monotonic()<2 or stop.is_set():raise ValueError('Unsupported quotation')
         with lock:
             if repairs:raise ValueError('Unsupported quotation')
             repairs+=1
-            errors.append('quotation_mismatch')
-        result=invoke(REPAIR,payload,512,final=single_pass,timeout=60)
-        observations=verified_observations(result,selected)
+        result=invoke(prompt,payload,512,final=single_pass,timeout=60)
+        observations=verified_observations(result,selected,facts)
         if single_pass and not observations:raise ValueError('Invalid final analysis')
         mark_valid()
         return observations
@@ -310,11 +360,12 @@ def analyze(settings,context,complete,request):
             with lock:leaves.append(False)
             return []
         try:
-            reply=invoke(DIRECT if single_pass else EXTRACT,build(records),512 if single_pass else 768,final=single_pass)
-            try:observations=verified_observations(reply,records)
+            reply=invoke(direct_prompt if single_pass else extract_prompt,build(records),512 if single_pass else 768,final=single_pass)
+            try:observations=verified_observations(reply,records,facts)
             except ValueError as error:
-                if str(error)!='Unsupported quotation':raise
+                if str(error) not in ('Unsupported quotation','Unsupported numeric claim','Invalid fact selection'):raise
                 mark_invalid(error)
+                with lock:errors.append(error_code(error))
                 observations=repair(reply,records)
             if single_pass and not observations:raise ValueError('Invalid final analysis')
             mark_valid()
@@ -339,8 +390,7 @@ def analyze(settings,context,complete,request):
     for values in extracted:
         for value in values:evidence.append({'id':f'E{len(evidence)+1}',**value})
     # Prepared mathematical facts remain available when a source part has no useful observations.
-    prepared=[{'id':f'F{i+1}','text':fact,'quotes':[{'source':f'F{i+1}','path':'/probability_assessment/facts/'+str(i),'quote':fact}], 'unverified':False}
-              for i,fact in enumerate(context['probability_assessment']['facts'][:3])]
+    prepared=facts[:3]
     evidence+=prepared
     all_evidence=list(evidence)
     assessment=context['probability_assessment']
@@ -385,7 +435,7 @@ def analyze(settings,context,complete,request):
         else:
             for final_attempt in range(6):
                 for _ in range(10):
-                    if budget.fits(SYNTHESIZE,final_build(evidence),512):break
+                    if budget.fits(final_prompt,final_build(evidence),512):break
                     groups=budget.batches(evidence,REDUCE,lambda group:{'stage':'reduce','selection_limit':max(1,min(3,len(group)//2)),'candidates':group},128)
                     if all(len(g)==1 for g in groups):raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
                     selected=[]
@@ -393,7 +443,7 @@ def analyze(settings,context,complete,request):
                     evidence=selected
                 else:raise ValueError('Полный контекст матча превышает лимит сервера ИИ.')
                 try:
-                    reply=invoke(SYNTHESIZE,final_build(evidence),512,final=True)
+                    reply=invoke(final_prompt,final_build(evidence),512,final=True)
                     arguments,citations=synthesis_arguments(reply,evidence);mark_valid();final_ok=True;break
                 except (ValueError,TypeError,AttributeError) as error:
                     mark_invalid(error)
@@ -422,5 +472,6 @@ def analyze(settings,context,complete,request):
         'context_tokens':budget.limit,'tokenizer_available':budget.tokenizer is True,'elapsed_ms':int((time.monotonic()-start)*1000),
         'batch_tokens':getattr(settings,'qwen_batch_tokens',4096),'parallelism':getattr(settings,'qwen_parallelism',1),'attempts':attempts,
         'pipeline':'single_pass' if single_pass else 'map_reduce',
+        'argument_mode':'verified_fact_selection' if facts else 'verified_quotations',
         'arguments':citations,'evidence':all_evidence,'errors':dict((c,errors.count(c)) for c in set(errors))}
     return arguments,diagnostics

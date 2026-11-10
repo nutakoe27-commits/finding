@@ -7,7 +7,7 @@ import zlib
 from urllib.parse import quote
 
 from . import qwen
-from .event_reasoning import Budget,EXTRACT,DIRECT,records_for,record_limit,encoded,evidence_payload
+from .event_reasoning import Budget,EXTRACT,FACT_EXTRACT,direct_system,trusted_facts,records_for,record_limit,encoded,evidence_payload
 
 
 def saved_sample(settings,full=False):
@@ -43,7 +43,7 @@ def compare_context(settings,market_limit=None):
     for label,context in (('full',full),('focused',focus_context(full,limit))):
         records=records_for(context,limit=record_limit(budget))
         payload=evidence_payload(context,records)
-        messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
+        messages=[{'role':'system','content':direct_system(context)},{'role':'user','content':encoded(payload)}]
         item={'markets':len(context.get('markets',[])),
               'outcomes':sum(len(m.get('outcomes',[])) for m in context.get('markets',[])),
               'assessment_outcomes':len((context.get('probability_assessment') or {}).get('markets',[])),
@@ -79,7 +79,7 @@ def inspect_context(settings):
                                    ('markets','team_statistics','archive_history','web_research','probability_assessment')}
     records=records_for(context,limit=record_limit(budget))
     for label,payload in (('raw_context',context),('single_evidence_request',evidence_payload(context,records))):
-        messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
+        messages=[{'role':'system','content':direct_system(context)},{'role':'user','content':encoded(payload)}]
         item={'input_bytes':sum(len(m['content'].encode()) for m in messages)}
         try:
             reply=qwen._request(replace(budget.token_settings,qwen_timeout=min(10,settings.qwen_timeout)),'post','/tokenize',
@@ -124,7 +124,8 @@ def check_load(settings):
     budget=Budget(opts,qwen._request)
     source=records_for(context,limit=500)
     build=lambda values:evidence_payload(context,values)
-    system=EXTRACT+'\nFor this diagnostic return ONE observation, text <=100 characters and ONE quote <=60 characters.'
+    system=(FACT_EXTRACT+'\nFor this diagnostic select ONE existing fact ID.' if trusted_facts(context) else
+            EXTRACT+'\nFor this diagnostic return ONE observation, text <=100 characters and ONE quote <=60 characters.')
     groups=budget.batches(source[:12],system,build,min(256,settings.qwen_max_tokens))
     if not groups:report['sample']='no_source_records';return report
     report['context_tokens']=budget.limit

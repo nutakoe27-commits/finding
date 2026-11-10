@@ -452,7 +452,7 @@ def project(e, markets=None):
     )
     for m in markets:
         m["age_seconds"] = age(m["observed_at"])
-        m["is_stale"] = m["age_seconds"] > 45
+        m["is_stale"] = m["age_seconds"] > (45 if phase=='live' else 180)
     version = identity(
         [
             e["members"],
@@ -484,7 +484,7 @@ def project(e, markets=None):
         "observed_at": at,
         "capture_started_at": at,
         "age_seconds": age(at),
-        "is_stale": age(at) > 45,
+        "is_stale": age(at) > (45 if phase=='live' else 180),
         "live_score": e["score"],
         "live_clock": e["clock"],
         "period_scores": e["period_scores"],

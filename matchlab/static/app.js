@@ -777,7 +777,7 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
   const prep=context.statistics_preparation?.state;
   const focused=context.market_selection;
-  const focusNote=focused ? ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.` : "";
+  const focusNote=focused ? ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.${focused.context_only_keys?.length ? " Свежей линии нет; сохранённая показана только для контекста." : ""}` : "";
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
   $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${focusNote}${prepNote}`;
   $("ai-analysis-meta").hidden = false;

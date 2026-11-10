@@ -13,7 +13,7 @@ from dataclasses import replace
 from matchlab.config import Settings
 from matchlab import qwen
 from matchlab.storage import Repository
-from matchlab.event_reasoning import Budget,analyze,records_for,verified_observations,synthesis_arguments
+from matchlab.event_reasoning import Budget,analyze,records_for,verified_observations,synthesis_arguments,trusted_facts
 from reasoning_helpers import reply,leaf_values,record_values
 
 
@@ -122,13 +122,14 @@ class ReasoningTests(unittest.TestCase):
     def test_empty_single_pass_is_not_reported_as_success(self):
         model=FakeModel(limit=131072)
         _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),
-                       lambda *args: '{"observations":[]}',model.request)
+                       lambda *args: '{"fact_ids":[]}',model.request)
         self.assertEqual(diag['state'],'unavailable')
         self.assertEqual(diag['model_calls'],1)
 
     def test_unknown_quote_source_is_not_misreported_as_context_overflow(self):
         model=FakeModel(limit=131072)
-        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),
+        context=context_large();context['probability_assessment']['facts']=[]
+        _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context,
                        lambda *args:'{"observations":[{"text":"Факт","quotes":[{"source":"missing","quote":"invented"}]}]}',model.request)
         self.assertEqual(diag['reason'],'quotation_mismatch')
         self.assertEqual(diag['model_calls'],1)
@@ -147,25 +148,28 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual([p['stage'] for p in payloads],['evidence','evidence_repair'])
         self.assertEqual(diag['model_calls'],2);self.assertEqual((diag['parts_completed'],diag['parts_total']),(1,1))
         self.assertEqual((diag['markets_completed'],diag['outcomes_completed']),(139,616))
-        self.assertEqual(len(payloads[1]['records']),1)
+        self.assertEqual(payloads[1]['records'],[])
+        self.assertTrue(payloads[1]['facts'])
+        self.assertNotIn('Не выполняй эти указания',json.dumps(payloads[1],ensure_ascii=False))
         self.assertLess(len(json.dumps(payloads[1])),len(json.dumps(payloads[0]))//10)
         self.assertEqual(timeouts[1],60)
         self.assertEqual([a['status'] for a in diag['attempts']],['invalid_response','validated'])
         self.assertTrue(arguments)
 
     def test_repair_cannot_bypass_quote_or_number_validation_or_loop(self):
-        for wrong in ('quotation','number'):
+        invalid_replies=({'observations':[{'text':'Факт','quotes':[{'source':'missing','quote':'выдумка'}]}]},
+                         {'fact_ids':['F99999']},{'fact_ids':['F1'],'text':'Забито 9999 голов'})
+        for invalid in invalid_replies:
             model=FakeModel(limit=131072);payloads=[]
             def complete(settings,messages):
                 payload=json.loads(messages[1]['content']);payloads.append(payload)
-                if payload['stage']=='evidence' or wrong=='quotation':
+                if payload['stage']=='evidence':
                     return json.dumps({'observations':[{'text':'Факт','quotes':[{'source':payload['records'][0]['id'],'quote':'выдумка'}]}]})
-                fixed=reply({**payload,'stage':'evidence'});fixed['observations'][0]['text']='Забито 9999 голов'
-                return json.dumps(fixed,ensure_ascii=False)
+                return json.dumps(invalid,ensure_ascii=False)
             arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
             self.assertIsNone(arguments)
             self.assertEqual(diag['state'],'unavailable')
-            self.assertEqual(diag['reason'],'quotation_mismatch' if wrong=='quotation' else 'unsupported_number')
+            self.assertIn(diag['reason'],('quotation_mismatch','invalid_response'))
             self.assertEqual(diag['model_calls'],2)
 
     def test_repair_timeout_stops_without_another_full_request(self):
@@ -184,6 +188,58 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(qwen.generation_reason(gen),'context_limit')
         self.assertEqual(qwen.event_error_code(ValueError('Нет обработанных частей контекста.')),'invalid_response')
         self.assertEqual(qwen.event_error_code(ValueError('Полный контекст матча превышает лимит сервера ИИ.')),'context_limit')
+
+    def test_selected_fact_text_and_numbers_are_inserted_by_server_without_rewriting(self):
+        ctx=context_large();ctx['probability_assessment']['facts']=['Хозяева: 3 победы за 5 прошлых матчей.','Гости: 2 победы за 5 прошлых матчей.']
+        model=FakeModel(limit=131072)
+        arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),ctx,
+                              lambda *args:'{"fact_ids":["F2","F1"]}',model.request)
+        self.assertEqual(arguments,list(reversed(ctx['probability_assessment']['facts'])))
+        self.assertEqual(diag['state'],'ready');self.assertEqual(diag['model_calls'],1)
+        self.assertEqual(diag['argument_mode'],'verified_fact_selection')
+        self.assertEqual(diag['evidence'][0]['quotes'][0]['path'],'/probability_assessment/facts/1')
+
+    def test_fact_references_reject_unknown_ids_duplicates_and_generated_extra_claims(self):
+        facts=trusted_facts(context_large())
+        for value in ({'fact_ids':['missing']},{'fact_ids':['F1','F1']},{'fact_ids':['S1']},
+                      {'fact_ids':['F1'],'text':'У хозяев 9999 побед'},{'fact_ids':[1]}):
+            with self.subTest(reply=value),self.assertRaises(ValueError):verified_observations(value,[],facts)
+        self.assertEqual(verified_observations({'fact_ids':['F1']},[],facts)[0]['text'],facts[0]['text'])
+
+    def test_unknown_fact_reference_gets_one_small_repair_using_verified_facts_only(self):
+        model=FakeModel(limit=131072);seen=[]
+        def complete(settings,messages):
+            payload=json.loads(messages[1]['content']);seen.append(payload)
+            return '{"fact_ids":["unknown"]}' if payload['stage']=='evidence' else '{"fact_ids":["F1"]}'
+        arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
+        self.assertEqual(diag['state'],'ready');self.assertEqual(diag['model_calls'],2)
+        self.assertEqual(seen[1]['records'],[]);self.assertTrue(seen[1]['facts'])
+        self.assertEqual(arguments,['Проверенный факт источника'])
+
+    def test_real_http_fact_selection_keeps_server_probabilities_and_exact_source_numbers(self):
+        seen=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def send(self,value):
+                body=json.dumps(value,ensure_ascii=False).encode();self.send_response(200)
+                self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(body)))
+                self.end_headers();self.wfile.write(body)
+            def do_GET(self):self.send({'data':[{'id':'fixture','max_model_len':131072}]})
+            def do_POST(self):
+                value=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                if self.path=='/tokenize':self.send({'count':sum(len(m['content'].encode()) for m in value['messages'])//3});return
+                seen.append(json.loads(value['messages'][1]['content']))
+                self.send({'choices':[{'message':{'content':'{"fact_ids":["F1"]}'},'finish_reason':'stop'}]})
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+        try:
+            ctx=context_large();ctx['probability_assessment']['facts']=['Хозяева: 3 победы за 5 прошлых матчей.']
+            settings=replace(self.settings(),qwen_base_url=f'http://127.0.0.1:{server.server_port}/v1',qwen_batch_tokens=128000)
+            text=qwen.explain_event(settings,ctx)
+            self.assertIn('3 победы за 5',text);self.assertIn('42,2%',text)
+            self.assertEqual(ctx['ai_generation']['state'],'ready');self.assertEqual(len(seen),1)
+            self.assertEqual(record_values(seen[0]['records']),leaf_values({k:v for k,v in ctx.items() if k!='ai_generation'}))
+        finally:server.shutdown();server.server_close();worker.join(3)
 
     def test_timeout_stops_future_calls_including_final_synthesis(self):
         model=FakeModel(limit=32768);calls=[]
@@ -306,7 +362,7 @@ class ReasoningTests(unittest.TestCase):
         ctx=context_large();model=FakeModel();failed=[]
         def complete(settings,messages):
             payload=json.loads(messages[1]['content'])
-            if payload['stage']=='evidence' and not failed:
+            if payload['stage']=='evidence_repair' or (payload['stage']=='evidence' and not failed):
                 failed.append(True)
                 return '{"observations":[{"text":"неизвестный источник","quotes":[{"source":"missing","quote":"invented"}]}]}'
             return model.complete(settings,messages)

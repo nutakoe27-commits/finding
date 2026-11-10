@@ -84,6 +84,19 @@ class MarketFocusTests(unittest.TestCase):
         keys={m['key'] for m in focus_context(full)['markets']}
         self.assertNotIn(full['markets'][2]['key'],keys);self.assertNotIn(full['markets'][3]['key'],keys)
 
+    def test_expired_primary_is_retained_as_context_without_price_predictions(self):
+        full=pool()
+        for m in full['markets']:m['is_stale']=True
+        focused=focus_context(full)
+        self.assertEqual(len(focused['markets']),1)
+        self.assertTrue(focused['markets'][0]['is_stale'])
+        self.assertEqual(focused['market_selection']['eligible_markets'],0)
+        self.assertEqual(focused['market_selection']['context_only_keys'],[full['markets'][0]['key']])
+        self.assertIsNone(focused['probability_assessment']['winner'])
+        self.assertEqual(focused['probability_assessment']['markets'],[])
+        self.assertIsNone(focused['market_implied'])
+        self.assertTrue(any('Свежих доступных рынков нет' in line for line in focused['probability_assessment']['limitations']))
+
     def test_explicit_source_headline_keeps_its_scope_even_when_its_label_is_unfamiliar(self):
         full=pool();primary=market('Линия источника',90,period='1 период')
         full['markets'].append(primary);full['primary_market_key']=primary['key']
