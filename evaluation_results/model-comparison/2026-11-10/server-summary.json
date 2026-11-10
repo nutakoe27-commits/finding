@@ -1,0 +1,350 @@
+{
+  "format": "matchlab.model-comparison.v1",
+  "generated_at": "2026-11-10T08:39:14.889386+00:00",
+  "source_mode": "recorded-statistics",
+  "source_model": "independent-football-v19",
+  "source_selected": 40,
+  "common_cases": 38,
+  "source_unestimated": 2,
+  "models": [
+    {
+      "method": "poisson_v19",
+      "label": "Текущий Пуассон v19",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.7105825547793752,
+        "log_loss": 1.1716528061330733,
+        "mean_favorite_probability": 0.508824281149205
+      }
+    },
+    {
+      "method": "uniform",
+      "label": "Равномерный ориентир",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    },
+    {
+      "method": "shrink_25",
+      "label": "Пуассон + 25% равномерного ориентира",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.6862204692307344,
+        "log_loss": 1.1287864134491727,
+        "mean_favorite_probability": 0.46495154419523704
+      }
+    },
+    {
+      "method": "shrink_50",
+      "label": "Пуассон + 50% равномерного ориентира",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.6707804593624028,
+        "log_loss": 1.1050424488770887,
+        "mean_favorite_probability": 0.42107880724126917
+      }
+    },
+    {
+      "method": "temperature_150",
+      "label": "Сглаживание вероятностей, T=1.5",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.681835406100385,
+        "log_loss": 1.123736262566558,
+        "mean_favorite_probability": 0.45180739192709796
+      }
+    },
+    {
+      "method": "dixon_coles_005",
+      "label": "Диксон–Коулз, ρ=−0.05",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.7099409523718606,
+        "log_loss": 1.172142225211909,
+        "mean_favorite_probability": 0.5035008516915989
+      }
+    },
+    {
+      "method": "dixon_coles_010",
+      "label": "Диксон–Коулз, ρ=−0.10",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 15,
+        "accuracy": 0.39473684210526316,
+        "brier_3way": 0.7096578248664068,
+        "log_loss": 1.1734501360095775,
+        "mean_favorite_probability": 0.49878224658602227
+      }
+    },
+    {
+      "method": "negative_binomial_5",
+      "label": "Отрицательно-биномиальная, k=5",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.7023684255081322,
+        "log_loss": 1.158705100538835,
+        "mean_favorite_probability": 0.4933604590657275
+      }
+    },
+    {
+      "method": "negative_binomial_10",
+      "label": "Отрицательно-биномиальная, k=10",
+      "coverage": 38,
+      "same_full_cohort": true,
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.7060289692514286,
+        "log_loss": 1.1642951166683133,
+        "mean_favorite_probability": 0.5008966956110125
+      }
+    }
+  ],
+  "leaderboard_by_log_loss": [
+    "uniform",
+    "shrink_50",
+    "league_dirichlet",
+    "temperature_150",
+    "shrink_25",
+    "negative_binomial_5",
+    "negative_binomial_10",
+    "poisson_v19",
+    "dixon_coles_005",
+    "dixon_coles_010"
+  ],
+  "market_models": [
+    {
+      "method": "odds_proportional",
+      "label": "Коэффициенты: пропорциональное снятие маржи",
+      "coverage": 4,
+      "state": "available",
+      "metrics": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.7031648581867628,
+        "log_loss": 1.150835191006514,
+        "mean_favorite_probability": 0.4834185939492042
+      },
+      "paired_current_model": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.667452069231151,
+        "log_loss": 1.108012396589949,
+        "mean_favorite_probability": 0.5138680988518528
+      },
+      "paired_uniform": {
+        "matches": 4,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    },
+    {
+      "method": "odds_shin",
+      "label": "Коэффициенты: метод Шина",
+      "coverage": 4,
+      "state": "available",
+      "metrics": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.7081817544721656,
+        "log_loss": 1.1584686473486308,
+        "mean_favorite_probability": 0.491366644484493
+      },
+      "paired_current_model": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.667452069231151,
+        "log_loss": 1.108012396589949,
+        "mean_favorite_probability": 0.5138680988518528
+      },
+      "paired_uniform": {
+        "matches": 4,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    },
+    {
+      "method": "odds_power",
+      "label": "Коэффициенты: степенное снятие маржи",
+      "coverage": 4,
+      "state": "available",
+      "metrics": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.7104878240340703,
+        "log_loss": 1.1617206676536518,
+        "mean_favorite_probability": 0.49461208832085135
+      },
+      "paired_current_model": {
+        "matches": 4,
+        "favorite_matches": 4,
+        "favorite_hits": 2,
+        "accuracy": 0.5,
+        "brier_3way": 0.667452069231151,
+        "log_loss": 1.108012396589949,
+        "mean_favorite_probability": 0.5138680988518528
+      },
+      "paired_uniform": {
+        "matches": 4,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    }
+  ],
+  "history_models": [
+    {
+      "method": "league_dirichlet",
+      "label": "Исторические частоты турнира с prior Дирихле",
+      "coverage": 38,
+      "state": "available",
+      "metrics": {
+        "matches": 38,
+        "favorite_matches": 36,
+        "favorite_hits": 12,
+        "accuracy": 0.3333333333333333,
+        "brier_3way": 0.6765223766903601,
+        "log_loss": 1.1217661395597538,
+        "mean_favorite_probability": 0.45486445867586484
+      },
+      "paired_current_model": {
+        "matches": 38,
+        "favorite_matches": 38,
+        "favorite_hits": 16,
+        "accuracy": 0.42105263157894735,
+        "brier_3way": 0.7105825547793752,
+        "log_loss": 1.1716528061330733,
+        "mean_favorite_probability": 0.508824281149205
+      },
+      "paired_uniform": {
+        "matches": 38,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    },
+    {
+      "method": "elo_davidson",
+      "label": "Elo–Davidson с вероятностью ничьей",
+      "coverage": 34,
+      "state": "available",
+      "metrics": {
+        "matches": 34,
+        "favorite_matches": 34,
+        "favorite_hits": 10,
+        "accuracy": 0.29411764705882354,
+        "brier_3way": 0.7094682662096021,
+        "log_loss": 1.1686836995026681,
+        "mean_favorite_probability": 0.43334824190922316
+      },
+      "paired_current_model": {
+        "matches": 34,
+        "favorite_matches": 34,
+        "favorite_hits": 13,
+        "accuracy": 0.38235294117647056,
+        "brier_3way": 0.7479318208674682,
+        "log_loss": 1.2281607256824634,
+        "mean_favorite_probability": 0.5037651931536868
+      },
+      "paired_uniform": {
+        "matches": 34,
+        "favorite_matches": 0,
+        "favorite_hits": null,
+        "accuracy": null,
+        "brier_3way": 0.6666666666666667,
+        "log_loss": 1.0986122886681098,
+        "mean_favorite_probability": 0.3333333333333333
+      }
+    }
+  ],
+  "market_exclusions": {
+    "missing_historical_odds": 34
+  },
+  "history_exclusions": {
+    "elo_participant_history_missing": 4
+  },
+  "production_model_changed": false,
+  "out_of_sample_validated": false,
+  "limitations": [
+    "Исследовательское сравнение на уже известных результатах; лучшая строка не является подтверждённым победителем на новых матчах.",
+    "Все основные варианты сравниваются на одних и тех же исходно рассчитанных матчах; исходных пропусков 2, они не подменяются прогнозами.",
+    "Диксон–Коулз и отрицательно-биномиальные варианты используют интенсивности, восстановленные из сохранённого Пуассона. Исходные сезонные показатели не переобучались.",
+    "Параметры вариантов фиксированы и не оптимизируются по исходам этих матчей. Поправка Диксона–Коулза ограничивается только условием неотрицательных вероятностей.",
+    "Сглаживание с равномерным ориентиром уменьшает уверенность, но сохраняет порядок исходов; процент угаданных фаворитов может не измениться.",
+    "Шин и конвертация коэффициентов — рыночные ориентиры, не независимые спортивные прогнозы. Используются только сохранённые до времени прогноза полные коэффициенты 1X2.",
+    "Метрики рыночных методов сравниваются с текущей моделью на их собственном общем подмножестве, а не с результатом на всех матчах.",
+    "Elo–Davidson и частоты турнира требуют серверную историю, доступную к моменту прогноза. Elo: начальный рейтинг 1500, K=20, поправка хозяев 50; ничьи учитываются отдельно.",
+    "Качество текста Qwen и доходность ставок не проверяются. Производственная модель автоматически не меняется."
+  ],
+  "input_sha256": "1752dcf5693eb06db7357b63c35fe5409eade4ec96edf50b0481b8179be4fadc",
+  "report_scope": "aggregate_only",
+  "matches_omitted": true,
+  "provenance": "user_pasted_server_summary"
+}
