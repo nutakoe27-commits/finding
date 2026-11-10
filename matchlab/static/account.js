@@ -35,6 +35,7 @@ window.Account = (() => {
     byId("auth-legal").hidden=mode !== "register";
     for (const id of ["auth-terms","auth-personal-data","auth-age"]) { byId(id).required=mode === "register"; byId(id).checked=false; }
     byId("auth-error").textContent = ""; byId("auth-password").value = "";
+    byId("auth-password").type="password";byId("auth-password-toggle").textContent="Показать";byId("auth-password-toggle").setAttribute("aria-pressed","false");
     if (!byId("auth-dialog").open) byId("auth-dialog").showModal();
     byId("auth-username").focus();
   }

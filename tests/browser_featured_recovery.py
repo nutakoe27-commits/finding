@@ -66,6 +66,7 @@ async def exercise(base,repo):
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак',timeout=30000)
                     first=await page.evaluate('state.aiAnalysis');assert first['context']['ai_generation']['model_calls']==3
                     assert first['context']['ai_generation']['token_usage']['total_tokens']==3300
+                    await page.screenshot(path=f'/workspace/outputs/product-ai-result-{theme}-{width}.png',full_page=True)
                     await page.goto(base+'/#match/202');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="202"');await expect(page.locator('#explain-button')).to_be_enabled();await page.locator('#explain-button').click()
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Никто',timeout=30000)
                     await expect(page.locator('#explanation .verdict-choice')).to_have_text('Пропустить матч')

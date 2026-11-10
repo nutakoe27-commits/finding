@@ -615,12 +615,17 @@ function renderSports(sports = state.sports) {
   state.sports = sports;
   const selected = state.sport;
   const select = $("sport-filter");
-  select.replaceChildren(el("option", "", "Все виды спорта"), ...sports.map(sport => { const option = el("option", "", `${sport.label} · ${sport.total}`); option.value = sport.key; return option; }));
-  select.options[0].value = ""; select.value = selected;
+  const optionsKey=JSON.stringify(sports);
+  if(document.activeElement!==select && select.dataset.optionsKey!==optionsKey) {
+    select.replaceChildren(el("option", "", "Все виды спорта"), ...sports.map(sport => { const option = el("option", "", `${sport.label} · ${sport.total}`); option.value = sport.key; return option; }));
+    select.options[0].value = "";select.dataset.optionsKey=optionsKey;
+  }
+  if(document.activeElement!==select) select.value = selected;
   const popular = ["","football","hockey","tennis","basketball","volleyball","table_tennis"];
   if (selected && !popular.includes(selected)) popular.push(selected);
-  $("sport-tabs").replaceChildren(...popular.map(key => {
+  ProductUX.replaceContent("sport-tabs",popular.map(key => {
     const button = el("button", key === selected ? "sport-tab active" : "sport-tab", sportLabel(key)); button.type = "button";
+    button.dataset.focusKey="sport:"+key;
     button.setAttribute("aria-pressed", String(key === selected)); button.addEventListener("click", () => chooseSport(key)); return button;
   }));
   if (state.route === "#matches") {
@@ -631,7 +636,7 @@ function renderSports(sports = state.sports) {
 }
 function chooseSport(key) {
   state.sport = key; state.marketOffset = 0;
-  $("competition-filter").value = ""; $("match-search").value = "";
+  $("competition-filter").value = "";
   try { localStorage.setItem("matchlab:sport:v1",key); } catch { /* The selection still works for this page. */ }
   renderSports(); loadCatalogue();
 }
@@ -668,16 +673,19 @@ function renderLeagues(competitions) {
   const box = $("league-nav");
   const buttons = ["", ...competitions].map(value => {
     const button = el("button", value === $("competition-filter").value ? "league-link active" : "league-link", value || "Все турниры");
-    button.type = "button"; button.title = value || "Все турниры";
+    button.type = "button"; button.title = value || "Все турниры"; button.dataset.focusKey="league:"+value;
     button.addEventListener("click", () => {
       $("competition-filter").value = value; state.marketOffset = 0;
       if (!["#matches","#favorites"].includes(state.route)) location.hash = "#matches";
       else loadCatalogue();
     }); return button;
   });
-  box.replaceChildren(el("p", "eyebrow", "ТУРНИРЫ"), ...buttons);
+  ProductUX.replaceContent("league-nav",[el("p", "eyebrow", "ТУРНИРЫ"), ...buttons]);
 }
+let catalogueController;
 async function loadCatalogue() {
+  catalogueController?.abort(); catalogueController=new AbortController();
+  const signal=catalogueController.signal;
   const request = ++state.marketRequest;
   const favorites = state.route === "#favorites";
   $("market-event-rows").setAttribute("aria-busy", "true");
@@ -691,13 +699,13 @@ async function loadCatalogue() {
     const day = $("day-filter").value;
     if (day) query.set("day", dayValue(day === "tomorrow" ? 1 : 0));
     if (favorites) query.set("ids", [...state.favorites].join(","));
-    const result = await api("/api/bookmakers/events?" + query);
+    const result = await api("/api/bookmakers/events?" + query,{signal});
     if (request !== state.marketRequest || !["#matches","#favorites"].includes(state.route)) return;
     if (state.marketOffset > 0 && state.marketOffset >= result.total) { state.marketOffset = 0; return loadCatalogue(); }
     renderCatalogue(result);
     return true;
   } catch (error) {
-    if (request === state.marketRequest) showError("market-list-error", error.message);
+    if (request === state.marketRequest && error.name !== "AbortError") { showError("market-list-error", "Не удалось загрузить матчи. Проверьте соединение и попробуйте снова."); $("catalog-retry").hidden=false; }
   } finally {
     if (request === state.marketRequest) {
       $("market-event-rows").setAttribute("aria-busy", "false");
@@ -706,7 +714,7 @@ async function loadCatalogue() {
   }
 }
 function renderCatalogue(result) {
-  showError("market-list-error", "");
+  showError("market-list-error", ""); $("catalog-retry").hidden=true;
   state.catalogSource=result.source_kind || null;
   const favoriteView = state.route === "#favorites";
   $("catalog-list-title").textContent = favoriteView ? "Ваши матчи" : state.sport ? sportLabel(state.sport) : "Все матчи";
@@ -717,6 +725,8 @@ function renderCatalogue(result) {
     renderSports(result.sports || state.sports);
     $("nav-matches").textContent = result.summary.upcoming;
     $("count-upcoming").textContent = result.summary.upcoming;
+    $("phase-upcoming-count").textContent = result.summary.upcoming;
+    $("phase-live-count").textContent = result.summary.live;
     $("count-live").textContent = result.summary.live;
     $("count-fresh").textContent = result.summary.fresh;
     $("catalog-updated").textContent = result.summary.last_observed_at ? `Последние данные · ${moscowTime(result.summary.last_observed_at)} МСК` : "Ожидаем первый сбор";
@@ -730,10 +740,11 @@ function renderCatalogue(result) {
   $("market-next").disabled = result.offset + result.events.length >= result.total;
   $("market-list-empty").hidden = result.events.length > 0;
   const isEmptyFavorites = favoriteView && !state.favorites.size;
+  $("view-matches").dataset.emptyFavorites=String(isEmptyFavorites);
   $("catalog-empty-title").textContent = isEmptyFavorites ? "Сохраните интересные матчи" : "Матчи не найдены";
   $("catalog-empty-text").textContent = isEmptyFavorites ? "Нажмите звезду рядом с встречей — она появится здесь. Избранное хранится в этом браузере." : "Попробуйте другую дату, турнир или статус. Если сбор только начался, обновите список немного позже.";
   $("reset-filters").hidden = isEmptyFavorites;
-  const focused = document.activeElement?.dataset.favorite;
+
   const rows = [], groups = new Map();
   for (const event of result.events) {
     const group = state.sport ? event.competition : `${event.sport_label || sportLabel(event.sport)} · ${event.competition}`;
@@ -746,12 +757,12 @@ function renderCatalogue(result) {
     for (const event of events) {
       const card = el("article", "match-card"); card.dataset.eventId = event.source_event_id;
       const favorite = el("button", "favorite-button", state.favorites.has(event.source_event_id) ? "★" : "☆");
-      favorite.type = "button"; favorite.dataset.favorite = event.source_event_id;
+      favorite.type = "button"; favorite.dataset.favorite = event.source_event_id; favorite.dataset.focusKey=event.source_event_id+":favorite";
       favorite.setAttribute("aria-pressed", String(state.favorites.has(event.source_event_id)));
       favorite.setAttribute("aria-label", state.favorites.has(event.source_event_id) ? "Удалить матч из избранного" : "Добавить матч в избранное");
       favorite.addEventListener("click", () => toggleFavorite(event.source_event_id)); card.append(favorite);
       const info = el("div", "match-info");
-      const title = el("a", "match-card-title", event.title || `${event.home}\n${event.away}`); title.href = eventRoute(event);
+      const title = el("a", "match-card-title", event.title || `${event.home}\n${event.away}`); title.href = eventRoute(event); title.dataset.focusKey=event.source_event_id+":title";
       if (event.live_score) info.append(el("strong","live-score",`${event.live_score}${event.live_clock ? " · " + event.live_clock : ""}`));
       const meta = el("div", "match-card-meta"); meta.append(el("span", event.phase === "live" ? "phase-label live" : "phase-label", phaseLabel(event)), el("span", "", event.kickoff_at ? moscowTime(event.kickoff_at) : "Время не указано"));
       info.append(title, meta); card.append(info);
@@ -763,10 +774,11 @@ function renderCatalogue(result) {
       else quoteBox.append(el("div","odds-placeholder","Коэффициенты — в рынках события"));
       card.append(quoteBox);
       const actions = el("div", "match-actions");
-      const ai = el("button", "match-ai-button", state.analysisMode==='neural-verdict'&&event.phase==='live'?"О разборе ИИ":"Разбор ИИ"); ai.type = "button";
-      ai.addEventListener("click", () => {window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id, null, true);});
-      const markets = el("a", "match-open", "О матче →"); markets.href = eventRoute(event);
-      const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
+      const canAnalyze=state.analysisMode!=='neural-verdict'||(event.sport==='football'&&event.phase==='prematch');
+      const ai = el("button", "match-ai-button", canAnalyze?"Разбор ИИ":"Открыть матч"); ai.type = "button"; ai.dataset.focusKey=event.source_event_id+":ai"; ai.prepend(ProductUX.icon(canAnalyze?"spark":"arrow"));
+      ai.addEventListener("click", () => {if(canAnalyze)window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id,null,canAnalyze,event.source_kind==='stream'?'stream':'legacy');});
+      const markets = el("a", "match-open", "О матче →"); markets.href = eventRoute(event); markets.dataset.focusKey=event.source_event_id+":open";
+      const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.dataset.focusKey=event.source_event_id+":source";bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
       actions.append(ai, markets, bookmaker); card.append(actions);
       const freshness = el("div", "match-freshness"); freshness.append(el("span", event.is_stale ? "freshness-badge stale" : "freshness-badge", ageLabel(event)));
       if (isAdmin() && !event.coverage.complete && event.source_kind !== "stream") freshness.append(el("span", "partial-label", event.source_kind === "stream" ? "Основные рынки" : "Неполный снимок"));
@@ -774,16 +786,27 @@ function renderCatalogue(result) {
     }
     rows.push(group);
   }
-  $("market-event-rows").replaceChildren(...rows);
-  if (focused) [...document.querySelectorAll("[data-favorite]")].find(button => button.dataset.favorite === focused)?.focus({preventScroll:true});
+  ProductUX.replaceList(rows);
 }
 function resetFilters() {
   for (const id of ["match-search","competition-filter","day-filter"]) $(id).value = "";
-  $("sort-filter").value = "kickoff"; state.phase = "upcoming"; state.marketOffset = 0;
+  $("sort-filter").value = "kickoff"; state.phase = state.route === "#favorites" ? "" : "upcoming"; state.sport=""; state.marketOffset = 0; renderSports();
   syncPhase(); loadCatalogue();
 }
 function syncClearFilters() {
   $('clear-active-filters').hidden=!(state.phase!=='upcoming' || $('match-search').value.trim() || $('competition-filter').value || $('day-filter').value || $('sort-filter').value!=='kickoff');
+  $('match-search-clear').hidden=!$('match-search').value;
+  const chips=[];
+  if($('match-search').value.trim() && state.sport) chips.push({key:'sport',label:sportLabel(state.sport),clear:()=>{state.sport='';state.marketOffset=0;renderSports();syncClearFilters();loadCatalogue();}});
+  if($('match-search').value.trim() && state.phase) chips.push({key:'phase',label:state.phase==='live'?'Live':'До матча',clear:()=>{state.phase='';state.marketOffset=0;syncPhase();syncClearFilters();loadCatalogue();}});
+
+  for(const [id,prefix] of [['match-search','Поиск: '],['competition-filter','Турнир: '],['day-filter','Дата: ']]) {
+    const value=$(id).value;if(!value)continue;
+    const label=id==='day-filter'?(value==='today'?'Сегодня':'Завтра'):value;
+    chips.push({key:id,label:prefix+label,clear:()=>{$(id).value='';state.marketOffset=0;syncClearFilters();loadCatalogue();}});
+  }
+  ProductUX.filters(chips);
+
 }
 function syncPhase() {
   document.querySelectorAll("[data-phase]").forEach(button => {
@@ -795,7 +818,7 @@ function clearAIOutput() {
   state.explainRequest++;
   state.aiAnalysis = null;
   stopAIWait(); $("ai-wait").hidden = true;
-  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true;
+  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-result-toolbar").hidden=true;
   $("ai-analysis-sources").replaceChildren();
   showError("ai-request-error", "");
 }
@@ -805,7 +828,8 @@ function syncAIButton() {
   note.hidden=!unsupported;
   if(unsupported)note.textContent=d.phase==='live'?'Матч уже идёт. Счёт и рынки доступны, но текущий ИИ-режим работает только до начала футбольного матча. Претендент — никто; решение — пропустить.':d.phase==='finished'?'Матч завершён. Решение о ставке больше не применяется.':d.sport!=='football'?'Текущий ИИ-режим поддерживает только предматчевый футбол. Для этого события решение — пропустить.':'Предматчевый статус не подтверждён. Решение — пропустить.';
   $("explain-button").disabled = state.aiBusy || !state.ai || (!state.marketDocument && !state.forecast);
-  $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : state.analysisMode==='neural-verdict'?"Получить вердикт ИИ":"Получить разбор ИИ";
+  $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : unsupported?"Посмотреть решение о пропуске":state.aiAnalysis?"Повторить запрос":state.analysisMode==='neural-verdict'?"Получить вердикт ИИ":"Получить разбор ИИ";
+  $("ai-result-toolbar").hidden=$("explanation").hidden;
   $("ai-wait").hidden = !(state.aiBusy && state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest);
   $("ai-hint").textContent = !state.ai ? "Сервис ИИ пока не подключён. Рынки доступны для просмотра." : !state.marketDocument && !state.forecast ? "Сначала выберите матч или рассчитайте сценарий." : "ИИ сопоставляет рынки и доступную историю участников. Это разбор фактов, а не гарантия исхода.";
 }
@@ -816,11 +840,11 @@ const queueWaitMessages = ["Разбор в очереди. Ожидаем ос�
 const statisticsWaitMessages = ["Получаем статистику выбранного матча.", "Проверяем форму и встречи участников.", "Данные источника загружаются; затем начнётся разбор."];
 const marketWaitMessages = ["Ожидаем обновления рынков выбранного матча.", "Проверяем доступные условия для независимой оценки."];
 function startAIWait() {
-  clearInterval(aiWaitTimer);
-  let index = 0;
+  clearInterval(aiWaitTimer); ProductUX.startWait();
+  let index = 0, ticks=0;
   const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : state.aiStage === "markets" ? marketWaitMessages : state.aiStage === "queued" ? queueWaitMessages : state.aiStage === "background" ? jobWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
   show();
-  aiWaitTimer = setInterval(() => { index++; show(); }, 8500);
+  aiWaitTimer = setInterval(() => { ticks++; if(ticks%8===0){index++;show();} ProductUX.wait(state.aiStage); },1000);
 }
 function stopAIWait() { clearInterval(aiWaitTimer); aiWaitTimer = null; }
 function selectAI(market = null, outcome = null) {
@@ -935,6 +959,7 @@ async function loadEvent(refresh = false) {
   renderArchiveHistory(state.archiveHistory);
   $("event-header").hidden = false;
   $("market-detail-title").textContent = eventTitle(document);
+  window.document.title=eventTitle(document)+" · prognozich ai";
   $("event-competition").textContent = `${document.sport_label || sportLabel(document.sport)} · ${document.competition}`;
   $("breadcrumb").textContent = `Линия / ${document.sport_label || sportLabel(document.sport)}`;
   $("tab-analysis").hidden = !isAdmin() || !state.analysisContext?.prediction_available;
@@ -1063,7 +1088,7 @@ async function requestAI() {
   const request = ++state.explainRequest, selection = state.selection ? {...state.selection} : null;
   const eventId = state.eventId, forecastId = forecast?.id;
   state.aiBusy = true; state.aiTarget = eventId; state.aiTargetRequest = request; state.aiStage = document ? "statistics" : "analysis"; startAIWait(); syncAIButton(); showError("ai-request-error", "");
-  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-analysis-sources").replaceChildren();
+  $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-result-toolbar").hidden=true; $("ai-analysis-sources").replaceChildren();
   $("explanation").setAttribute("aria-busy", "true");
   try {
     const current=()=>Account.user?.id === accountId && request === state.explainRequest && eventId === state.eventId;
@@ -1118,7 +1143,7 @@ async function requestAI() {
     const result=document ? await waitForAnalysisJob(submitted,current) : submitted;
     if(!result) return;
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
-    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation,result.context?.neural_verdict); $("explanation").hidden = false;
+    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation,result.context?.neural_verdict); $("explanation").hidden = false; $("ai-result-toolbar").hidden=false;
     window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
     if (result.context) {
       result.preparation_notice=preparationNotice;
@@ -1149,8 +1174,12 @@ async function calculateEvent() {
   }
 }
 async function loadHistory() {
-  if (!await Account.ensure(()=>loadHistory())) return;
+  await Account.ready;
+  $("history-guest").hidden=!!Account.user;
+  $("history-tools").hidden=!Account.user;
+  if (!Account.user) { $("history-empty").hidden=true; return; }
   const request = ++state.historyRequest;
+  $("history-list").setAttribute("aria-busy","true");
   try {
     const result = await api("/api/analyses");
     if (request !== state.historyRequest || state.route !== "#history") return;
@@ -1162,8 +1191,10 @@ async function loadHistory() {
       const excerpt = el("p", "history-excerpt", preview.length > 200 ? preview.slice(0,200) + "…" : preview); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
+    ProductUX.filterHistory();
     return true;
   } catch (error) { if (request === state.historyRequest) showError("history-error", error.message); }
+  finally {if(request===state.historyRequest)$("history-list").setAttribute("aria-busy","false");}
 }
 async function loadSavedAnalysis(id) {
   if (!await Account.ensure(()=>loadSavedAnalysis(id))) return;
@@ -1175,6 +1206,7 @@ async function loadSavedAnalysis(id) {
     $("manual-heading").hidden = false;
     $("manual-heading").querySelector(".eyebrow").textContent = "СОХРАНЁННЫЙ РАЗБОР";
     $("manual-heading").querySelector("h1").textContent = eventTitle(analysis.event);
+    document.title=eventTitle(analysis.event)+" · Разбор · prognozich ai";
     $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "neural_verdict" ? "Вердикт ИИ" : analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     if (!isAdmin()) $("manual-heading").querySelector(".subtitle").textContent = `Разбор от ${moscowTime(analysis.generated_at)} МСК`;
     $("saved-analysis").hidden = false;
@@ -1219,6 +1251,7 @@ function moveAIDesk() {
 }
 async function route() {
   const previous = state.route;
+  let restoredPosition=null;
   let hash = location.hash || "#matches";
   const aliases = {"#markets":"#matches","#bookmakers":"#matches","#forecast":"#calculator","#validation":"#status","#data":"#status"};
   if (aliases[hash]) { hash = aliases[hash]; history.replaceState(null,"",hash); }
@@ -1230,6 +1263,8 @@ async function route() {
   syncRoleUI();
   const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/);
   if (!["#matches","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
+  if(previous!==hash)ProductUX.capture(previous,state);
+  document.title=({"#matches":"Матчи","#favorites":"Избранное","#history":"Мои разборы","#account":"Личный кабинет","#admin":"Управление"}[hash]||"Матч")+" · prognozich ai";
   state.route = hash; document.getElementById('view-matches').classList.toggle('ym-show-content',hash === '#matches'); Account.track("page_view",hash); window.ProductAnalytics?.hit(hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
   $("league-nav").hidden=!["#matches","#favorites"].includes(hash) && !match;
   document.body.classList.toggle("without-ai-desk", ["#matches","#favorites","#history","#archive","#status","#account","#admin"].includes(hash) || Boolean(saved));
@@ -1245,10 +1280,15 @@ async function route() {
   if (hash === "#matches" || hash === "#favorites") {
     showView("view-matches");
     $("catalog-title").textContent = hash === "#favorites" ? "Избранное" : "Матчи";
-    $("catalog-subtitle").textContent = hash === "#favorites" ? "Ваши матчи в этом браузере. Сохраните звёздочкой нужные встречи." : "Выберите матч, чтобы изучить рынки и получить разбор ИИ.";
+    $("catalog-subtitle").textContent = hash === "#favorites" ? "Ваши матчи в этом браузере. Сохраните звёздочкой нужные встречи." : "Найдите встречу. ИИ сравнит доступные факты и объяснит своё решение.";
     $("catalog-stats").hidden = hash === "#favorites";
     $("breadcrumb").textContent = hash === "#favorites" ? "Линия / Избранное" : `Линия / ${sportLabel(state.sport)}`;
-    state.catalogReturn = hash; state.marketOffset = 0; loadCatalogue();
+    state.catalogReturn = hash;
+    restoredPosition=ProductUX.restore(hash);
+    if(restoredPosition){state.sport=restoredPosition.sport;state.phase=restoredPosition.phase;state.marketOffset=restoredPosition.offset;}
+    else {state.marketOffset=0; if(hash==="#favorites"){state.sport="";state.phase="";}}
+    syncPhase(); renderSports(); await loadCatalogue();
+
   } else if (hash === "#account") {
     showView("view-account"); $("breadcrumb").textContent="Личный кабинет"; Account.renderPage();
   } else if (hash === "#admin") {
@@ -1285,8 +1325,9 @@ async function route() {
       $("match-back").href = "#history"; $("match-back").textContent = "← К истории разборов"; loadSavedAnalysis(saved[1]);
     }
   }
+  if(state.route!==hash)return;
   moveAIDesk(); syncAIButton();
-  if (previous !== hash) { window.scrollTo(0,0); $("main-content").focus({preventScroll:true}); }
+  if (previous !== hash) { window.scrollTo(0,restoredPosition?.scroll || 0); $("main-content").focus({preventScroll:true}); }
 }
 function clearQuote() {
   state.selectedQuote = null; $("quote-selection").hidden = true;
@@ -1357,8 +1398,10 @@ $("market-refresh").addEventListener("click", async () => { clearToast(); loadSt
 $("event-show-markets").addEventListener("click",() => { setDetailTab("markets"); const reduced=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; $("event-tabs").scrollIntoView({behavior:reduced ? "auto" : "smooth",block:"start"}); $("tab-markets").focus({preventScroll:true}); });
 $("history-refresh").addEventListener("click", async () => { clearToast(); $("history-refresh").disabled = true; try { if (await loadHistory()) toast("История обновлена."); } finally { $("history-refresh").disabled = false; } });
 $("status-refresh").addEventListener("click", async () => { clearToast(); $("status-refresh").disabled = true; try { const [ok] = await Promise.all([loadStatus(),loadBacktest().catch(error => showError("backtest-empty",error.message))]); if (ok) toast("Состояние сервиса обновлено."); } finally { $("status-refresh").disabled = false; } });
-$("market-prev").addEventListener("click", () => { state.marketOffset = Math.max(0,state.marketOffset - 30); loadCatalogue(); });
-$("market-next").addEventListener("click", () => { state.marketOffset += 30; loadCatalogue(); });
+$("market-prev").addEventListener("click", async () => { state.marketOffset = Math.max(0,state.marketOffset - 30); if(await loadCatalogue()) $("catalog-section").scrollIntoView({block:"start"}); });
+$("market-next").addEventListener("click", async () => { state.marketOffset += 30; if(await loadCatalogue()) $("catalog-section").scrollIntoView({block:"start"}); });
+$("catalog-retry").addEventListener("click",loadCatalogue);
+$("history-login").addEventListener("click",()=>Account.ensure(()=>loadHistory()));
 $("reset-filters").addEventListener("click",resetFilters);
 $("clear-active-filters").addEventListener("click",resetFilters);
 $('theme-toggle').addEventListener('click',() => { themeOverride=document.documentElement.dataset.theme==='dark' ? 'light' : 'dark'; setTheme(themeOverride,true); });
@@ -1454,7 +1497,9 @@ document.addEventListener("accountchange",()=>{
   moveAIDesk();
   state.explainRequest++;clearAIOutput();syncAIButton();
   if (state.eventId) { setDetailTab("markets"); loadEvent(true); }
+  $("history-search").value=""; $("history-search-status").textContent=""; $("history-search-empty").hidden=true;
   $("explanation").replaceChildren();$("history-list").replaceChildren();$("saved-analysis-text").replaceChildren();
+  if(!Account.user && /^#analysis\//.test(state.route)) location.hash="#history";
   if(state.route==="#account") Account.renderPage();
-  if(state.route==="#history"){if(Account.user)loadHistory();else $("history-empty").hidden=false;}
+  if(state.route==="#history")loadHistory();
 });

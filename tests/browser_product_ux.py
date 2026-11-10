@@ -47,14 +47,83 @@ async def source_reader(browser):
     await page.close()
 
 
-async def exercise(base,repo):
+async def journey_checks(page,base,repo,fixtures,width):
+    from playwright.async_api import expect
+    await page.locator('#match-search').fill('Спартак')
+    await expect(page.locator('[data-filter-key="match-search"]')).to_contain_text('Спартак')
+    await expect(page.locator('#match-search-clear')).to_be_visible()
+    await page.locator('#match-search').press('Escape')
+    await expect(page.locator('#match-search')).to_have_value('')
+    await expect(page.locator('#featured-events')).to_be_visible()
+    await page.locator('#day-filter').select_option('tomorrow')
+    await expect(page.locator('[data-filter-key="day-filter"]')).to_contain_text('Завтра')
+    await page.locator('[data-filter-key="day-filter"]').click()
+    await expect(page.locator('#day-filter')).to_have_value('')
+    await page.locator('#competition-filter').select_option('Россия. Премьер-лига')
+    await expect(page.locator('[data-filter-key="competition-filter"]')).to_be_visible()
+    await page.wait_for_function('()=>document.getElementById("market-event-rows").getAttribute("aria-busy")==="false"')
+    link=page.locator('.match-card[data-event-id="106"] .match-open')
+    await link.scroll_into_view_if_needed()
+    before=await page.evaluate('scrollY')
+    await link.click();await page.wait_for_function('()=>state.marketDocument?.source_event_id==="106"')
+    await page.locator('#match-back').click()
+    await page.wait_for_function('()=>state.route==="#matches"&&document.getElementById("market-event-rows").getAttribute("aria-busy")==="false"')
+    await expect(page.locator('#competition-filter')).to_have_value('Россия. Премьер-лига')
+    await page.wait_for_function('(y)=>Math.abs(scrollY-y)<6',arg=before)
+    await page.locator('[data-filter-key="competition-filter"]').click()
+    focus=page.locator('[data-focus-key="101:ai"]')
+    await focus.focus();await page.evaluate('()=>loadCatalogue()');await expect(focus).to_be_focused()
+    await page.locator('.sport-tab').first.focus();await page.evaluate('()=>loadCatalogue()')
+    await expect(page.locator('.sport-tab').first).to_be_focused()
+    if width<=650:
+        rect=await page.locator('.sidebar nav').bounding_box()
+        assert rect['y']+rect['height']<=1051 and rect['height']<100,rect
+    async def unavailable(route):await route.fulfill(status=503,content_type='application/json',body='{"detail":"fixture unavailable"}')
+    await page.route('**/api/bookmakers/events?*',unavailable)
+    await page.locator('#market-refresh').click();await expect(page.locator('#catalog-retry')).to_be_visible()
+    await page.unroute('**/api/bookmakers/events?*',unavailable)
+    await page.locator('#catalog-retry').click();await expect(page.locator('#catalog-retry')).to_be_hidden()
+    await expect(page.locator('#market-list-error')).to_be_hidden()
+    if width==1440:
+        extra=[]
+        for i in range(200,235):
+            value=header(str(i));value.update(members=['Тестовая команда '+str(i),'Соперник'],competition='Тестовая лига')
+            extra.append(value)
+        feed(repo,fixtures+extra)
+        await page.evaluate('()=>loadCatalogue()');await expect(page.locator('#market-next')).to_be_enabled()
+        await page.locator('#market-next').click();await page.wait_for_function('()=>state.marketOffset===30&&document.querySelectorAll(".match-card").length<30')
+        link=page.locator('.match-card .match-open').first
+        event_id=await link.evaluate('node=>node.closest(".match-card").dataset.eventId')
+        await link.click();await page.wait_for_function('(id)=>state.marketDocument?.source_event_id===id',arg=event_id)
+        await page.locator('#match-back').click();await page.wait_for_function('()=>state.marketOffset===30&&state.route==="#matches"')
+        await expect(page.locator('#catalog-page')).to_have_text('2 / 2')
+        for value in fixtures:
+            value['observed_at']=archive.now();value['primary']['observed_at']=value['observed_at']
+        feed(repo,fixtures);await page.evaluate('()=>resetFilters()')
+        await page.wait_for_function('()=>state.marketOffset===0&&document.querySelectorAll(".match-card").length<10')
+    await page.goto(base+'/#history');await expect(page.locator('#history-guest')).to_be_visible()
+    await expect(page.locator('#auth-dialog')).not_to_be_visible()
+    await page.locator('#history-login').click();await expect(page.locator('#auth-dialog')).to_be_visible()
+    await page.locator('#auth-password').fill('private-browser-fixture')
+    await page.locator('#auth-password-toggle').click();await expect(page.locator('#auth-password')).to_have_attribute('type','text')
+    await page.locator('#auth-password-toggle').click();await expect(page.locator('#auth-password')).to_have_attribute('type','password')
+    await page.locator('#auth-close').click()
+    await page.goto(base+'/#matches')
+    await page.evaluate('()=>{ProductUX.startWait();ProductUX.wait("statistics")}')
+    await expect(page.locator('#ai-progress')).to_have_attribute('data-stage','data')
+    assert 'Задание принято' not in await page.locator('#ai-wait-note').inner_text()
+    await page.evaluate('()=>ProductUX.wait("background")')
+    await expect(page.locator('#ai-progress')).to_have_attribute('data-stage','analysis')
+    await expect(page.locator('#ai-wait-note')).to_contain_text('Задание принято')
+
+
+async def exercise(base,repo,fixtures):
     from playwright.async_api import async_playwright,expect
     async with async_playwright() as p:
         browser=await p.chromium.launch(headless=True,executable_path=shutil.which('chromium'))
         try:
-            await source_reader(browser)
-            for theme,width in [('light',1440),('dark',390),('light',320)]:
-                context=await browser.new_context(viewport={'width':width,'height':1050},color_scheme=theme,reduced_motion='reduce',locale='ru-RU')
+            for theme,width in [('light',1440),('dark',1024),('dark',390),('light',320)]:
+                context=await browser.new_context(viewport={'width':width,'height':1050},color_scheme=theme,reduced_motion='reduce',locale='ru-RU',permissions=['clipboard-read','clipboard-write'])
                 page=await context.new_page();page.set_default_timeout(12000);errors=[];requests=[]
                 page.on('pageerror',lambda error:errors.append(str(error)))
                 page.on('request',lambda request:requests.append(request.url))
@@ -74,6 +143,7 @@ async def exercise(base,repo):
                 await page.locator('#guide-toggle').click();await expect(page.locator('#quick-guide')).to_be_visible();await page.locator('#guide-close').click()
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'catalogue overflow')
                 await page.screenshot(path=f'/workspace/outputs/product-matches-{theme}-{width}.png',full_page=True)
+                await journey_checks(page,base,repo,fixtures,width)
                 await page.locator('[data-phase="live"]').click()
                 await expect(page.locator('#featured-track .featured-card')).to_have_count(8)
                 await page.locator('#match-search').fill('Матч');await expect(page.locator('#featured-events')).to_be_hidden()
@@ -101,6 +171,27 @@ async def exercise(base,repo):
                 await expect(page.locator('#saved-analysis .verdict-choice')).to_have_text('Пропустить матч')
                 await expect(page.locator('#saved-analysis-coverage')).to_be_hidden()
                 assert 'снимок' not in await page.locator('#manual-heading').inner_text()
+                await page.evaluate('''()=>{const d=document.createElement('details'),s=document.createElement('summary'),p=document.createElement('p');s.textContent='Ограничения';p.textContent='Ограничение тестового отчёта';d.append(s,p);document.getElementById('saved-analysis-text').append(d)}''')
+                await page.locator('[data-copy-target="saved-analysis-text"]').click()
+                await expect(page.locator('[data-copy-target="saved-analysis-text"]')).to_have_text('Скопировано')
+                copied=await page.evaluate('()=>navigator.clipboard.readText()')
+                assert 'Пропустить матч' in copied and 'Ограничение тестового отчёта' in copied
+                await page.goto(base+'/#history');await expect(page.locator('.history-card')).to_have_count(1)
+                await page.locator('#history-search').fill('Неизвестный клуб');await expect(page.locator('#history-search-empty')).to_be_visible()
+                await page.locator('#history-search').fill('Спартак');await expect(page.locator('#history-search-empty')).to_be_hidden()
+                await expect(page.locator('.history-card:visible')).to_have_count(1)
+                await page.locator('#history-search').fill('')
+                await page.screenshot(path=f'/workspace/outputs/product-history-{theme}-{width}.png',full_page=True)
+
+                username=await page.evaluate('Account.user.username')
+                await page.goto(base+'/#analysis/'+identifier)
+                await expect(page.locator('#saved-analysis .verdict-preference')).to_have_text('Никто')
+                await page.evaluate('async()=>{await Account.api("/api/auth/logout",{method:"POST",body:"{}"});await Account.refresh()}')
+                await page.wait_for_function('()=>state.route==="#history"')
+                await expect(page.locator('#history-guest')).to_be_visible()
+                login=await context.request.post(base+'/api/auth/login',data={'username':username,'password':'browser-fixture-password-123'})
+                assert login.status==200,await login.text()
+                await page.evaluate('Account.refresh()')
                 # Promote the fixture through the repository, then refresh the real session.
                 username=await page.evaluate('Account.user.username')
                 with repo.connection() as db:db.execute('UPDATE users SET role=? WHERE username=?',('admin',username))
@@ -115,7 +206,7 @@ async def exercise(base,repo):
                 assert not errors,errors
                 await context.close()
         finally:await browser.close()
-    print('PASS: source DOM order and missing-source reset; mixed-sport carousel; filters/auth; admin/guest/user separation and logout; desktop/mobile light/dark; no model calls')
+    print('PASS: catalogue/search/filter chips; focus and scroll restoration; pagination; retry; password visibility; honest wait stages; history search and clipboard; guest/user/admin; 1440/1024/390/320 light/dark; no model calls')
 
 
 def main():
@@ -140,7 +231,7 @@ def main():
                     try:opener.open(base+'/api/bookmakers/events',timeout=1).close();break
                     except OSError:time.sleep(.1)
                 else:raise AssertionError('App did not start')
-                asyncio.run(exercise(base,repo))
+                asyncio.run(exercise(base,repo,events))
             finally:server.terminate();server.wait(timeout=20)
 
 if __name__=='__main__':main()
