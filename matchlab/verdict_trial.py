@@ -3,6 +3,7 @@ import argparse
 from collections import Counter
 from dataclasses import replace
 from datetime import datetime,timezone
+from copy import deepcopy
 import fcntl
 import hashlib
 import json
@@ -15,17 +16,36 @@ from urllib.parse import quote as uri_quote
 
 from .bookmakers import instant
 from .config import Settings
-from .neural_verdict import VERSION,build_packet,encoded,generate,latest_historical_quote
+from .neural_verdict import VERSION,build_packet,encoded,generate,latest_historical_quote,quote_matches_event
 
 
-def sample_inputs(db,limit,seed):
+def input_candidates(db):
     from .winline_backtest import results
     from .snapshot_evaluation import recorded_inputs
     rows,excluded=results(db)
     candidates,rejected,pending,inventory=recorded_inputs(db,rows)
-    rng=random.Random(seed)
-    return rng.sample(candidates,min(limit,len(candidates))),{'eligible':len(candidates),'excluded_statistics':rejected,
+    return candidates,{'eligible_statistics':len(candidates),'excluded_statistics':rejected,
         'excluded_results':excluded,'pending_associations':pending,'snapshot_inventory':inventory}
+
+
+def paired_observation(event,statistics,available_at,quotes):
+    """Earliest jointly available input; never rewind a later price or use a live one."""
+    matching=[q for q in quotes if quote_matches_event(q,event)]
+    if not matching:return None,None,'no_matching_historical_prices'
+    kickoff=instant(event['kickoff_at']);times=set();invalid_capture=False
+    for row in matching:
+        try:
+            at=max(available_at,instant(row['observed_at']),instant(row.get('_capture_at') or row['observed_at']))
+            if at<min(kickoff,instant(row['kickoff_at'])):times.add(at)
+        except (ValueError,TypeError):invalid_capture=True
+    if not times:return None,None,'invalid_quote_capture' if invalid_capture else 'prices_not_available_before_kickoff'
+    reason='no_joint_fresh_observation'
+    for at in sorted(times):
+        if (at-instant(statistics['observed_at'])).total_seconds()>3600:
+            reason='statistics_expired_before_prices';continue
+        quote=latest_historical_quote(event,at,matching)
+        if quote and at<instant(quote['kickoff_at']) and 0<=(at-instant(quote['observed_at'])).total_seconds()<=180:return at,quote,None
+    return None,None,reason
 
 
 def prepare(db,settings,limit=10,seed=None):
@@ -33,27 +53,32 @@ def prepare(db,settings,limit=10,seed=None):
     from .snapshot_evaluation import ReadOnlyInputs
     if not 1<=limit<=100:raise ValueError('Размер теста должен быть от 1 до 100.')
     seed=secrets.randbits(32) if seed is None else seed
-    sampled,inventory=sample_inputs(db,limit,seed)
-    if not sampled:raise ValueError('Нет завершённых футбольных матчей с сохранённой предматчевой статистикой.')
-    quotes=historical_quotes(db);cases=[]
-    for candidate in sampled:
-        target=candidate['result'];at=candidate['as_of'];stats=candidate['statistics']
-        stats['age_seconds']=max(0,int((at-instant(stats['observed_at'])).total_seconds()));stats['is_stale']=stats['age_seconds']>3600
+    candidates,inventory=input_candidates(db)
+    quotes=historical_quotes(db);eligible=[];excluded=Counter()
+    for candidate in candidates:
+        target=candidate['result'];stats=deepcopy(candidate['statistics'])
         event={k:target[k] for k in ('home','away','competition')}
         event.update(source_event_id=candidate['event_id'],sport='football',sport_label='Футбол',phase='prematch',kickoff_at=target['at'].isoformat())
-        market=latest_historical_quote(event,at,quotes)
+        at,market,reason=paired_observation(event,stats,candidate['as_of'],quotes)
+        if reason:excluded[reason]+=1;continue
+        stats['age_seconds']=max(0,int((at-instant(stats['observed_at'])).total_seconds()));stats['is_stale']=stats['age_seconds']>3600
         packet=build_packet(ReadOnlyInputs(db),event,stats,at,market)
-        cases.append({'result_key':target['key'],'event':event,'input':packet,
+        if packet['policy']['force_skip']:excluded['other_data_constraints']+=1;continue
+        eligible.append({'result_key':target['key'],'event':event,'input':packet,
             'input_sha256':hashlib.sha256(encoded(packet).encode()).hexdigest(),'state':'pending'})
+    cases=random.Random(seed).sample(eligible,min(limit,len(eligible)))
+    inventory.update(historical_price_snapshots=len(quotes),eligible_verdict_inputs=len(eligible),excluded_joint_inputs=dict(excluded))
     return {'format':'matchlab.neural-verdict-test.v1','policy_version':VERSION,'scope':'team_winner_90m',
-        'created_at':datetime.now(timezone.utc).isoformat(),'state':'prepared','seed':seed,'requested':limit,
+        'selection_policy':'random-with-joint-prematch-input-v2',
+        'created_at':datetime.now(timezone.utc).isoformat(),'state':'prepared' if cases else 'no_eligible_inputs','seed':seed,'requested':limit,
         'selected':len(cases),'model':settings.qwen_model,'max_stake_pct':settings.verdict_max_stake_pct,
         'inputs_with_fresh_prices':sum(bool(c['input']['options']) for c in cases),
         'inputs_requiring_skip':sum(c['input']['policy']['force_skip'] for c in cases),
         'source_inventory':inventory,'cases':cases,'real_money_used':False,
         'limitations':['Случайная выборка фиксируется до вызовов ИИ. Пропуски не считаются угаданными матчами.',
             'Это тест на записанном предматчевом входе, а не фактически выданные тогда рекомендации.',
-            'История, статистика и коэффициенты ограничены временем каждого входа. Итог целевого матча ИИ не получает.',
+            'Сначала проверяется совместная доступность статистики и коэффициентов до начала; затем случайно выбираются пригодные входы. Итог целевого матча ИИ не получает.',
+            'Выборка ограничена наличием записанных данных; её результаты не переносятся на весь каталог.',
             'Размер ставки — фиксированный ограничитель для виртуального теста, не оценка вероятности и не обещание безопасности.',
             'Десять матчей не подтверждают точность стратегии или прибыльность на будущих играх.']}
 
@@ -80,11 +105,14 @@ def metrics(report):
 
 
 def run_trial(db,settings,report,path,complete=None):
-    if report.get('format')!='matchlab.neural-verdict-test.v1' or report.get('policy_version')!=VERSION:raise ValueError('Неизвестный формат плана.')
+    if report.get('format')!='matchlab.neural-verdict-test.v1' or report.get('policy_version')!=VERSION:raise ValueError('План использует другую версию протокола. Сохраните его и подготовьте новый --output.')
     if report['model']!=settings.qwen_model or report['max_stake_pct']!=settings.verdict_max_stake_pct:raise ValueError('Модель или лимит изменились. Нужен новый файл теста.')
     from .winline_backtest import results
     truth={r['key']:r for r in results(db)[0]}
     tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if not report['cases']:
+        report['state']='no_eligible_inputs';report['metrics']=metrics(report);save(report,path)
+        return report
     report['state']='running';save(report,path)
     for index,case in enumerate(report['cases'],1):
         if case['state']=='completed':continue
@@ -109,6 +137,7 @@ def run_trial(db,settings,report,path,complete=None):
         else:case['settlement']='result_unavailable'
         report['metrics']=metrics(report);save(report,path)
         print(f"  Решение: {verdict['decision']}; движок: {verdict['engine']}; вызовов: {generation['model_calls']}",flush=True)
+        if generation.get('reason'):print('  Причина:',generation['reason'],flush=True)
     report['state']='completed';report['metrics']=metrics(report);save(report,path)
     return report
 
@@ -135,6 +164,9 @@ def main():
                 print('Зафиксирована выборка:',report['selected'],'seed:',report['seed'],flush=True)
                 print('Свежие сохранённые коэффициенты:',report['inputs_with_fresh_prices'],
                       '| входов с обязательным пропуском:',report['inputs_requiring_skip'],flush=True)
+                print('Пригодных совместных входов во всей базе:',report.get('source_inventory',{}).get('eligible_verdict_inputs','не проверено'),flush=True)
+                if not report['selected']:print('Нет пригодных входов. Запросы к Qwen не выполняются; причины сохранены в source_inventory.excluded_joint_inputs.',flush=True)
+                elif report['selected']<report['requested']:print('Для полного теста данных пока недостаточно. Будет обработано:',report['selected'],flush=True)
                 if not args.prepare_only:
                     opts=replace(settings,qwen_timeout=min(90,settings.qwen_timeout),event_analysis_mode='neural-verdict')
                     report=run_trial(db,opts,report,path)

@@ -14,11 +14,12 @@ from fastapi.testclient import TestClient
 
 from matchlab.api import create_app
 from matchlab.config import Settings
+from matchlab.bookmakers import make_snapshot,instant
 from matchlab.markets import validate_event_markets
 from matchlab.neural_verdict import build_packet,document_quote,generate,validate_reply,render,encoded
 from matchlab.statistics import analysis_statistics
 from matchlab.storage import Repository
-from matchlab.verdict_trial import prepare,run_trial,metrics
+from matchlab.verdict_trial import prepare,run_trial,metrics,paired_observation
 from scripts.configure_neural_verdict import configure
 from account_helpers import signed_in
 from test_product import event
@@ -65,9 +66,11 @@ class VerdictTests(unittest.TestCase):
             if change=='missing':p['options']=[];p['quote']=None
             p['policy']['force_skip']=True
             with self.subTest(change=change),self.assertRaises(ValueError):validate_reply(reply(p,'bet'),p)
-            verdict,generation=generate(self.settings,p,complete)
+            with patch('matchlab.qwen._completion',side_effect=AssertionError('forced skip must not call Qwen')):
+                verdict,generation=generate(self.settings,p)
             self.assertEqual(verdict['decision'],'skip');self.assertEqual(verdict['stake_percent'],0)
-            self.assertEqual(verdict['engine'],'qwen');self.assertTrue(verdict['data_forced_skip'])
+            self.assertEqual(verdict['engine'],'data_guard');self.assertTrue(verdict['data_forced_skip'])
+            self.assertEqual(generation['model_calls'],0)
 
     def test_model_skip_and_response_error_are_distinct(self):
         packet=self.packet()
@@ -77,6 +80,26 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(skip['engine'],'qwen');self.assertEqual(good_gen['state'],'ready')
         self.assertEqual(error['engine'],'model_error');self.assertEqual(bad_gen['state'],'unavailable')
         self.assertEqual(error['stake_percent'],0)
+
+    def test_repair_receives_the_failed_answer_and_specific_unsupported_numbers(self):
+        packet=self.packet();messages_seen=[]
+        bad=reply(packet);bad['arguments'][0]['text']=EXPLANATION+' Забито 9999 голов.'
+        def model(opts,messages):
+            messages_seen.append(messages)
+            return json.dumps(bad if len(messages_seen)==1 else reply(packet))
+        verdict,generation=generate(self.settings,packet,model)
+        self.assertEqual(verdict['engine'],'qwen');self.assertEqual(generation['model_calls'],2)
+        detail=generation['attempts'][0]['validation_details']
+        self.assertEqual(detail['unsupported_numbers'],['9999'])
+        repair=messages_seen[1]
+        self.assertEqual(repair[2]['role'],'assistant')
+        self.assertEqual(json.loads(repair[3]['content'])['details'],detail)
+
+    def test_timeout_is_reported_without_a_second_model_call(self):
+        with patch('matchlab.qwen._completion',side_effect=ValueError('Сервис не ответил вовремя.')) as model:
+            verdict,generation=generate(self.settings,self.packet())
+        self.assertEqual(verdict['engine'],'model_error');self.assertEqual(generation['reason'],'timeout')
+        self.assertEqual(model.call_count,1)
 
     def test_fabricated_outcomes_budgets_and_confidence_percentages_are_rejected(self):
         packet=self.packet()
@@ -154,10 +177,13 @@ class VerdictTests(unittest.TestCase):
             self.assertFalse(result['cached']);self.assertEqual(model.call_count,2)
 
     def test_empty_archive_cannot_be_presented_as_a_completed_ten_game_test(self):
-        with self.repo.connection() as db,self.assertRaisesRegex(ValueError,'Нет завершённых'):
-            prepare(db,self.settings)
+        with self.repo.connection() as db,patch('matchlab.qwen._completion',side_effect=AssertionError('empty test called model')):
+            report=prepare(db,self.settings)
+            self.assertEqual(report['selected'],0)
+            result=run_trial(db,self.settings,report,self.path/'empty.json')
+        self.assertEqual(result['state'],'no_eligible_inputs');self.assertEqual(result['metrics']['model_calls'],0)
 
-    def historical(self,n=12):
+    def historical(self,n=12,*,prices=True):
         seed(self.repo,n)
         with self.repo.connection() as db:
             rows=db.execute('SELECT result_key,payload,start_at FROM archive_latest_results ORDER BY start_at').fetchall()
@@ -167,6 +193,45 @@ class VerdictTests(unittest.TestCase):
                 at=(datetime.fromisoformat(row['start_at'])-timedelta(hours=2)).isoformat()
                 s=statistics(str(int(row['result_key'])+500),sid,at)
                 db.execute('INSERT INTO event_statistics VALUES (?,?,?,?,?)',(s['source_event_id'],sid,'ok',at,json.dumps(s)))
+                if prices:
+                    q=make_snapshot('winline',data['championship'],data['member1'],data['member2'],row['start_at'],at,
+                        [2.5,3.4,2.8],s['event_url'],external_id=s['source_event_id'])
+                    db.execute('INSERT INTO bookmaker_quotes VALUES (?,?,?,?,?,?,?)',
+                        (q['id'],q['event_key'],q['fixture_key'],q['source'],q['kickoff_at'],q['observed_at'],json.dumps(q)))
+
+    def test_missing_prices_are_rejected_before_sampling_or_model_calls(self):
+        self.historical(prices=False)
+        with self.repo.connection() as db,patch('matchlab.qwen._completion',side_effect=AssertionError('missing prices called model')):
+            plan=prepare(db,self.settings,10,seed=42)
+            result=run_trial(db,self.settings,plan,self.path/'no-prices.json')
+        self.assertEqual(result['selected'],0);self.assertEqual(result['source_inventory']['eligible_statistics'],12)
+        self.assertEqual(result['source_inventory']['excluded_joint_inputs']['no_matching_historical_prices'],12)
+        self.assertEqual(result['metrics']['model_calls'],0)
+
+    def test_fewer_eligible_inputs_are_reported_without_padding_the_sample(self):
+        self.historical(4)
+        with self.repo.connection() as db:plan=prepare(db,self.settings,10,seed=42)
+        self.assertEqual(plan['selected'],4);self.assertEqual(plan['inputs_with_fresh_prices'],4)
+        self.assertEqual(plan['inputs_requiring_skip'],0)
+
+    def test_later_prematch_prices_join_stats_without_rewinding_the_capture(self):
+        packet=self.packet();e=packet['event'];stats_at=NOW-timedelta(minutes=30)
+        stats={'observed_at':stats_at.isoformat()}
+        q=make_snapshot('winline',e['competition'],e['home'],e['away'],e['kickoff_at'],
+            (stats_at+timedelta(minutes=1)).isoformat(),[2.5,3.4,2.8],'https://winline.ru/stavki/sport/futbol/123',external_id='123')
+        q['_capture_at']=(stats_at+timedelta(minutes=2)).isoformat()
+        at,price,reason=paired_observation(e,stats,stats_at,[q])
+        self.assertIsNone(reason);self.assertEqual(at,instant(q['_capture_at']))
+        q['_capture_at']=e['kickoff_at']
+        self.assertEqual(paired_observation(e,stats,stats_at,[q])[2],'prices_not_available_before_kickoff')
+
+    def test_prices_cannot_resurrect_expired_stats_or_an_old_price_capture(self):
+        packet=self.packet();e=packet['event'];at=NOW-timedelta(hours=3)
+        q=make_snapshot('winline',e['competition'],e['home'],e['away'],e['kickoff_at'],
+            (at+timedelta(hours=2)).isoformat(),[2.5,3.4,2.8],'https://winline.ru/stavki/sport/futbol/123',external_id='123')
+        self.assertEqual(paired_observation(e,{'observed_at':at.isoformat()},at,[q])[2],'statistics_expired_before_prices')
+        q['observed_at']=at.isoformat();q['_capture_at']=(at+timedelta(minutes=10)).isoformat()
+        self.assertEqual(paired_observation(e,{'observed_at':at.isoformat()},at,[q])[2],'no_joint_fresh_observation')
 
     def test_random_sample_is_fixed_before_calls_and_no_math_model_runs(self):
         self.historical()

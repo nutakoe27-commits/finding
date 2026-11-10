@@ -551,10 +551,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def event_analysis_key(user,request,inputs):
         from .event_analysis import request_key
+        from .neural_verdict import VERSION as verdict_version
         document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history']
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
         return hashlib.sha256((user['id']+':'+key+':web=disabled:markets='+str(settings.qwen_market_limit)+':stats='+str(request.statistics_job_id or '')+
-            ':mode='+settings.event_analysis_mode+':stake='+str(settings.verdict_max_stake_pct)).encode()).hexdigest()
+            ':mode='+settings.event_analysis_mode+':stake='+str(settings.verdict_max_stake_pct)+
+            (':verdict='+verdict_version if settings.event_analysis_mode=='neural-verdict' else '')).encode()).hexdigest()
 
     def explain_event_impl(event_id,request,stream,http_request,inputs=None,generation_settings=None):
         from .event_analysis import analysis_context
