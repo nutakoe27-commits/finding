@@ -60,6 +60,10 @@ class Repository:
                     payload TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS event_analysis_request ON event_analyses(request_key, generated_at DESC);
+                CREATE TABLE IF NOT EXISTS event_analysis_inputs (
+                    analysis_id TEXT PRIMARY KEY,
+                    payload BLOB NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS event_statistics (
                     event_id TEXT PRIMARY KEY,
                     statistics_id TEXT NOT NULL,
@@ -212,10 +216,13 @@ class Repository:
             rows = db.execute("SELECT payload FROM forecasts ORDER BY generated_at DESC LIMIT ?", (limit,))
             return [json.loads(row[0]) for row in rows]
 
-    def save_event_analysis(self, payload: dict, request_key: str, user_id=None) -> None:
+    def save_event_analysis(self, payload: dict, request_key: str, user_id=None, full_context=None) -> None:
         with self.connection() as db:
             db.execute("INSERT INTO event_analyses(id,request_key,generated_at,payload,user_id) VALUES (?, ?, ?, ?, ?)",
                        (payload["id"], request_key, payload["generated_at"], json.dumps(payload, ensure_ascii=False),user_id))
+            if full_context is not None:
+                raw=json.dumps(full_context,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode()
+                db.execute('INSERT INTO event_analysis_inputs VALUES (?,?)',(payload['id'],zlib.compress(raw)))
 
     def event_analysis(self, *, analysis_id=None, request_key=None,user_id=None) -> dict | None:
         with self.connection() as db:

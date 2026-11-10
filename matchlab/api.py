@@ -550,7 +550,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .event_analysis import request_key
         document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history']
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        return hashlib.sha256((user['id']+':'+key+':web=disabled:stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
+        return hashlib.sha256((user['id']+':'+key+':web=disabled:markets='+str(settings.qwen_market_limit)+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
 
     def explain_event_impl(event_id,request,stream,http_request,inputs=None,generation_settings=None):
         from .event_analysis import analysis_context
@@ -592,6 +592,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Public context contains predictions, never fitted parameters or tuning.
             if context.get('statistical_model'):
                 context['statistical_model']={'probabilities':context['statistical_model']['probabilities']}
+            from .market_focus import focus_context
+            context['primary_market_key']=document.get('primary_market_key')
+            full_context=context
+            context=focus_context(context,settings.qwen_market_limit)
+            if context is not full_context:
+                logging.getLogger('uvicorn.error').info('AI markets selected: markets=%s/%s outcomes=%s/%s',
+                    context['coverage']['analyzed_markets'],context['coverage']['stored_markets'],
+                    context['coverage']['analyzed_outcomes'],context['coverage']['stored_outcomes'])
             try:
                 text = qwen.explain_event(generation_settings or settings, context)
             except ValueError as exc:
@@ -602,7 +610,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        "observed_at": document["observed_at"], "market_name": selected["name"] if selected else "Событие целиком",
                        "text": text, "context": context,
                        "analysis_type": {'unavailable':'statistical_report','skipped':'limited_summary','partial':'partial_model'}.get(context.get('ai_generation',{}).get('state'),'model')}
-            repo.save_event_analysis(payload, key,user_id=user['id'])
+            repo.save_event_analysis(payload, key,user_id=user['id'],full_context=full_context if context is not full_context else None)
             http_request.state.limited_summary = payload['analysis_type'] in ('limited_summary','statistical_report','partial_model')
             http_request.state.ai_details=generation_details(payload)
             return {**payload, "cached": False}

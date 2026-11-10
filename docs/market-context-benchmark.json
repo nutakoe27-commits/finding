@@ -1,0 +1,15 @@
+{
+  "kind": "size_only_reconstructed_example",
+  "source": "Public stored market, statistics and history endpoints of prognozich.online",
+  "source_event_id": "17076645",
+  "market_observed_at": "2026-11-09T17:54:27.339807+00:00",
+  "generation_performed": false,
+  "tokenizer_measured": false,
+  "notes": "Same participant evidence in all views; empty user notes; comparison of encoded bytes, not tokens or inference speed.",
+  "full": {"markets": 156, "outcomes": 614, "input_bytes": 212584},
+  "limit_8": {"markets": 7, "outcomes": 38, "input_bytes": 93546},
+  "limit_5": {"markets": 5, "outcomes": 26, "input_bytes": 91442},
+  "statistics_json_bytes": 60398,
+  "archive_history_json_bytes": 3747,
+  "limit_8_savings_percent": 56.0
+}

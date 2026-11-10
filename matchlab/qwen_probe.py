@@ -3,21 +3,70 @@ from dataclasses import replace
 import json
 import sqlite3
 import time
+import zlib
 from urllib.parse import quote
 
 from . import qwen
 from .event_reasoning import Budget,EXTRACT,DIRECT,records_for,record_limit,encoded,evidence_payload
 
 
-def saved_context(settings):
-    if not settings.database.is_file():return None
+def saved_sample(settings,full=False):
+    if not settings.database.is_file():return None,None
     with sqlite3.connect('file:'+quote(str(settings.database.resolve()))+'?mode=ro',uri=True) as db:
-        row=db.execute('SELECT payload FROM event_analyses ORDER BY generated_at DESC LIMIT 1').fetchone()
-    if not row:return None
-    context={key:value for key,value in (json.loads(row[0]).get('context') or {}).items() if key!='ai_generation'}
-    # Probes mirror new match requests; archived search snippets are not resent.
-    context['web_research']={'state':'disabled','sources':[]}
-    return context
+        audit=bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_analysis_inputs'").fetchone())
+        query=('SELECT a.id,a.generated_at,a.payload,i.payload FROM event_analyses a LEFT JOIN event_analysis_inputs i ON i.analysis_id=a.id '
+               if audit else 'SELECT id,generated_at,payload,NULL FROM event_analyses ')
+        for row in db.execute(query+'ORDER BY generated_at DESC LIMIT 50'):
+            context=json.loads(row[2]).get('context') or {};source='saved_report'
+            if full:
+                if row[3]:context=json.loads(zlib.decompress(row[3]));source='audit_snapshot'
+                elif context.get('market_selection'):continue
+            context={key:value for key,value in context.items() if key!='ai_generation'}
+            # Probes mirror new match requests; archived search snippets are not resent.
+            context['web_research']={'state':'disabled','sources':[]}
+            return context,{'analysis_id':row[0],'generated_at':row[1],'source':source}
+    return None,None
+
+
+def saved_context(settings):return saved_sample(settings)[0]
+
+
+def compare_context(settings,market_limit=None):
+    """Tokenize both views of the same saved snapshot; never generate or mutate data."""
+    from .market_focus import focus_context
+    budget=Budget(settings,qwen._request)
+    limit=settings.qwen_market_limit if market_limit is None else market_limit
+    result={'model':settings.qwen_model,'context_tokens':budget.limit,'market_limit':limit}
+    full,sample=saved_sample(settings,True)
+    if full is None:return result|{'sample':'no_full_saved_analysis'}
+    result['sample']=sample
+    for label,context in (('full',full),('focused',focus_context(full,limit))):
+        records=records_for(context,limit=record_limit(budget))
+        payload=evidence_payload(context,records)
+        messages=[{'role':'system','content':DIRECT},{'role':'user','content':encoded(payload)}]
+        item={'markets':len(context.get('markets',[])),
+              'outcomes':sum(len(m.get('outcomes',[])) for m in context.get('markets',[])),
+              'assessment_outcomes':len((context.get('probability_assessment') or {}).get('markets',[])),
+              'input_bytes':sum(len(m['content'].encode()) for m in messages),
+              'sections_bytes':{key:len(encoded(context.get(key)).encode()) for key in ('markets','probability_assessment','team_statistics','archive_history')}}
+        try:
+            reply=qwen._request(replace(budget.token_settings,qwen_timeout=min(10,settings.qwen_timeout)),'post','/tokenize',
+                                json={'model':settings.qwen_model,'messages':messages,'add_generation_prompt':True})
+            count=reply.get('count')
+            if type(count) is not int or count<0:raise ValueError('Invalid tokenizer count')
+            required=count+min(settings.qwen_max_tokens,512)+256
+            item.update(input_tokens=count,minimum_context_tokens=required,fits_advertised_window=required<=budget.limit,
+                        fits_batch_limit=count<=settings.qwen_batch_tokens)
+        except (ValueError,AttributeError,TypeError) as error:item['tokenizer_error']=qwen.event_error_code(error)
+        result[label]=item
+    original=result['full'];focused=result['focused']
+    savings={'input_bytes':original['input_bytes']-focused['input_bytes'],
+             'bytes_percent':round(100*(1-focused['input_bytes']/max(1,original['input_bytes'])),1)}
+    if 'input_tokens' in original and 'input_tokens' in focused:
+        savings.update(input_tokens=original['input_tokens']-focused['input_tokens'],
+                       tokens_percent=round(100*(1-focused['input_tokens']/max(1,original['input_tokens'])),1))
+    result['savings']=savings
+    return result
 
 
 def inspect_context(settings):
