@@ -15,6 +15,7 @@ Check participants, dates, periods, filters and freshness. Future fixtures are n
 Scores do not prove dominance; form indices are not win probabilities; raw totals need match counts.
 finished means retrospective only. News and unverified_matches are unconfirmed.
 Never invent facts, change probabilities, promise winnings or reveal model formulas.
+Participant identity verification does not establish that a historical match finished. Missing final status is not confirmation.
 Bookmaker prices and implied chances are excluded. Never infer chances from odds or user-supplied prices.
 Return JSON only, in Russian, without Markdown or hidden reasoning.'''
 EXTRACT=RULES+'''
@@ -48,17 +49,26 @@ Provide 1-2 Russian arguments, text <=100 characters each, with ONE literal quot
 Copy a quote from the cited record's data, never scope or another record. Do not translate, round or paraphrase it.
 Drop or correct unsupported claims; invent no sources, numbers or percentages. If none are supported return observations=[].'''
 FACT_DIRECT=RULES+'''
-Read ALL records and choose the most relevant verified facts supporting or limiting the forecast.
-Return ONLY {"fact_ids":["F1","F2"]}, 1-3 different IDs from facts.
-The server will insert their exact verified text and numbers into the report.
-Do not write arguments, quotations, calculations, new numbers or any extra JSON fields.
-Compare periods, filters, participant identities and freshness before selecting facts.'''
-FACT_EXTRACT=FACT_DIRECT+'''
-This is one fragment. Choose up to 2 facts relevant to it; fact_ids=[] is allowed.'''
+Read ALL records and explain the strongest supporting and opposing evidence for the forecast.
+Return ONLY {"arguments":[{"fact_ids":["F1","F2"],"explanation":"Подробное объяснение значения этих фактов для матча."}]}.
+Write 2-3 complementary arguments in Russian, each explanation 120-350 characters, using 1-3 existing fact IDs.
+Explain WHY the evidence matters: attack/defence, expected scoring, alternatives and reliability of the sample.
+Market conditions are questions to evaluate, never evidence of team strength or bookmaker preference. Explain the computed independent forecast.
+Compare per-game figures, scopes, participants, dates and match periods; raw totals alone do not prove superiority.
+The server inserts the exact facts and computed win percentage. Do not repeat numbers or percentages in explanations.
+Never invent results, injuries, lineups, causes or sources. State assumptions and uncertainty explicitly.
+Do not reveal model formulas, internal IDs or technical field names in public explanations.'''
+FACT_EXTRACT=RULES+'''
+Read this fragment and explain why 1-2 verified facts matter for the independent forecast.
+Return ONLY {"arguments":[{"fact_ids":["F1"],"explanation":"Почему эти факты важны и каковы ограничения вывода."}]}.
+Use 1-3 existing fact IDs per argument, Russian explanations 80-350 characters.
+No new numbers, percentages, extra fields, invented causes or model formulas.
+Market conditions do not establish team strength; consider scope, sample reliability and counterevidence.'''
 FACT_REPAIR=RULES+'''
-The previous output failed verification. Choose supported arguments only from facts.
-Return ONLY {"fact_ids":["F1","F2"]}, 1-3 different existing IDs.
-Do not copy, rewrite or calculate any numbers or quotations. No extra JSON fields.'''
+The previous output failed verification. Return ONLY {"arguments":[{"fact_ids":["F1"],"explanation":"Почему эти факты важны и каковы ограничения вывода."}]}.
+Write ONE explanation in Russian, 100-300 characters, citing 1-3 existing facts.
+Explain significance without repeating or inventing numbers, percentages, causes, injuries or lineups.
+No extra JSON fields, technical names or model formulas.'''
 FACT_SYNTHESIZE=RULES+'''
 Compare the evidence and forecast. Select 1-3 complementary evidence items for the final report.
 Return ONLY {"evidence_ids":["E1","F2"]}, using existing IDs and no extra fields.
@@ -201,7 +211,24 @@ def trusted_facts(context):
 def direct_system(context):return FACT_DIRECT if trusted_facts(context) else DIRECT
 
 
-def verified_observations(reply,records,facts=None):
+def verified_observations(reply,records,facts=None,require_explanation=False):
+    if facts and isinstance(reply,dict) and 'arguments' in reply:
+        rows=reply['arguments'];lookup={f['id']:f for f in facts};result=[]
+        if set(reply)!={'arguments'} or not isinstance(rows,list) or not 1<=len(rows)<=4:raise ValueError('Invalid grounded explanation')
+        for row in rows:
+            if not isinstance(row,dict) or set(row)!={'fact_ids','explanation'}:raise ValueError('Invalid grounded explanation')
+            ids=row['fact_ids'];text=row['explanation']
+            if not isinstance(ids,list) or not 1<=len(ids)<=3 or any(not isinstance(i,str) or i not in lookup for i in ids) or len(set(ids))!=len(ids):raise ValueError('Invalid fact selection')
+            if not isinstance(text,str) or not 80<=len(text.strip())<=1200 or '%' in text:raise ValueError('Invalid grounded explanation')
+            selected=[lookup[i] for i in ids];literal=' '.join(f['text'] for f in selected)
+            if not numeric_tokens(text)<=numeric_tokens(literal):raise ValueError('Unsupported numeric claim')
+            certainty=re.sub(r'\bне\s+(?:(?:может|могут)\s+)?гарантир\w*','',text,flags=re.I)
+            if re.search(r'гарантир|точно выигра|Пуассон|гамма.?модел|\bформул(?:а|ы|у|е|ой|ами|ах)\b|\b[FS]\d+\b|<[^>]+>|```',certainty,re.I):raise ValueError('Invalid grounded explanation')
+            combined=' '.join(f['text'].rstrip('. ') + '.' for f in selected)+' '+text.strip()
+            result.append({'text':combined,'quotes':[q for f in selected for q in f['quotes']],
+                           'unverified':False,'explanation':text.strip(),'fact_ids':ids})
+        return result
+    if facts and require_explanation:raise ValueError('Invalid grounded explanation')
     if isinstance(reply,dict) and 'fact_ids' in reply:
         ids=reply['fact_ids'];lookup={f['id']:f for f in facts or []}
         if set(reply)!={'fact_ids'} or not isinstance(ids,list) or len(ids)>3 or any(not isinstance(i,str) or i not in lookup for i in ids) or len(set(ids))!=len(ids):
@@ -280,7 +307,8 @@ def analyze(settings,context,complete,request):
     final_prompt=FACT_SYNTHESIZE if facts else SYNTHESIZE
     build=lambda records:evidence_payload(context,records)
     scope=build([])['match']
-    single_pass=budget.fits(direct_prompt,build(source_records),512)
+    final_output=min(settings.qwen_max_tokens,1536 if facts else 512)
+    single_pass=budget.fits(direct_prompt,build(source_records),final_output)
     batches=[source_records] if single_pass else budget.batches(source_records,extract_prompt,build,768)
     lock=Lock();stop=Event();calls=0;errors=[];accepted=set();leaves=[];attempts=[];current=local();stopped_reason={};repairs=0
     logger=logging.getLogger('uvicorn.error')
@@ -295,7 +323,8 @@ def analyze(settings,context,complete,request):
         reasons={'Unsupported quotation':'quotation_mismatch','Unsupported numeric claim':'unsupported_number',
                  'Unsupported final numbers':'unsupported_number','Invalid evidence response':'evidence_schema',
                  'Invalid evidence format':'evidence_schema','Invalid argument citation':'argument_schema',
-                 'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema','Invalid fact selection':'fact_reference'}
+                 'Invalid final analysis':'argument_schema','Invalid reduction':'reduction_schema','Invalid fact selection':'fact_reference',
+                 'Invalid grounded explanation':'explanation_schema'}
         detail.update(status='invalid_response',validation=reasons.get(str(error),'unexpected_response'))
         logger.warning('Qwen part invalid: call=%s stage=%s validation=%s',detail['call'],detail['stage'],detail['validation'])
     def invoke(system,payload,output=768,final=False,timeout=None):
@@ -344,13 +373,13 @@ def analyze(settings,context,complete,request):
         payload['stage']='evidence_repair'
         repair_budget=copy(budget)
         repair_budget.settings=replace(settings,qwen_batch_tokens=min(8192,settings.qwen_batch_tokens))
-        if not repair_budget.fits(prompt,payload,512):raise ValueError('Unsupported quotation')
+        if not repair_budget.fits(prompt,payload,768):raise ValueError('Unsupported quotation')
         if deadline-time.monotonic()<2 or stop.is_set():raise ValueError('Unsupported quotation')
         with lock:
             if repairs:raise ValueError('Unsupported quotation')
             repairs+=1
-        result=invoke(prompt,payload,512,final=single_pass,timeout=60)
-        observations=verified_observations(result,selected,facts)
+        result=invoke(prompt,payload,768,final=single_pass,timeout=60)
+        observations=verified_observations(result,selected,facts,require_explanation=bool(facts))
         if single_pass and not observations:raise ValueError('Invalid final analysis')
         mark_valid()
         return observations
@@ -361,10 +390,10 @@ def analyze(settings,context,complete,request):
             with lock:leaves.append(False)
             return []
         try:
-            reply=invoke(direct_prompt if single_pass else extract_prompt,build(records),512 if single_pass else 768,final=single_pass)
-            try:observations=verified_observations(reply,records,facts)
+            reply=invoke(direct_prompt if single_pass else extract_prompt,build(records),final_output if single_pass else 768,final=single_pass)
+            try:observations=verified_observations(reply,records,facts,require_explanation=bool(facts))
             except ValueError as error:
-                if str(error) not in ('Unsupported quotation','Unsupported numeric claim','Invalid fact selection'):raise
+                if str(error) not in ('Unsupported quotation','Unsupported numeric claim','Invalid fact selection','Invalid grounded explanation'):raise
                 mark_invalid(error)
                 with lock:errors.append(error_code(error))
                 observations=repair(reply,records)
@@ -387,11 +416,15 @@ def analyze(settings,context,complete,request):
             return []
     with ThreadPoolExecutor(max_workers=getattr(settings,'qwen_parallelism',1),thread_name_prefix='match-evidence') as pool:
         extracted=list(pool.map(extract,batches))
-    evidence=[]
+    evidence=[];seen_evidence=set()
     for values in extracted:
-        for value in values:evidence.append({'id':f'E{len(evidence)+1}',**value})
+        for value in values:
+            signature=encoded(value)
+            if signature in seen_evidence:continue
+            seen_evidence.add(signature)
+            evidence.append({'id':f'E{len(evidence)+1}',**value})
     # Prepared mathematical facts remain available when a source part has no useful observations.
-    prepared=facts[:3]
+    prepared=[]
     evidence+=prepared
     all_evidence=list(evidence)
     assessment=context['probability_assessment']
@@ -473,6 +506,6 @@ def analyze(settings,context,complete,request):
         'context_tokens':budget.limit,'tokenizer_available':budget.tokenizer is True,'elapsed_ms':int((time.monotonic()-start)*1000),
         'batch_tokens':getattr(settings,'qwen_batch_tokens',4096),'parallelism':getattr(settings,'qwen_parallelism',1),'attempts':attempts,
         'pipeline':'single_pass' if single_pass else 'map_reduce',
-        'argument_mode':'verified_fact_selection' if facts else 'verified_quotations',
+        'argument_mode':'grounded_explanations' if facts else 'verified_quotations',
         'arguments':citations,'evidence':all_evidence,'errors':dict((c,errors.count(c)) for c in set(errors))}
     return arguments,diagnostics

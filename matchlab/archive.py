@@ -404,6 +404,11 @@ def document(repo, parent):
                     ] + [e["primary"]]
     result = project(e, markets)
     result["source_present"] = present
+    if present:
+        from .popular_markets import companion
+        legacy=repo.event_markets(parent)
+        popular=companion(result,legacy)
+        if popular:result.update(popular_markets=popular,popular_complete=legacy.get('popular_complete',False))
     if not present:
         result["phase"] = "unknown"
         result["is_stale"] = True

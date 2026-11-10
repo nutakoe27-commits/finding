@@ -29,7 +29,7 @@ class RetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['statistics_state'],'ok')
         collect.assert_awaited_once()
         self.assertEqual(collect.await_args.args[1]['source_event_id'],'123')
-        refresh.assert_not_awaited()
+        refresh.assert_awaited_once()
         page.close.assert_awaited_once()
         self.assertEqual(client.post.await_args.kwargs['json']['statistics_state'],'ok')
 

@@ -14,6 +14,8 @@ ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 from browser_market_ui import make_event
 from matchlab.storage import Repository
+from matchlab.chances import render_report
+from reasoning_helpers import EXPLANATION
 
 REPORT='''Победитель: Велес — 42,2% (по линии; Исход 1X2 (осн.время)).
 
@@ -56,6 +58,16 @@ async def exercise(base):
                 assert not await page.evaluate('Boolean(window.reportInjected)')
                 await page.evaluate('text=>renderAnalysis(document.getElementById("explanation"),text)',REPORT.split('\n\nОграничения:')[0])
                 assert await page.locator('#explanation .report-limitations').count()==0
+                detailed=render_report({'winner':{'participant':'Таиланд (до23)','probability':.4316,'basis':'history','market':'Исход 1X2','period':'осн.время'},
+                    'markets':[],'facts':[],'limitations':['Малая выборка: оценка предварительная.']},
+                    arguments=['Средние показатели сезона: забито за матч 0.33. '+EXPLANATION*2,
+                               'Средние показатели сезона: пропущено за матч 2.5. '+EXPLANATION*2])
+                await page.evaluate('text=>renderAnalysis(document.getElementById("explanation"),text)',detailed)
+                assert await page.locator('#explanation .report-facts li').count()==2
+                assert EXPLANATION*2 in await page.locator('#explanation .report-facts li').first.inner_text()
+                await expect(page.locator('#explanation .report-chance')).to_have_text('43,2%')
+                assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'detailed arguments')
+                await page.locator('#explanation').screenshot(path=f'/tmp/report-detailed-{theme}-{width}.png')
                 await page.evaluate('()=>renderAnalysis(document.getElementById("explanation"),"# Старый разбор\\n\\n**Вывод:** сохранённый текст.\\n\\n- Первый факт")')
                 assert not await page.locator('#explanation').evaluate('node=>node.classList.contains("structured-report")')
                 assert await page.locator('#explanation h3').inner_text()=='Старый разбор'

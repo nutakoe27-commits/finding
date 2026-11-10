@@ -195,4 +195,14 @@ def validate_event_markets(value: dict) -> dict:
                           "unparsed_outcomes": unparsed, "all_tab_selected": all_selected,
                           "stable_passes": stable, "hidden_groups": hidden, "scroll_exhausted": exhausted,
                           "complete": accounted and unparsed == 0 and stable >= 2 and hidden == 0 and exhausted}
+    popular=value.get('popular_markets')
+    if popular:
+        if not isinstance(popular,list) or len(popular)>32 or any(not isinstance(m,dict) or m.get('group') not in ('Популярные на матч','Популярные на тайм') for m in popular):
+            raise ValueError('Некорректные популярные рынки источника.')
+        nested={k:v for k,v in value.items() if k not in ('popular_markets','popular_observed_at','popular_complete')}
+        nested.update(markets=popular,coverage={})
+        result['popular_markets']=validate_event_markets(nested)['markets']
+        pop_at=instant(value.get('popular_observed_at') or value['observed_at'])
+        if pop_at>observed or observed-pop_at>timedelta(hours=1):raise ValueError('Некорректное время популярных рынков.')
+        result.update(popular_observed_at=iso(pop_at),popular_phase=phase,popular_complete=value.get('popular_complete') is True)
     return result

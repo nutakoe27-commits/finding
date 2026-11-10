@@ -103,6 +103,24 @@ def encoded_size(value):return len(json.dumps(value,ensure_ascii=False,separator
 
 def focus_context(context,limit=8):
     """Keep all outcomes/metadata of selected markets and all participant evidence."""
+    popular=context.get('popular_markets') or []
+    if popular:
+        result=deepcopy(context);result.pop('popular_markets',None)
+        chosen=deepcopy(popular)
+        selected=(context.get('selection') or {}).get('market_key')
+        extra=next((m for m in context.get('markets',[]) if m['key']==selected and not any(
+            (m['name'],m.get('period'),m.get('parameter'))==(p['name'],p.get('period'),p.get('parameter')) for p in popular)),None)
+        if extra:chosen.append(deepcopy(extra))
+        result['markets']=chosen
+        result['primary_market_key']=next((m['key'] for m in chosen if normalized(m['name'])=='исход 1x2' and scope(m)=='regular'),None)
+        result['snapshot']={**result.get('snapshot',{}),'complete':bool(context.get('popular_complete')),'scope':'source_popular_markets'}
+        coverage=result.setdefault('coverage',{})
+        coverage.update(analyzed_markets=len(chosen),analyzed_outcomes=sum(len(m['outcomes']) for m in chosen))
+        result['market_selection']={'policy':'source-popular-v1','limit':len(chosen),'available_markets':len(context['markets']),
+            'selected_markets':len(chosen),'selected_keys':[m['key'] for m in chosen],'source_groups':list(dict.fromkeys(p['group'] for p in popular)),
+            'reasons':{m['key']:m['group'] for m in chosen},'context_only_keys':[],
+            'eligible_markets':sum(available(m) for m in chosen),'stale_markets':sum(bool(m.get('is_stale')) for m in chosen)}
+        return result
     if limit==0:return context
     if not 2<=limit<=20:raise ValueError('Лимит рынков должен быть 0 или от 2 до 20.')
     existing=context.get('market_selection') or {}

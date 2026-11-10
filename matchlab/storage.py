@@ -335,19 +335,30 @@ class Repository:
                 raise ValueError('Вид спорта существующего события не может измениться.')
             if previous and observed < previous["observed_at"]:
                 return {"updated": False, "reason": "older_observation", "source_event_id": event_id}
+            if previous and not document.get('popular_markets'):
+                # Older/parallel collectors do not publish this independent capture.
+                # Preserve its own timestamp, never the newer general-book timestamp.
+                old_metadata=json.loads(previous['metadata'])
+                same_fixture=all(old_metadata.get(k)==document.get(k) for k in ('home','away','sport','kickoff_at','phase','event_kind'))
+                if same_fixture and old_metadata.get('popular_markets'):
+                    metadata.update({k:old_metadata[k] for k in ('popular_markets','popular_observed_at','popular_phase','popular_complete') if k in old_metadata})
             if previous and previous['complete'] and not document['coverage']['complete']:
-                if document['statistics_link_status']=='found':
-                    # A verified event button is independent of whether every
-                    # price on that page could be parsed. Preserve old prices
-                    # and their times while recording only the observed link.
-                    old_metadata=json.loads(previous['metadata'])
-                    fields=('home','away') if document['event_kind']=='match' else ('title',)
-                    same_participants=(old_metadata.get('event_kind','match')==document['event_kind'] and
-                        all(' '.join((old_metadata.get(key) or '').casefold().split())==' '.join((document.get(key) or '').casefold().split()) for key in fields))
-                    if same_participants and observed>=old_metadata.get('statistics_link_observed_at',previous['observed_at']):
+                # Popular cards and a statistics link have independent observation times.
+                # Updating them must not freshen the previous complete market book.
+                old_metadata=json.loads(previous['metadata'])
+                fields=('home','away') if document['event_kind']=='match' else ('title',)
+                same_participants=(old_metadata.get('event_kind','match')==document['event_kind'] and
+                    all(' '.join((old_metadata.get(key) or '').casefold().split())==' '.join((document.get(key) or '').casefold().split()) for key in fields))
+                changed=False
+                if same_participants:
+                    if document['statistics_link_status']=='found' and observed>=old_metadata.get('statistics_link_observed_at',previous['observed_at']):
                         old_metadata.update(statistics_url=document['statistics_url'],statistics_link_status='found',statistics_link_observed_at=observed)
-                        db.execute('UPDATE bookmaker_event_markets SET metadata=? WHERE event_id=?',
-                                   (json.dumps(old_metadata,ensure_ascii=False),event_id))
+                        changed=True
+                    if document.get('popular_markets') and old_metadata.get('kickoff_at')==document.get('kickoff_at') and document['popular_observed_at']>=old_metadata.get('popular_observed_at',previous['observed_at']):
+                        old_metadata.update({k:document[k] for k in ('popular_markets','popular_observed_at','popular_phase','popular_complete')})
+                        changed=True
+                if changed:
+                    db.execute('UPDATE bookmaker_event_markets SET metadata=? WHERE event_id=?',(json.dumps(old_metadata,ensure_ascii=False),event_id))
                 return {"updated": False, "reason": "incomplete_snapshot", "source_event_id": event_id}
             if previous and digest == previous["content_hash"]:
                 db.execute("UPDATE bookmaker_event_markets SET observed_at = ?, metadata = ? WHERE event_id = ?",

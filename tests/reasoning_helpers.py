@@ -1,11 +1,15 @@
 """A deterministic local JSON protocol fixture; never generates probabilities."""
 import json
 
+EXPLANATION='Эти показатели помогают сопоставить результативность и надёжность защиты участников. При оценке исхода важно учитывать размер выборки и подтверждение результатов, поскольку отдельные встречи могут заметно изменить общую картину.'
+
+def explained(ids):return {'arguments':[{'fact_ids':ids,'explanation':EXPLANATION}]}
+
 
 def reply(payload):
     stage=payload['stage']
     if stage in ('evidence','evidence_repair'):
-        if payload.get('facts'):return {'fact_ids':[payload['facts'][0]['id']]}
+        if payload.get('facts'):return explained([payload['facts'][0]['id']])
         records=[r for r in payload['records'] if not isinstance(r['data'],str) or r['data'].strip()]
         if not records:return {'observations':[]}
         record=records[0]

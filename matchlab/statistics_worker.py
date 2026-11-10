@@ -194,11 +194,14 @@ async def statistics_request_job(context,client,job):
                 if datetime.fromisoformat(blocked_until)>datetime.now(timezone.utc):
                     state='blocked'; return
             except (ValueError,TypeError): pass
+        try:
+            await asyncio.wait_for(refresh_market(context,client,event),timeout=115)
+        except Exception as error:
+            LOG.warning('Popular markets for event %s were not refreshed (%s)',event['source_event_id'],type(error).__name__)
         url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
         if not url:
             # A stream event may not yet have an observed statistics link.
             # Open only this event and use the normal verified market capture to find it.
-            await asyncio.wait_for(refresh_market(context,client,event),timeout=115)
             response=await client.get(endpoint); response.raise_for_status(); detail=response.json()
             url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
         if not url:
@@ -214,7 +217,7 @@ async def statistics_request_job(context,client,job):
         reply=await ingest_statistics(client,snapshot)
         state=snapshot['state'] if reply.get('updated') else 'unavailable'
     try:
-        await asyncio.wait_for(fetch(),timeout=180)
+        await asyncio.wait_for(fetch(),timeout=240)
     except Exception as error:
         LOG.warning('Requested statistics for event %s did not complete (%s)',event.get('source_event_id'),type(error).__name__)
     response=await client.post('/api/bookmakers/refresh/finish',json={

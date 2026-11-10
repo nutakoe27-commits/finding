@@ -27,7 +27,7 @@ def row_time(row):
     except (TypeError,ValueError,OverflowError,OSError):return None
 
 
-def normalize(context,cutoff,archive_rows=()):
+def normalize(context,cutoff,archive_rows=(),broad=False):
     from .chances import norm
     feed=(context.get('team_statistics') or {}).get('structured_feed') or {}
     anchor=feed.get('match') or {};targets=anchor.get('teams') or {};event=context['event']
@@ -51,7 +51,7 @@ def normalize(context,cutoff,archive_rows=()):
                 at=row_time(row)
                 if at is None:counts['invalid_time']+=1;continue
                 if at>=cutoff:counts['current_or_future']+=1;continue
-                if at<cutoff-timedelta(days=365):counts['too_old']+=1;continue
+                if not broad and at<cutoff-timedelta(days=365):counts['too_old']+=1;continue
                 named=row.get('competition') or row.get('tournament')
                 if isinstance(named,dict):named=named.get('name')
                 same_comp=norm(named)==norm(event.get('competition')) if named else False
@@ -60,7 +60,7 @@ def normalize(context,cutoff,archive_rows=()):
                         a,b=identifier(row.get(field)),identifier(anchor.get(field))
                         if a and b:
                             same_comp=a==b;break
-                if not same_comp:counts['other_competition']+=1;continue
+                if not same_comp and not broad:counts['other_competition']+=1;continue
                 values=row.get('result') or {}
                 if not isinstance(values,dict):counts['invalid_score']+=1;continue
                 h,a=values.get('home'),values.get('away')
@@ -88,11 +88,12 @@ def normalize(context,cutoff,archive_rows=()):
                 key=(at,names['home'],names['away'],h,a)
                 if key in seen:counts['duplicate']+=1;continue
                 seen.add(key);counts['accepted']+=1
+                if not same_comp:counts['other_competition_used']+=1
                 if corroborated:counts['archive_confirmed']+=1
                 gf,ga=(h,a) if positions[0]=='home' else (a,h)
-                result['samples'][side].append({'at':at,'gf':gf,'ga':ga})
+                result['samples'][side].append({'at':at,'gf':gf,'ga':ga,'scope_weight':1 if same_comp else .5})
                 if all(names.values()) and names['home']!=names['away']:
-                    unique[key]={'home':names['home'],'away':names['away'],'goals':(h,a),'at':at}
+                    unique[key]={'home':names['home'],'away':names['away'],'goals':(h,a),'at':at,'same_competition':same_comp,'scope_weight':1 if same_comp else .5}
         result['counts'][side]=dict(counts)
     result['rows']=list(unique.values())
     return result

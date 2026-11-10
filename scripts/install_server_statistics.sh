@@ -43,7 +43,7 @@ fi
 if [[ -f "$unit" ]]; then systemctl stop matchlab-statistics.service; fi
 install -d -m 755 "$target" "$target/matchlab"
 touch "$target/.matchlab-managed"
-install -m 644 matchlab/{__init__,sports,capture,bookmakers,winline_browser,winline_markets,markets,worker_protocol,statistics,statistics_feed,statistics_worker}.py "$target/matchlab/"
+install -m 644 matchlab/{__init__,sports,capture,bookmakers,winline_browser,winline_markets,popular_markets,markets,worker_protocol,statistics,statistics_feed,statistics_worker}.py "$target/matchlab/"
 install -m 644 deploy/matchlab-statistics.service "$unit"
 systemctl daemon-reload
 systemctl enable --now matchlab-statistics.service

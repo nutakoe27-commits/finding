@@ -1,0 +1,178 @@
+{
+  "source_event_id": "17124979",
+  "source": "Observed public fast-bets blocks on Winline, 2026-11-10",
+  "markets": [
+    {
+      "name": "Исход 1X2",
+      "period": "осн.время",
+      "group": "Популярные на матч",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "П1",
+          "parameter": null,
+          "odds": 1.8,
+          "state": "open"
+        },
+        {
+          "name": "X",
+          "parameter": null,
+          "odds": 3.38,
+          "state": "open"
+        },
+        {
+          "name": "П2",
+          "parameter": null,
+          "odds": 4.38,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Фора",
+      "period": "осн.время",
+      "group": "Популярные на матч",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "П1",
+          "parameter": "-1.5",
+          "odds": 3.16,
+          "state": "open"
+        },
+        {
+          "name": "П2",
+          "parameter": "+1.5",
+          "odds": 1.31,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Тотал",
+      "period": "осн.время",
+      "group": "Популярные на матч",
+      "parameter": "2.5",
+      "outcomes": [
+        {
+          "name": "Меньше",
+          "parameter": null,
+          "odds": 1.75,
+          "state": "open"
+        },
+        {
+          "name": "Больше",
+          "parameter": null,
+          "odds": 1.96,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Обе забьют",
+      "period": "осн.время",
+      "group": "Популярные на матч",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "Да",
+          "parameter": null,
+          "odds": 1.83,
+          "state": "open"
+        },
+        {
+          "name": "Нет",
+          "parameter": null,
+          "odds": 1.91,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Исход 1X2",
+      "period": "1 тайм",
+      "group": "Популярные на тайм",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "П1",
+          "parameter": null,
+          "odds": 2.42,
+          "state": "open"
+        },
+        {
+          "name": "X",
+          "parameter": null,
+          "odds": 2.15,
+          "state": "open"
+        },
+        {
+          "name": "П2",
+          "parameter": null,
+          "odds": 4.94,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Фора",
+      "period": "1 тайм",
+      "group": "Популярные на тайм",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "П1",
+          "parameter": "-1.5",
+          "odds": 6.4,
+          "state": "open"
+        },
+        {
+          "name": "П2",
+          "parameter": "+1.5",
+          "odds": 1.08,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Тотал",
+      "period": "1 тайм",
+      "group": "Популярные на тайм",
+      "parameter": "1.5",
+      "outcomes": [
+        {
+          "name": "Меньше",
+          "parameter": null,
+          "odds": 1.39,
+          "state": "open"
+        },
+        {
+          "name": "Больше",
+          "parameter": null,
+          "odds": 2.76,
+          "state": "open"
+        }
+      ]
+    },
+    {
+      "name": "Чет/Нечет",
+      "period": "1 тайм",
+      "group": "Популярные на тайм",
+      "parameter": null,
+      "outcomes": [
+        {
+          "name": "Чет",
+          "parameter": null,
+          "odds": 1.65,
+          "state": "open"
+        },
+        {
+          "name": "Нечет",
+          "parameter": null,
+          "odds": 2.11,
+          "state": "open"
+        }
+      ]
+    }
+  ]
+}

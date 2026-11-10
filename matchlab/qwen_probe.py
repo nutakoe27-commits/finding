@@ -58,7 +58,7 @@ def compare_context(settings,market_limit=None):
                                 json={'model':settings.qwen_model,'messages':messages,'add_generation_prompt':True})
             count=reply.get('count')
             if type(count) is not int or count<0:raise ValueError('Invalid tokenizer count')
-            required=count+min(settings.qwen_max_tokens,512)+256
+            required=count+min(settings.qwen_max_tokens,1536 if trusted_facts(context) else 512)+256
             item.update(input_tokens=count,minimum_context_tokens=required,fits_advertised_window=required<=budget.limit,
                         fits_batch_limit=count<=settings.qwen_batch_tokens)
         except (ValueError,AttributeError,TypeError) as error:item['tokenizer_error']=qwen.event_error_code(error)

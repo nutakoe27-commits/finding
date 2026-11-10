@@ -56,7 +56,7 @@ class ChanceTests(unittest.TestCase):
         self.assertAlmostEqual(float(grid.sum()),1)
         self.assertTrue(np.isfinite(grid).all())
         self.assertIsNone(fit_goals(rows(),'a','missing',NOW))
-        self.assertIsNone(fit_goals(rows()[:4],'a','b',NOW))
+        self.assertIsNotNone(fit_goals(rows()[:4],'a','b',NOW))
         self.assertEqual(len(details),2)
         repeated=rows()+rows()
         # Team counts are deduplicated across sources.
@@ -71,7 +71,7 @@ class ChanceTests(unittest.TestCase):
         total=goal_probabilities(market('Тотал',['Больше','Меньше'],parameter='2'),grid)
         self.assertAlmostEqual(total['Больше']['probability']+total['Меньше']['probability']+total['Больше']['push_probability'],1)
         self.assertEqual(goal_probabilities(market('Тотал',['Больше','Меньше'],parameter='2.25'),grid),{})
-        self.assertEqual(goal_probabilities(market('Исход 1X2',['П1','X','П2'],period='1 тайм'),grid),{})
+        self.assertAlmostEqual(sum(v['probability'] for v in goal_probabilities(market('Исход 1X2',['П1','X','П2'],period='1 тайм'),grid).values()),1)
         self.assertEqual(goal_probabilities(market('Тотал угловых',['Больше','Меньше'],parameter='2.5'),grid),{})
 
     def test_nonexclusive_double_chance_and_alternate_totals_are_not_normalized(self):

@@ -14,7 +14,7 @@ from matchlab.config import Settings
 from matchlab import qwen
 from matchlab.storage import Repository
 from matchlab.event_reasoning import Budget,analyze,records_for,verified_observations,synthesis_arguments,trusted_facts
-from reasoning_helpers import reply,leaf_values,record_values
+from reasoning_helpers import explained,EXPLANATION,reply,leaf_values,record_values
 
 
 def context_large():
@@ -109,7 +109,7 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(diag['state'],'ready')
         self.assertEqual(requests.count('/tokenize'),1)
         self.assertEqual(timeouts,[140])
-        self.assertEqual(outputs,[512])
+        self.assertEqual(outputs,[min(1536,self.settings().qwen_max_tokens)])
 
     def test_single_pass_rejection_falls_back_to_validated_map_reduce(self):
         model=FakeModel(limit=131072,hard_bytes=6500)
@@ -124,7 +124,7 @@ class ReasoningTests(unittest.TestCase):
         _,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),
                        lambda *args: '{"fact_ids":[]}',model.request)
         self.assertEqual(diag['state'],'unavailable')
-        self.assertEqual(diag['model_calls'],1)
+        self.assertEqual(diag['model_calls'],2)
 
     def test_unknown_quote_source_is_not_misreported_as_context_overflow(self):
         model=FakeModel(limit=131072)
@@ -193,10 +193,10 @@ class ReasoningTests(unittest.TestCase):
         ctx=context_large();ctx['probability_assessment']['facts']=['Хозяева: 3 победы за 5 прошлых матчей.','Гости: 2 победы за 5 прошлых матчей.']
         model=FakeModel(limit=131072)
         arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),ctx,
-                              lambda *args:'{"fact_ids":["F2","F1"]}',model.request)
-        self.assertEqual(arguments,list(reversed(ctx['probability_assessment']['facts'])))
+                              lambda *args:json.dumps(explained(['F2','F1'])),model.request)
+        self.assertIn(ctx['probability_assessment']['facts'][1],arguments[0]);self.assertIn(ctx['probability_assessment']['facts'][0],arguments[0]);self.assertIn(EXPLANATION,arguments[0])
         self.assertEqual(diag['state'],'ready');self.assertEqual(diag['model_calls'],1)
-        self.assertEqual(diag['argument_mode'],'verified_fact_selection')
+        self.assertEqual(diag['argument_mode'],'grounded_explanations')
         self.assertEqual(diag['evidence'][0]['quotes'][0]['path'],'/probability_assessment/facts/1')
 
     def test_fact_references_reject_unknown_ids_duplicates_and_generated_extra_claims(self):
@@ -210,11 +210,11 @@ class ReasoningTests(unittest.TestCase):
         model=FakeModel(limit=131072);seen=[]
         def complete(settings,messages):
             payload=json.loads(messages[1]['content']);seen.append(payload)
-            return '{"fact_ids":["unknown"]}' if payload['stage']=='evidence' else '{"fact_ids":["F1"]}'
+            return '{"fact_ids":["unknown"]}' if payload['stage']=='evidence' else json.dumps(explained(['F1']))
         arguments,diag=analyze(replace(self.settings(),qwen_batch_tokens=128000),context_large(),complete,model.request)
         self.assertEqual(diag['state'],'ready');self.assertEqual(diag['model_calls'],2)
         self.assertEqual(seen[1]['records'],[]);self.assertTrue(seen[1]['facts'])
-        self.assertEqual(arguments,['Проверенный факт источника'])
+        self.assertIn('Проверенный факт источника',arguments[0]);self.assertIn(EXPLANATION,arguments[0])
 
     def test_real_http_fact_selection_keeps_server_probabilities_and_exact_source_numbers(self):
         seen=[]
@@ -229,7 +229,7 @@ class ReasoningTests(unittest.TestCase):
                 value=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 if self.path=='/tokenize':self.send({'count':sum(len(m['content'].encode()) for m in value['messages'])//3});return
                 seen.append(json.loads(value['messages'][1]['content']))
-                self.send({'choices':[{'message':{'content':'{"fact_ids":["F1"]}'},'finish_reason':'stop'}]})
+                self.send({'choices':[{'message':{'content':json.dumps(explained(['F1']),ensure_ascii=False)},'finish_reason':'stop'}]})
         server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
         worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
         try:

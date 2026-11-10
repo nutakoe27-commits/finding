@@ -78,7 +78,7 @@ echo '[1/6] Подготовка кода и отдельного Python-окр�
 install -d -m 755 "$target" "$target/matchlab"
 install -d -m 700 -o matchlab-scraper -g matchlab-scraper /var/lib/matchlab-crawler /var/lib/matchlab-scraper
 touch "$target/.matchlab-managed"
-install -m 644 matchlab/{__init__,sports,bookmakers,capture,worker_protocol,server_scraper,winline_browser,winline_markets,markets,scrapy_worker}.py "$target/matchlab/"
+install -m 644 matchlab/{__init__,sports,bookmakers,capture,worker_protocol,server_scraper,winline_browser,winline_markets,popular_markets,markets,scrapy_worker}.py "$target/matchlab/"
 install -m 644 requirements-capture.txt requirements-server-scraper.txt requirements-crawler.txt "$target/"
 install -m 644 scripts/diagnose_winline_stats.py "$target/diagnose_winline_stats.py"
 install -m 644 scripts/diagnose_winline_header.py "$target/diagnose_winline_header.py"

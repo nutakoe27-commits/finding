@@ -12,7 +12,7 @@ from .markets import FORMAT, identity, label, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
 from .sports import sport_from_url, sport_label
 
-PARSER_VERSION = "winline-marketbook-dom-v4"
+PARSER_VERSION = "winline-marketbook-dom-v5-popular"
 
 # Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
 # form content or browser state are collected.
@@ -262,6 +262,7 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
     await root.wait_for(state='visible', timeout=30000)
     all_tab = root.locator('.marketbook__filter .ww-tabs__item').filter(has_text=re.compile(r'^\s*Все\s*$')).first
     await all_tab.wait_for(state='visible', timeout=15000)
+    from .popular_markets import collect_popular
     if 'ww-tabs__item--active' not in (await all_tab.get_attribute('class') or ''):
         await all_tab.click()
     stable, previous = 0, None
@@ -374,11 +375,13 @@ async def read_marketbook(page, *, maximum_passes=200) -> dict:
             snapshot['stable_passes'] = stable
             snapshot['scroll_exhausted'] = True
             snapshot['capture_started_at'] = capture_started_at
+            await collect_popular(page,snapshot)
             return snapshot
         if stable >= 3 and reached_bottom and snapshot.get('hidden_groups', 0) > 0:
             break
         await asyncio.sleep(0.75)
     snapshot.update(stable_passes=stable, scroll_exhausted=False, capture_started_at=capture_started_at)
+    await collect_popular(page,snapshot)
     return snapshot
 
 
@@ -446,6 +449,9 @@ def market_document(snapshot: dict, url: str, observed_at: str, metadata: dict |
                 'phase': snapshot.get('phase') if snapshot.get('phase') != 'unknown' else metadata.get('phase', 'unknown'),
                 'observed_at': observed_at, 'capture_started_at': snapshot.get('capture_started_at', observed_at),
                 'parser_version': PARSER_VERSION, 'markets': snapshot.get('markets', []),
+                'popular_markets':snapshot.get('popular_markets',[]),
+                'popular_observed_at':snapshot.get('popular_observed_at',observed_at),
+                'popular_complete':snapshot.get('popular_complete',False),
                 'coverage': {key: snapshot.get(key) for key in ('expected_outcomes', 'unparsed_outcomes', 'hidden_groups',
                                                             'all_tab_selected', 'stable_passes', 'scroll_exhausted')}}
     validate_event_labels_for_diagnostics(document)

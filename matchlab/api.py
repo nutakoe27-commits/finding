@@ -592,6 +592,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context['primary_market_key']=document.get('primary_market_key')
             full_context=context
             context=focus_context(context,settings.qwen_market_limit)
+            if (context.get('market_selection') or {}).get('policy')=='source-popular-v1':
+                context['probability_assessment']=assess(repo,document,context)
             if context is not full_context:
                 logging.getLogger('uvicorn.error').info('AI markets selected: markets=%s/%s outcomes=%s/%s',
                     context['coverage']['analyzed_markets'],context['coverage']['stored_markets'],

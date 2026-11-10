@@ -431,7 +431,7 @@ function renderReport(target,parts) {
     if(scope) lead.append(el("p","report-scope",scope));
   } else lead.append(el("p","report-no-winner",parts[0]));
   if(byMarket) lead.append(el("p","report-basis","Архивная оценка по коэффициентам букмекера; в новых разборах коэффициенты не используются."));
-  else if(/\d+(?:[.,]\d+)?%/.test(parts[0])) lead.append(el("p","report-basis","Независимая оценка по подтверждённым результатам матчей. Коэффициенты букмекера в расчёте не используются."));
+  else if(/\d+(?:[.,]\d+)?%/.test(parts[0])) lead.append(el("p","report-basis","Независимая оценка по истории и статистике участников. Коэффициенты букмекера в расчёте не используются."));
   nodes.push(lead);
   for(const [index,title] of [[1,"Рынки"],[2,"Аргументы"]]) {
     const section=el("section","report-section"); section.append(el("h3","",title));
@@ -779,7 +779,7 @@ function renderAIAnalysisMeta() {
   const changed = state.marketDocument && ((context.snapshot.content_version ? context.snapshot.content_version !== state.marketDocument.content_version : state.marketDocument.observed_at !== analysis.observed_at) || context.archive_history?.revision !== state.archiveHistory?.revision);
   const prep=context.statistics_preparation?.state;
   const focused=context.market_selection;
-  const focusNote=focused ? ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.${focused.context_only_keys?.length ? " Свежей линии нет; сохранённая показана только для контекста." : ""}` : "";
+  const focusNote=focused ? (focused.policy === "source-popular-v1" ? ` В разборе ${focused.selected_markets} популярных рынков со страницы Winline.` : ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.${focused.context_only_keys?.length ? " Свежей линии нет; сохранённая показана только для контекста." : ""}`) : "";
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
   $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${focusNote}${prepNote}`;
   $("ai-analysis-meta").hidden = false;
@@ -987,7 +987,7 @@ async function requestAI() {
         // The server also starts watching this event's markets before queueing statistics.
         const queued=await api(prefix+"/statistics/request",{method:"POST",body:"{}",cache:"no-store"});
         let finished=null;
-        for(let attempt=0;attempt<60 && current();attempt++) {
+        for(let attempt=0;attempt<125 && current();attempt++) {
           const status=await api(prefix+"/statistics/request/"+queued.job_id,{cache:"no-store"});
           if(status.state === "finished") {finished=status; break;}
           if(status.state === "timeout") break;
@@ -1085,7 +1085,7 @@ async function loadSavedAnalysis(id) {
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
     renderAnalysis($("saved-analysis-text"),analysis.text);
-    $("saved-analysis-coverage").textContent = `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков. Данные и текст относятся ко времени этого разбора.`;
+    $("saved-analysis-coverage").textContent = (context.market_selection?.policy === "source-popular-v1" ? `Популярные рынки источника: ${context.coverage.analyzed_markets}.` : `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков.`)+" Данные и текст относятся ко времени этого разбора.";
     renderResearchSources($("saved-analysis-sources"), context.web_research);
     $("saved-analysis-open").href = eventRoute(analysis.event);
   } catch (error) { if (request === state.marketDetailRequest) showError("detail-error", error.message); }

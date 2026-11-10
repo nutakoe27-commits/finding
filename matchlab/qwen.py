@@ -311,7 +311,7 @@ def explain_assessment(settings,context):
     from .chances import render_report
     from .event_reasoning import analyze
     assessment=context['probability_assessment']
-    if limited_event_summary(context) is not None and not any(r.get('basis')=='history' for r in assessment['markets']):
+    if limited_event_summary(context) is not None and not assessment.get('winner') and not any(r.get('basis')=='history' for r in assessment['markets']):
         context['ai_generation']={'state':'skipped','reason':'insufficient_data','model_calls':0,'parts_total':0,'parts_completed':0}
         return render_report(assessment,extra_limit='Подтверждённой статистики участников нет; нейросеть не вызывалась.')
     logging.getLogger('uvicorn.error').info('Qwen event started: markets=%s outcomes=%s context_bytes=%s',

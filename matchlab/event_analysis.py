@@ -6,7 +6,7 @@ import json
 from .bookmakers import instant
 from .freshness import quote_ttl
 
-ANALYSIS_VERSION = 'independent-history-analysis-v17'
+ANALYSIS_VERSION = 'source-popular-detailed-analysis-v18'
 
 def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes="", statistics=None, team_statistics=None,archive_history=None) -> dict:
     selected = next((market for market in document["markets"] if market["key"] == market_key), None) if market_key else None
@@ -36,6 +36,11 @@ def analysis_context(document: dict, *, market_key=None, outcome_key=None, notes
                          "age_seconds": age, "is_stale": age > quote_ttl(document) or document.get("source_present") is False, "complete": document["coverage"]["complete"]},
             "selection": {"market_key": market_key, "outcome_key": outcome_key},
             "markets": markets,
+            "popular_complete":document.get('popular_complete',False),
+            "popular_markets": [{key:market.get(key) for key in ('key','name','group','period','parameter','observed_at','is_stale')} | {
+                'observed_at':market.get('observed_at') or document.get('popular_observed_at') or document['observed_at'],
+                'outcomes_complete':True,'outcomes':[{key:item.get(key) for key in ('key','name','parameter','state')} for item in market['outcomes']]}
+                for market in document.get('popular_markets',[])],
             "coverage": {"analyzed_markets": len(markets), "analyzed_outcomes": count,
                          "stored_markets": len(document["markets"]), "stored_outcomes": document["coverage"]["captured_outcomes"]},
             "market_implied": None,
@@ -53,4 +58,6 @@ def request_key(document: dict, market_key, outcome_key, notes: str, team_statis
              [{k:v for k,v in m.items() if k not in ("observed_at","age_seconds")} for m in document["markets"]] if document.get("source_kind")=="stream" else document["markets"], market_key, outcome_key, notes, stale, started,
              {key:team_statistics.get(key) for key in ('statistics_id','observed_at','match_phase','is_stale','capture_kind')} if team_statistics else None]
     value.append(archive_history.get('revision') if archive_history else None)
+    from .independent_context import without_prices
+    value.append(without_prices(document.get('popular_markets',[])))
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
