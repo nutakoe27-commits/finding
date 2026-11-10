@@ -100,11 +100,11 @@ class AnalysisJobs:
                        (now,deadline,uuid4().hex,row['id']))
             return dict(db.execute('SELECT * FROM ai_analysis_jobs WHERE id=?',(row['id'],)).fetchone())
 
-    def finish(self,job,result=None,error=None,db=None):
+    def finish(self,job,result=None,error=None,db=None,token_usage=None):
         if db is None:
             with self.repo.connection() as connection:
                 connection.execute('BEGIN IMMEDIATE')
-                return self.finish(job,result,error,db=connection)
+                return self.finish(job,result,error,db=connection,token_usage=token_usage)
         row=db.execute('SELECT * FROM ai_analysis_jobs WHERE id=?',(job['id'],)).fetchone()
         if not row or row['state'] not in ('queued','running') or row['lease']!=job['lease']:return
         latency=int((datetime.now(timezone.utc)-datetime.fromisoformat(row['started_at'] or row['created_at'])).total_seconds()*1000)
@@ -115,6 +115,7 @@ class AnalysisJobs:
             details.update(analysis_id=result['id'],cache_hit=bool(result.get('cached')))
             if result.get('cached'):details['model_calls']=0
             status='limited' if result.get('analysis_type') in ('limited_summary','statistical_report','partial_model') else 'success'
+        if token_usage is not None:details={**(details or {}),'token_usage':token_usage}
         accounts.finish_usage(self.repo,row['usage_id'],status,latency,details,db=db)
         db.execute('UPDATE ai_analysis_jobs SET state=?,finished_at=?,analysis_id=?,cached=?,error=?,snapshot=NULL WHERE id=?',
                    ('failed' if error else 'completed',stamp(),result.get('id') if result else None,
@@ -125,15 +126,18 @@ class AnalysisJobs:
         job=self.claim()
         if not job:return False
         LOG.info('Analysis job started: job=%s event=%s',job['id'],job['event_id'])
+        from .token_usage import capture_usage
+        capture=None
         try:
             snapshot=json.loads(zlib.decompress(job['snapshot']))
-            result=self.execute(job,snapshot)
-            self.finish(job,result=result)
+            with capture_usage() as capture:result=self.execute(job,snapshot)
+            expected=0 if result.get('cached') else (result.get('context',{}).get('ai_generation') or {}).get('model_calls',0)
+            self.finish(job,result=result,token_usage=capture.summary(expected))
         except HTTPException as error:
-            self.finish(job,error=error.detail if isinstance(error.detail,str) else 'Не удалось выполнить разбор.')
+            self.finish(job,error=error.detail if isinstance(error.detail,str) else 'Не удалось выполнить разбор.',token_usage=capture.summary() if capture else None)
         except Exception as error:
             LOG.warning('Analysis job failed: job=%s category=%s',job['id'],type(error).__name__)
-            self.finish(job,error='Не удалось завершить разбор. Попытка не списана.')
+            self.finish(job,error='Не удалось завершить разбор. Попытка не списана.',token_usage=capture.summary() if capture else None)
         return True
 
     def run(self):

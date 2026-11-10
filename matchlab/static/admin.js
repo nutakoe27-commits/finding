@@ -65,7 +65,7 @@ window.Admin = (() => {
     const health=data.archive,box=node("div","admin-health-grid");
     for(const [label,value] of [["Поток матчей",health.connected && !health.source_stale ? "Обновляется" : health.available ? "Данные сохранены, поток задерживается" : "Ожидает подключение"],["Событий в потоке",format(health.events)],["Результатов в архиве",format(health.stored_results)],["Последнее наблюдение",when(health.last_snapshot_at)],["Среднее время запроса к сайту",data.ai.avg_ms ? `${(data.ai.avg_ms/1000).toFixed(1)} с` : "Пока нет готовых разборов без кэша"],["Сбои и неполные разборы",`${format(data.ai.failed)} из ${format(data.ai.total)} запросов`]]){const item=node("div");item.append(node("small","muted",label),node("strong","",value));box.append(item);}
     $("admin-service-health").replaceChildren(box);
-    $("admin-ai-list").replaceChildren(table(["Время","Пользователь","Запрос","Результат","Вызовы ИИ / части","Время сайта"],data.recent_ai.map(i=>[when(i.at),i.username||"Удалённый аккаунт",i.kind==="event"?"Матч":"Сценарий",aiResult(i),i.generation?.cache_hit ? '0 выз. · кэш' : i.generation?.model_calls==null ? '—' : `${i.generation.model_calls} выз. / ${i.generation.parts_completed??'—'} из ${i.generation.parts_total??'—'} частей`,i.latency_ms==null?"—":`${(i.latency_ms/1000).toFixed(1)} с`])));
+    $("admin-ai-list").replaceChildren(table(["Время","Пользователь","Запрос","Результат","Вызовы ИИ / части","Токены · вход / выход","Пик окна","Время сайта"],data.recent_ai.map(i=>[when(i.at),i.username||"Удалённый аккаунт",i.kind==="event"?"Матч":"Сценарий",aiResult(i),i.generation?.cache_hit ? '0 выз. · кэш' : i.generation?.model_calls==null ? '—' : `${i.generation.model_calls} выз. / ${i.generation.parts_completed??'—'} из ${i.generation.parts_total??'—'} частей`,AdminTokens.summaryCell(i.generation),AdminTokens.peakCell(i.generation),i.latency_ms==null?"—":`${(i.latency_ms/1000).toFixed(1)} с`])));
   }
   async function loadUsers(){
     const query=new URLSearchParams({search:$("admin-user-search").value,offset:String(userOffset)}),data=await api("/api/admin/users?"+query);if(tab!=="users")return;
@@ -130,13 +130,13 @@ window.Admin = (() => {
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
-  async function load(){const id=++request;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
+  const loaders={overview:loadOverview,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
     if(allowed)await load();
   }
-  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
+  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminTokens.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
   $("admin-refresh").addEventListener("click",load);$("admin-period").addEventListener("change",load);
   let userSearch;$("admin-user-search").addEventListener("input",()=>{clearTimeout(userSearch);userSearch=setTimeout(()=>{userOffset=0;loadUsers().catch(e=>message(e.message,true));},300);});
   $("admin-users-prev").addEventListener("click",()=>{userOffset=Math.max(0,userOffset-30);load();});$("admin-users-next").addEventListener("click",()=>{userOffset+=30;load();});

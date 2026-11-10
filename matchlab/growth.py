@@ -448,6 +448,24 @@ def install(app, repo, settings):
         with repo.connection() as db:
             return run(db,mode,limit)
 
+    @app.get('/api/admin/verdict-outcomes')
+    def verdict_outcomes(request:Request,days:int=30,source:str='site',version:str='',report_id:str='',
+                         state:str='all',offset:int=0,limit:int=25):
+        accounts.admin_user(request)
+        from .config import ROOT
+        from .verdict_outcomes import run
+        try:
+            return run(repo,days=days,source=source,version=version,report_id=report_id,state=state,
+                offset=offset,limit=limit,report_dir=ROOT/'data'/'evaluations')
+        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+
+    @app.get('/api/admin/ai-token-usage')
+    def ai_token_usage(request:Request,days:int=30,kind:str='all',offset:int=0,limit:int=25):
+        accounts.admin_user(request)
+        from .token_analytics import run
+        try:return run(repo,days=days,kind=kind,offset=offset,limit=limit)
+        except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+
     @app.get("/api/admin/users")
     def users(request: Request, search: str = "", offset: int = 0):
         accounts.admin_user(request)

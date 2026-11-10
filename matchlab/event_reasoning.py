@@ -430,7 +430,8 @@ def analyze(settings,context,complete,request):
             with lock:leaves.append(False)
             return []
     with ThreadPoolExecutor(max_workers=getattr(settings,'qwen_parallelism',1),thread_name_prefix='match-evidence') as pool:
-        extracted=list(pool.map(extract,batches))
+        from contextvars import copy_context
+        extracted=list(pool.map(lambda pair:pair[0].run(extract,pair[1]),[(copy_context(),batch) for batch in batches]))
     evidence=[];seen_evidence=set()
     for values in extracted:
         for value in values:

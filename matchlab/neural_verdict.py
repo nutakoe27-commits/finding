@@ -10,6 +10,7 @@ import time
 import unicodedata
 
 from .bookmakers import instant
+from .token_usage import capture_usage,track_generation
 
 VERSION='neural-verdict-v6.1'
 LOG=logging.getLogger('uvicorn.error')
@@ -338,6 +339,7 @@ def validate_reply(value,packet):
             **({'format_normalizations':normalizations} if normalizations else {})}
 
 
+@track_generation
 def generate(settings,packet,complete=None,*,historical=False,capture_rejected=False):
     from .qwen import _completion,event_error_code
     complete=complete or _completion
@@ -347,15 +349,15 @@ def generate(settings,packet,complete=None,*,historical=False,capture_rejected=F
     can_call=not packet['policy']['force_skip'] and bool(packet['facts']) and packet['event'].get('phase')=='prematch' and packet['event'].get('sport')=='football'
     if can_call:
         for attempt in range(2):
-            started=time.monotonic();status='pending';details={};raw=None
+            started=time.monotonic();status='pending';details={};raw=None;usage_capture=None
             try:
                 messages=[{'role':'system','content':system_prompt(packet)},{'role':'user','content':encoded(packet)}]
                 if feedback:
                     if feedback.get('reply'):messages.append({'role':'assistant','content':feedback['reply']})
                     messages.append({'role':'user','content':encoded({'repair':feedback['reason'],'details':feedback['details'],
                         'instruction':'Верни исправленный JSON. Исправь все указанные противоречия по фактам, а не только формулировку. numbers_elsewhere_in_input показывает возможные источники числа: добавь подходящую ссылку лишь если она действительно подтверждает утверждение, иначе убери неподтверждённое число. Не меняй выбор ради обхода проверки. Объясняй значение фактов словами. Не меняй ограничения policy.'})})
-                raw=complete(replace(settings,qwen_timeout=min(settings.qwen_timeout,90),qwen_max_tokens=min(settings.qwen_max_tokens,1200),qwen_enable_thinking=False),
-                    messages)
+                with capture_usage() as usage_capture:
+                    raw=complete(replace(settings,qwen_timeout=min(settings.qwen_timeout,90),qwen_max_tokens=min(settings.qwen_max_tokens,1200),qwen_enable_thinking=False),messages)
                 answer=validate_reply(json.loads(raw),packet);status='validated';break
             except (ValueError,TypeError,KeyError) as error:
                 reason=str(error) if str(error).startswith(('verdict_','unsupported_number')) else event_error_code(error)
@@ -366,6 +368,7 @@ def generate(settings,packet,complete=None,*,historical=False,capture_rejected=F
                 if reason in ('timeout','connection','proxy','authentication','model_or_endpoint','provider_http','context_limit','output_limit'):break
             finally:
                 diagnostic={'validation_details':details} if details else {}
+                if usage_capture is not None:diagnostic['token_usage']=usage_capture.summary(expected_calls=1)
                 if status=='validated' and answer.get('format_normalizations'):
                     diagnostic['normalizations']=answer['format_normalizations']
                 if capture_rejected and raw is not None and status!='validated' and isinstance(raw,str):

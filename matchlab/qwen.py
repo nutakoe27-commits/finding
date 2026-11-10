@@ -97,7 +97,12 @@ def _completion(settings: Settings, messages: list[dict]) -> str:
     }
     if settings.qwen_enable_thinking is not None:
         payload["chat_template_kwargs"] = {"enable_thinking": settings.qwen_enable_thinking}
+    from .token_usage import begin_call
+    usage_call=begin_call(settings.qwen_max_tokens)
     data = _request(settings, "post", "/chat/completions", json=payload)
+    choices=data.get('choices') if isinstance(data,dict) else None
+    raw_choice=choices[0] if isinstance(choices,list) and choices else {}
+    usage_call.finish(data.get('usage') if isinstance(data,dict) else None,raw_choice.get('finish_reason') if isinstance(raw_choice,dict) else None)
     choice, message = _chat_choice(data)
     content = message.get('content')
     usage=data.get('usage') if isinstance(data.get('usage'),dict) else {}

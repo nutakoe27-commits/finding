@@ -389,6 +389,7 @@ def install(app, repo, settings):
     @app.middleware("http")
     async def guard(request, call_next):
         usage = None
+        token_capture=None
         started = time.monotonic()
         try:
             path = request.url.path
@@ -408,7 +409,10 @@ def install(app, repo, settings):
                 )
             elif path == "/api/analyses" or path.startswith("/api/analyses/") or path.startswith('/api/analysis-jobs/'):
                 request.state.user = current_user(request)
-            response = await call_next(request)
+            from contextlib import nullcontext
+            from .token_usage import capture_usage
+            with capture_usage() if usage else nullcontext() as token_capture:
+                response = await call_next(request)
         except HTTPException as exc:
             response = JSONResponse(
                 {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
@@ -416,16 +420,19 @@ def install(app, repo, settings):
         except Exception:
             if usage:
                 finish_usage(
-                    repo, usage, "failed", int((time.monotonic() - started) * 1000)
+                    repo, usage, "failed", int((time.monotonic() - started) * 1000),
+                    {'token_usage':token_capture.summary()} if token_capture is not None else None
                 )
             raise
         if usage:
+            details=dict(getattr(request.state,'ai_details',None) or {})
+            if token_capture is not None:details['token_usage']=token_capture.summary(details.get('model_calls',0))
             finish_usage(
                 repo,
                 usage,
                 ("limited" if getattr(request.state, "limited_summary", False) else "success") if response.status_code < 400 else "failed",
                 int((time.monotonic() - started) * 1000),
-                getattr(request.state,'ai_details',None),
+                details or None,
             )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
