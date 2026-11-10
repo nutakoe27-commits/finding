@@ -596,8 +596,13 @@ def watches(repo):
         return [
             int(r["event_id"])
             for r in db.execute(
-                "SELECT event_id FROM archive_watches WHERE requested_at>? ORDER BY requested_at DESC LIMIT 4",
-                (cutoff,),
+                """SELECT event_id FROM (
+                   SELECT event_id,requested_at FROM archive_watches WHERE requested_at>?
+                   UNION ALL SELECT event_id,requested_at FROM statistics_request_jobs
+                   WHERE state IN ('queued','running') AND requested_at>?
+                   AND json_extract(event_data,'$.source_kind')='stream'
+                   ) GROUP BY event_id ORDER BY max(requested_at) DESC LIMIT 4""",
+                (cutoff,(datetime.now(UTC)-timedelta(minutes=5)).isoformat()),
             )
         ]
 

@@ -59,39 +59,18 @@ def football_sample(repo, event, as_of):
 
 
 def feed_sample(context, side, cutoff):
-    """Only explicitly completed, ID-verified rows with documented score/time fields."""
-    feed=(context.get('team_statistics') or {}).get('structured_feed') or {}
-    target=((feed.get('match') or {}).get('teams') or {}).get(side) or {}
-    team_id=str(target.get('_id',target.get('id','')))
-    result=[]
-    if not team_id: return result
-    for group in (feed.get('participants') or {}).get(side,[]):
-        for row in group.get('verified_matches',[]):
-            state=row.get('status'); state=state.get('_id',state.get('id')) if isinstance(state,dict) else state
-            if norm(state) not in ('finished','ended','closed','100'): continue
-            identifier=str(row.get('_id',row.get('id','')))
-            if identifier==str(feed.get('statistics_id')): continue
-            raw_at=row.get('date') or row.get('start_at') or row.get('_dt')
-            if isinstance(raw_at,dict): raw_at=raw_at.get('uts')
-            try:
-                at=datetime.fromtimestamp(raw_at,tz=timezone.utc) if type(raw_at) in (int,float) else instant(raw_at)
-            except (TypeError,ValueError,OverflowError,OSError): continue
-            if at>=cutoff: continue
-            competition=row.get('competition') or row.get('tournament')
-            if isinstance(competition,dict): competition=competition.get('name')
-            if norm(competition)!=norm(context['event'].get('competition')): continue
-            values=row.get('result')
-            if not isinstance(values,dict): continue
-            h,a=values.get('home'),values.get('away')
-            if type(h) is not int or type(a) is not int or not 0<=min(h,a)<=max(h,a)<=30: continue
-            teams=row.get('teams') or {}; positions=[]
-            for position in ('home','away'):
-                team=teams.get(position) or {}
-                if str(team.get('_id',team.get('id','')))==team_id: positions.append(position)
-            if len(positions)!=1: continue
-            gf,ga=(h,a) if positions[0]=='home' else (a,h)
-            result.append({'at':at,'gf':gf,'ga':ga})
-    return result
+    from .match_history import normalize
+    return normalize(context,cutoff)['samples'][side]
+
+
+def is_1x2(market):
+    """Recognize settlement conditions without reading any prices."""
+    return (market.get('outcomes_complete') is True and market.get('parameter') in (None,'') and
+            bool(re.search(r'(?<!\w)1\s*[xх]\s*2(?!\w)',norm(market.get('name')))) and
+            not re.search(r'фора|гандикап|handicap',norm(market.get('name'))) and
+            len(market.get('outcomes',[]))==3 and
+            {norm(o.get('name')) for o in market['outcomes']} in ({'1','x','2'},{'1','х','2'},{'п1','x','п2'},{'п1','х','п2'}) and
+            all(o.get('parameter') in (None,'') for o in market['outcomes']))
 
 
 def fit_goals(rows, home, away, at, extras=None):
@@ -136,30 +115,46 @@ def fit_goals(rows, home, away, at, extras=None):
     return grid,facts
 
 
-def goal_probabilities(market, grid):
+def goal_probabilities(market, grid, event=None):
     """Support explicitly named full-match goal markets; no inferred Asian rules."""
     if not full_time(market) or norm(market.get('period')) not in ('','осн.время','осн. время','основное время','матч','весь матч','full time','regular time'): return {}
     name=norm(market.get('name')); h,a=np.indices(grid.shape); out={}
+    from .market_focus import family,row_kind
+    kind=family(market,event);matrix=row_kind(market)
     for item in market.get('outcomes',[]):
         label=norm(item.get('name')); mask=None; push=np.zeros(grid.shape,dtype=bool)
-        if normalized_1x2(market):
+        if is_1x2(market):
             mask=(h>a) if label in ('1','п1') else (h==a) if label in ('x','х') else (h<a) if label in ('2','п2') else None
         elif name=='двойной шанс' and market.get('parameter') in (None,'') and item.get('parameter') in (None,''):
             mask=(h>=a) if label in ('1x','1х') else (h<=a) if label in ('x2','х2') else (h!=a) if label=='12' else None
         elif ('обе забьют' in name or 'обе команды забьют' in name):
             both=(h>0)&(a>0); mask=both if label in ('да','yes') else ~both if label in ('нет','no') else None
-        elif re.fullmatch(r'тотал(?:\s*\(осн\.?\s*время\))?',name):
+        elif kind in ('total','team_total_home','team_total_away'):
+            goals=h if kind=='team_total_home' else a if kind=='team_total_away' else h+a
             value=item.get('parameter') or market.get('parameter')
             match=re.fullmatch(r'(б|м|больше|меньше|тб|тм)\s*([0-9]+(?:[.,][0-9]+)?)?',label)
+            if matrix=='total':
+                direction=norm(market.get('parameter'))
+                match=re.fullmatch(r'(больше|меньше|over|under)\s*([0-9]+(?:[.,][0-9]+)?)',direction+' '+label)
+                value=None
             if match:
                 try: threshold=float(str(value if value not in (None,'') else match[2]).replace(',','.'))
                 except (ValueError,TypeError): continue
                 if not 0<=threshold<=40 or threshold*2!=int(threshold*2): continue
-                mask=h+a>threshold if match[1] in ('б','больше','тб') else h+a<threshold
-                push=h+a==threshold
+                mask=goals>threshold if match[1] in ('б','больше','тб','over') else goals<threshold
+                push=goals==threshold
         elif 'точный счет' in name or 'точный счёт' in name:
             pair=score(label)
             if pair: mask=(h==pair[0])&(a==pair[1])
+        elif kind=='draw_no_bet' and market.get('parameter') in (None,''):
+            mask=h>a if label in ('1','п1') else h<a if label in ('2','п2') else None
+            push=h==a
+        elif kind=='handicap' and matrix=='handicap' and event:
+            side=next((s for s in ('home','away') if norm(event.get(s))==norm(market.get('parameter'))),None)
+            try:handicap=float(label.replace(',','.'))
+            except (ValueError,TypeError):continue
+            if side is None or abs(handicap)%1!=.5:continue
+            mask=(h-a+handicap>0) if side=='home' else (a-h+handicap>0)
         elif name=='фора' and len(market.get('outcomes',[]))==2:
             match=re.fullmatch(r'(?:ф|фора\s*)?([12])\s*(?:\(([+\-]?[0-9]+(?:[.,][0-9]+)?)\))?',label)
             if not match: continue
@@ -174,7 +169,7 @@ def goal_probabilities(market, grid):
 
 
 def market_probabilities(market):
-    """Normalize only complete mutually exclusive sets; never double-chance triples."""
+    """Legacy descriptive utility; never used by independent match analysis."""
     distribution=normalized_1x2(market)
     if distribution:
         aliases={'1':'1','п1':'1','x':'X','х':'X','2':'2','п2':'2'}
@@ -212,39 +207,52 @@ def assess(repo, document, context):
     """Public predictions/facts only. Fitted intensities and hyperparameters stay local."""
     event=context['event']; now=instant(context['request_time']['at']); stats=context.get('team_statistics') or {}
     finished=event.get('phase')=='finished' or stats.get('match_phase')=='finished'
-    grid=None; facts=[]; limitations=[]; native=False
-    if not finished and event.get('kickoff_at') and event.get('sport')=='football' and event.get('phase')=='prematch' and not context['request_time']['kickoff_passed'] and not context['snapshot']['is_stale']:
+    grid=None; facts=[]; limitations=[]; native=False;history_counts={}
+    if not finished and event.get('kickoff_at') and event.get('sport')=='football' and event.get('phase')=='prematch' and not context['request_time']['kickoff_passed']:
         rows=football_sample(repo,event,now)
         cutoff=min(now,instant(event['kickoff_at'])) if event.get('kickoff_at') else now
-        fit=fit_goals(rows,norm(event.get('home')),norm(event.get('away')),cutoff,
-                      {s:feed_sample(context,s,cutoff) for s in ('home','away')})
+        from .match_history import normalize
+        feed=normalize(context,cutoff,rows)
+        history_counts={'archive_matches':len(rows),'widget':feed['counts']}
+        fit=fit_goals(rows+feed['rows'],norm(event.get('home')),norm(event.get('away')),cutoff,feed['samples'])
         if fit:
             grid,summaries=fit; native=True
             for side,row in zip(('home','away'),summaries):
                 facts.append(f"{plain(event.get(side))}: {row['wins']} побед и {row['draws']} ничьих за {row['matches']} прошлых матчей; мячи {row['scored']}:{row['conceded']}")
+        elif any(c.get('unconfirmed_final_status') for c in feed['counts'].values()):
+            limitations.append('У части истории виджета не подтверждён финальный статус; эти встречи не включены в расчёт.')
     if finished: limitations.append('Матч уже завершён; прогноз до начала не формируется.')
     if event.get('phase')=='live':
         if event.get('live_score'): facts.append('Счёт в снимке: '+plain(event['live_score'])+(' · '+plain(event.get('live_clock')) if event.get('live_clock') else ''))
-        limitations.append('Для live независимая оценка пока не применяется; указаны оценки по линии.')
+        limitations.append('Независимая модель для live пока не поддерживается; вероятности не рассчитаны.')
+    if event.get('sport')!='football':limitations.append('Независимая модель для этого вида спорта пока не поддерживается.')
     facts.extend(season_facts(context))
     evaluated=[]; winner=None; unsupported=0
     for market in context['markets']:
-        independent=goal_probabilities(market,grid) if grid is not None else {}
-        estimated=independent or market_probabilities(market)
+        estimated=goal_probabilities(market,grid,event) if grid is not None else {}
         if not estimated: unsupported+=1
         for item in market['outcomes']:
             estimate=estimated.get(item['key'])
             if not estimate or item.get('state')!='open' or market.get('is_stale'): continue
             record={'market_key':market['key'],'outcome_key':item['key'],'market':market['name'],'period':market.get('period'),
-                    'parameter':item.get('parameter') or market.get('parameter'),'outcome':item['name'],'odds':item.get('odds'),**estimate}
+                    'parameter':item.get('parameter') or market.get('parameter'),'outcome':item['name'],**estimate}
             evaluated.append(record)
-        if winner is None and event.get('home') and event.get('away') and full_time(market) and (normalized_1x2(market) or ('победитель' in norm(market['name']) and len(market['outcomes'])==2)):
+        if winner is None and event.get('home') and event.get('away') and full_time(market) and is_1x2(market):
             candidates=[r for r in evaluated if r['market_key']==market['key']]
             if candidates: winner=max(candidates,key=lambda r:r['probability'])
+    distribution=None
+    if grid is not None:
+        h,a=np.indices(grid.shape)
+        distribution={'home':float(grid[h>a].sum()),'draw':float(grid[h==a].sum()),'away':float(grid[h<a].sum())}
+    if grid is not None and winner is None:
+        h,a=np.indices(grid.shape)
+        outcome,p=max((('1',float(grid[h>a].sum())),('X',float(grid[h==a].sum())),('2',float(grid[h<a].sum()))),key=lambda r:r[1])
+        winner={'market_key':None,'outcome_key':None,'market':'Исход 1X2','period':'осн.время',
+                'outcome':outcome,'probability':p,'basis':'history'}
     if finished: evaluated=[]; winner=None
     if winner:
         label=norm(winner['outcome']); winner={**winner,'participant':event.get('home') if label in ('1','п1') else event.get('away') if label in ('2','п2') else 'Ничья'}
-    if not native and not finished and event.get('phase')!='live': limitations.append('Недостаточно подходящей истории для независимого расчёта; проценты рассчитаны по линии.')
+    if not native and not finished and event.get('phase')!='live' and event.get('sport')=='football': limitations.append('Недостаточно подтверждённой истории для независимого расчёта; вероятности не рассчитаны.')
     if native: limitations.append('Оценка ещё не прошла проверку калибровки на будущих матчах.')
     if unsupported: limitations.append('Для части рынков вероятность не рассчитана: условия или модель не поддерживаются.')
     if context['snapshot']['is_stale']: limitations.append('Снимок матча устарел.')
@@ -265,9 +273,10 @@ def assess(repo, document, context):
                     seen.add(key)
                     facts.append('Архив: '+' — '.join(plain(n,60) for n in row.get('members',[]))+' · '+plain(row.get('score_text'),30))
     if not facts:
-        if winner: facts.append(f"По котировкам наиболее вероятен исход «{plain(winner['outcome'])}» в рынке «{plain(winner['market'])}»")
+        if winner: facts.append('Независимая оценка основана на подтверждённых завершённых матчах участников.')
         else: facts.append('В доступных данных нет подтверждённого основания выбрать победителя')
     return {'winner':winner,'markets':evaluated,'facts':facts,'limitations':limitations,'finished':finished,
+            'history_diagnostics':history_counts,'independent_only':True,'outcome_probabilities':distribution,
             'coverage':{'received_markets':len(context['markets']),'evaluated_markets':len({r['market_key'] for r in evaluated})}}
 
 
@@ -275,7 +284,7 @@ def report_markets(assessment):
     candidates=sorted(assessment['markets'],key=lambda r:(r['basis']!='history',-r['probability']))
     chosen=[];seen=set()
     for row in candidates:
-        if row['probability']<.55 or (row.get('odds') or 0)<1.15 or row['market_key'] in seen:continue
+        if row['probability']<.55 or row['market_key'] in seen:continue
         chosen.append(row);seen.add(row['market_key'])
         if len(chosen)==3:break
     return chosen

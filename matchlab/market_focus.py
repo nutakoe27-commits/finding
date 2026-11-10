@@ -2,13 +2,12 @@
 from copy import deepcopy
 from decimal import Decimal,InvalidOperation
 import json
-import math
 import re
 import unicodedata
 
 from .markets import headline_market
 
-POLICY='relevant-markets-v2'
+POLICY='independent-markets-v3'
 FAMILIES=('winner','double_chance','both_score','total','handicap','draw_no_bet','team_total_home','team_total_away')
 SIDE_MARKETS=re.compile(r'углов|карточ|удар|офсайд|фол|пенальти|эйс|двойн\w*\s+ошиб|брейк|подач|чет.?нечет|ч[её]тност|точн\w*\s+сч[её]т|игрок|player|corner|booking',re.I)
 PART=re.compile(r'тайм|четверт|период|половин|half|quarter|period|(?:\b[1-9]\s*(?:-?\s*[йям])?\s*(?:сет|гейм|раунд|set|game|round))|(?:\b[1-9]\s*[тпqh]\b)',re.I)
@@ -19,7 +18,7 @@ def normalized(value):return ' '.join(unicodedata.normalize('NFKC',str(value or 
 
 def available(market):
     outcomes=market.get('outcomes') or []
-    valid=[o.get('state')=='open' and type(o.get('odds')) in (int,float) and math.isfinite(o['odds']) and o['odds']>1 for o in outcomes]
+    valid=[o.get('state')=='open' for o in outcomes]
     return (not market.get('is_stale') and market.get('outcomes_complete') is True and len(outcomes)>=2 and
             (any(valid) if row_kind(market) else all(valid)))
 
@@ -59,9 +58,13 @@ def scope(market):
     return normalized(market.get('period')) or 'unspecified'
 
 
-def balance(market):
-    weights=[1/o['odds'] for o in market['outcomes']];total=sum(weights)
-    return max(weights)/total-min(weights)/total
+def balance(market,assessment):
+    values=[r['probability'] for r in assessment.get('markets',[]) if r.get('market_key')==market['key'] and r.get('basis')=='history']
+    if values:return min(abs(p-.5) for p in values)
+    number=line_number(market.get('parameter'))
+    # Deterministic conventional lines when there is no independent estimate.
+    if number is not None:return float(abs(number-(Decimal('2.5') if family(market)=='total' else 0)))
+    return 0
 
 
 def line_number(value):
@@ -83,16 +86,16 @@ def row_kind(market):
 
 
 def paired_balance(rows,kind):
-    prices=[]
+    lines=[]
     for index,row in enumerate(rows):
         values={}
         for item in row['outcomes']:
             number=line_number(item.get('name'))
-            if number is None or item.get('state')!='open' or type(item.get('odds')) not in (int,float) or not math.isfinite(item['odds']) or item['odds']<=1:continue
-            values[-number if kind=='handicap' and index else number]=item['odds']
-        prices.append(values)
-    shared=set(prices[0])&set(prices[1])
-    return min((abs(1/prices[0][n]-1/prices[1][n])/(1/prices[0][n]+1/prices[1][n]) for n in shared),default=None)
+            if number is None or item.get('state')!='open':continue
+            values[-number if kind=='handicap' and index else number]=True
+        lines.append(values)
+    shared=set(lines[0])&set(lines[1])
+    return float(min((abs(n-(Decimal('2.5') if kind=='total' else 0)) for n in shared),default=0)) if shared else None
 
 
 def encoded_size(value):return len(json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode())
@@ -125,7 +128,7 @@ def focus_context(context,limit=8):
             continue
         key=(group,scope(market))
         current=representatives.get(key)
-        candidate=(balance(market),[market])
+        candidate=(balance(market,assessment),[market])
         if current is None or (candidate[0],market['key'])<(current[0],current[1][0]['key']):representatives[key]=candidate
     for (group,period,name),rows in tables.items():
         if len(rows)!=2:continue
@@ -170,13 +173,14 @@ def focus_context(context,limit=8):
     if result.get('probability_assessment') is not None:
         assessed=result['probability_assessment']
         assessed['markets']=[r for r in assessed.get('markets',[]) if r.get('market_key') in kept and r.get('market_key') not in context_only]
-        if (assessed.get('winner') or {}).get('market_key') not in kept or (assessed.get('winner') or {}).get('market_key') in context_only:assessed['winner']=None
+        winner_key=(assessed.get('winner') or {}).get('market_key')
+        if winner_key and (winner_key not in kept or winner_key in context_only):assessed['winner']=None
         evaluated={r['market_key'] for r in assessed['markets']}
         assessed.setdefault('coverage',{}).update(considered_markets=len(markets),received_markets=len(chosen),evaluated_markets=len(evaluated))
         if kept<=evaluated:
             assessed['limitations']=[v for v in assessed.get('limitations',[]) if v!='Для части рынков вероятность не рассчитана: условия или модель не поддерживаются.']
         if context_only:
-            assessed.setdefault('limitations',[]).append('Свежих доступных рынков нет; сохранённая основная линия приведена только для контекста, прогноз по её ценам не формируется.')
+            assessed.setdefault('limitations',[]).append('Свежих доступных рынков нет; сохранены только их условия. Независимая оценка исхода, если доступна, рассчитана по истории.')
     result['market_selection']={'policy':POLICY,'limit':limit,'available_markets':len(markets),'selected_markets':len(chosen),
         'excluded_markets':len(markets)-len(chosen),'selected_keys':list(reasons),'reasons':reasons,
         'market_bytes_before':encoded_size(markets),'market_bytes_after':encoded_size(chosen),

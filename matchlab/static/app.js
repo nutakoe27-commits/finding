@@ -430,7 +430,8 @@ function renderReport(target,parts) {
     const scope=winner[3].replace(/^[\s(]*(?:по линии|оценка)[;,]\s*/,"").replace(/\)[.]?$/,"").trim();
     if(scope) lead.append(el("p","report-scope",scope));
   } else lead.append(el("p","report-no-winner",parts[0]));
-  if(byMarket) lead.append(el("p","report-basis","Оценка по коэффициентам букмекера; независимый прогноз не рассчитан для этого исхода."));
+  if(byMarket) lead.append(el("p","report-basis","Архивная оценка по коэффициентам букмекера; в новых разборах коэффициенты не используются."));
+  else if(/\d+(?:[.,]\d+)?%/.test(parts[0])) lead.append(el("p","report-basis","Независимая оценка по подтверждённым результатам матчей. Коэффициенты букмекера в расчёте не используются."));
   nodes.push(lead);
   for(const [index,title] of [[1,"Рынки"],[2,"Аргументы"]]) {
     const section=el("section","report-section"); section.append(el("h3","",title));
@@ -731,10 +732,11 @@ const aiWaitMessages = ["Проверяем доступные сведения 
 const jobWaitMessages = ["Модель сопоставляет сведения о матче.", "Разбор выполняется в фоне и сохранится в истории.", "Большой объём данных требует времени.", "Можно вернуться к матчу позже — повторный запрос не нужен."];
 const queueWaitMessages = ["Разбор в очереди. Ожидаем освобождения модели.", "Задание сохранено. Результат появится в истории."];
 const statisticsWaitMessages = ["Получаем статистику выбранного матча.", "Проверяем форму и встречи участников.", "Данные источника загружаются; затем начнётся разбор."];
+const marketWaitMessages = ["Ожидаем обновления рынков выбранного матча.", "Проверяем доступные условия для независимой оценки."];
 function startAIWait() {
   clearInterval(aiWaitTimer);
   let index = 0;
-  const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : state.aiStage === "queued" ? queueWaitMessages : state.aiStage === "background" ? jobWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
+  const show=()=>{const messages=state.aiStage === "statistics" ? statisticsWaitMessages : state.aiStage === "markets" ? marketWaitMessages : state.aiStage === "queued" ? queueWaitMessages : state.aiStage === "background" ? jobWaitMessages : aiWaitMessages; $("ai-wait-message").textContent=messages[index % messages.length];};
   show();
   aiWaitTimer = setInterval(() => { index++; show(); }, 8500);
 }
@@ -982,6 +984,7 @@ async function requestAI() {
     if(document && !pending) {
       const prefix=eventAPI(eventId);
       try {
+        // The server also starts watching this event's markets before queueing statistics.
         const queued=await api(prefix+"/statistics/request",{method:"POST",body:"{}",cache:"no-store"});
         let finished=null;
         for(let attempt=0;attempt<60 && current();attempt++) {
@@ -998,6 +1001,20 @@ async function requestAI() {
         preparationNotice=" Статистику сейчас обновить не удалось; использованы доступные данные.";
       }
       if(!current()) return;
+      if(state.streamEvent) {
+        state.aiStage="markets"; $("ai-wait-message").textContent=marketWaitMessages[0];
+        try {
+          for(let attempt=0;attempt<5 && current();attempt++) {
+            const fresh=await api(prefix+"/markets",{cache:"no-store"});
+            if(fresh.source_present === false || fresh.markets.filter(m=>!m.is_stale).length>1) break;
+            await new Promise(resolve=>setTimeout(resolve,2000));
+          }
+        } catch(error) {
+          if(error.status===401 || error.status===403) throw error;
+          preparationNotice+=" Обновление условий рынков пока не подтверждено.";
+        }
+        if(!current()) return;
+      }
       await loadEvent(true);
       if(!current()) return;
     }

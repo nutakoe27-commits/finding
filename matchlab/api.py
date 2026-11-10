@@ -314,7 +314,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get('/api/archive/events/{event_id}/analysis')
     def stream_analysis(event_id:str):
-        return {'prediction_available':False,'unavailable_reason':'ИИ использует наблюдаемые рынки и историю участников. Независимая вероятностная модель для этого потока не подключена.'}
+        return {'prediction_available':False,'unavailable_reason':'Независимая оценка по истории доступна в ИИ-разборе при достаточном числе подтверждённых матчей.'}
 
     @app.post("/api/bookmakers/ingest")
     async def worker_ingest(request: Request):
@@ -364,6 +364,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if stream and stream_statistics(event_id)['link_status']=='found':
             document=repo.event_markets(event_id)
         document={**document,'source_kind':'stream' if stream else 'legacy'}
+        if stream:
+            try:archive.watch(repo,event_id)
+            except LookupError:pass
         try: return repo.request_statistics(document)
         except ValueError as error: raise HTTPException(429,str(error)) from error
 
@@ -570,15 +573,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
         try:
             statistics = None
-            canonical = model_teams(document)
-            if (not stream and canonical and document["phase"] == "prematch" and document["kickoff_at"]
-                    and instant(document["kickoff_at"]) > datetime.now(timezone.utc)):
-                try:
-                    model, _ = model_for(min(instant(document["capture_started_at"]).date(), date.today()))
-                    if model.eligible(*canonical):
-                        statistics = model.predict(*canonical)
-                except ValueError:
-                    pass
             try:
                 context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
                                            notes=request.notes, statistics=statistics,team_statistics=team_statistics,archive_history=archive_history)
@@ -589,9 +583,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             context['web_research'] = {'state':'disabled','sources':[]}
             from .chances import assess
             context['probability_assessment']=assess(repo,document,context)
-            # Public context contains predictions, never fitted parameters or tuning.
-            if context.get('statistical_model'):
-                context['statistical_model']={'probabilities':context['statistical_model']['probabilities']}
+            from .independent_context import independent_context
+            context=independent_context(context)
+            diagnostic=context['probability_assessment']['history_diagnostics']
+            logging.getLogger('uvicorn.error').info('Independent model: available=%s archive_matches=%s widget=%s',
+                bool(context['probability_assessment']['winner']),diagnostic.get('archive_matches',0),json.dumps(diagnostic.get('widget',{})))
             from .market_focus import focus_context
             context['primary_market_key']=document.get('primary_market_key')
             full_context=context

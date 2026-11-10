@@ -49,7 +49,8 @@ class SportContracts(unittest.TestCase):
         self.assertEqual([outcome['name'] for outcome in headline_market(tennis)['outcomes']],['П1','П2'])
         self.assertEqual(headline_market(tennis)['period'],'Матч')
         context = analysis_context(tennis)
-        self.assertEqual(set(context['market_implied']['probabilities']),{'П1','П2'})
+        self.assertIsNone(context['market_implied'])
+        self.assertEqual([o['name'] for o in context['markets'][0]['outcomes']],['П1','П2'])
         self.assertIsNone(context['statistical_model'])
 
     def test_outright_has_real_title_no_fake_opponent_and_preview_does_not_claim_full_coverage(self):
@@ -67,9 +68,9 @@ class SportContracts(unittest.TestCase):
         value['coverage']['expected_outcomes']=100
         context = analysis_context(validate_event_markets(value))
         self.assertEqual(context['coverage']['analyzed_outcomes'],100)
-        self.assertEqual(len(context['market_implied']['probabilities']),100)
-        self.assertAlmostEqual(sum(context['market_implied']['probabilities'].values()),1)
-        self.assertEqual(context['market_implied']['basis'],'bookmaker_market_prices')
+        self.assertIsNone(context['market_implied'])
+        self.assertTrue(all('odds' not in o for o in context['markets'][0]['outcomes']))
+        self.assertEqual(len(context['markets'][0]['outcomes']),100)
 
 
 class SportReceiver(unittest.TestCase):

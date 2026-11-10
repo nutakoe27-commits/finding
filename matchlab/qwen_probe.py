@@ -7,6 +7,7 @@ import zlib
 from urllib.parse import quote
 
 from . import qwen
+from .independent_context import independent_context
 from .event_reasoning import Budget,EXTRACT,FACT_EXTRACT,direct_system,trusted_facts,records_for,record_limit,encoded,evidence_payload
 
 
@@ -28,7 +29,9 @@ def saved_sample(settings,full=False):
     return None,None
 
 
-def saved_context(settings):return saved_sample(settings)[0]
+def saved_context(settings):
+    value=saved_sample(settings)[0]
+    return independent_context(value) if value is not None else None
 
 
 def compare_context(settings,market_limit=None):
@@ -40,6 +43,7 @@ def compare_context(settings,market_limit=None):
     full,sample=saved_sample(settings,True)
     if full is None:return result|{'sample':'no_full_saved_analysis'}
     result['sample']=sample
+    full=independent_context(full)
     for label,context in (('full',full),('focused',focus_context(full,limit))):
         records=records_for(context,limit=record_limit(budget))
         payload=evidence_payload(context,records)

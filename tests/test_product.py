@@ -58,8 +58,8 @@ class ProductTests(unittest.TestCase):
                                  {'name': 'X2', 'odds': 1.49, 'state': 'open'}]}]}
         with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
             result = qwen.explain_event(settings, ctx)
-        self.assertIn('1X: 1.49', result)
-        self.assertIn('X2: 1.49', result)
+        self.assertNotIn('1.49', result)
+        self.assertNotIn('X2: 1.49', result)
         self.assertIn('текущая стадия матча не подтверждена', result)
         self.assertNotIn('повышенная волатильность', result)
         self.assertNotIn('матч начался', result)
@@ -83,10 +83,10 @@ class ProductTests(unittest.TestCase):
         self.assertIn('Счёт: 2:0', text)
         self.assertIn("Отметка источника: «2Т 13'»", text)
         self.assertIn('09.11.2026, 08:47:05 МСК', text)
-        self.assertIn('09.11.2026, 08:40:00 МСК', text)
+        self.assertNotIn('Наблюдение коэффициентов', text)
         self.assertIn('Тотал · 2-й тайм · значение: 2.5', text)
         self.assertIn('Снимок мог устареть', text)  # Stale live score.
-        self.assertIn('Эти котировки устарели', text)
+        self.assertNotIn('Эти котировки устарели', text)
         self.assertNotIn('давление', text)
         self.assertNotIn('доминиру', text)
 
@@ -117,7 +117,7 @@ class ProductTests(unittest.TestCase):
         self.assertIsNone(context["statistical_model"])
         self.assertEqual(context["event"]["home"], "Спартак")
         self.assertFalse(context["request_time"]["kickoff_passed"])
-        self.assertAlmostEqual(sum(context["market_implied"]["probabilities"].values()), 1)
+        self.assertIsNone(context["market_implied"])
         self.assertIn("current_lineups", context["missing_data"])
         self.assertFalse(self.client.get("/api/bookmakers/events/123/analysis").json()["prediction_available"])
 
@@ -144,7 +144,7 @@ class ProductTests(unittest.TestCase):
         self.assertNotIn("context", listing[0])
         saved = self.client.get("/api/analyses/" + result["id"]).json()
         self.assertEqual(saved["observed_at"], document["observed_at"])
-        self.assertEqual(saved["context"]["markets"][0]["outcomes"][2]["odds"], 2.8)
+        self.assertNotIn("odds", saved["context"]["markets"][0]["outcomes"][2])
 
     def test_changed_snapshot_and_invalid_selection_do_not_call_ai(self):
         with patch("matchlab.api.qwen.explain_event") as completion:

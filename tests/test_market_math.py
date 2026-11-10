@@ -30,9 +30,10 @@ class MarketMathTests(unittest.TestCase):
                    'markets': [market()], 'archive_history': {'state': 'empty'}, 'web_research': {}}
         with patch('matchlab.qwen._completion', side_effect=AssertionError('model called')):
             text = explain_event(Settings(Path('/tmp')), context)
-        for part in ('1 тайм исход 1X2', '1 — хозяева: 9,0%', 'X — ничья: 48,1%', '2 — гости: 42,9%',
-                     '11,1 п.п.', 'не независимый прогноз', "1Т 27'"):
+        for part in ('1 тайм исход 1X2', 'Независимая оценка исхода недоступна', "1Т 27'"):
             self.assertIn(part, text)
+        for value in ('9,0%','48,1%','42,9%','11,1 п.п.'):
+            self.assertNotIn(value,text)
 
     def test_ambiguous_or_incomplete_markets_are_not_normalized(self):
         cases = []

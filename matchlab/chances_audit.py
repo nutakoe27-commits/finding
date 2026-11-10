@@ -23,7 +23,7 @@ def evaluate(db):
             if estimate.get('basis')!='history' or not full_time({'name':estimate['market'],'period':estimate.get('period')}): continue
             label={'1':'home','п1':'home','x':'draw','х':'draw','2':'away','п2':'away'}.get(norm(estimate['outcome']))
             if label: groups.setdefault(estimate['market_key'],{})[label]=estimate['probability']
-        probabilities=next((g for g in groups.values() if set(g)=={'home','draw','away'}),None)
+        probabilities=(assessment.get('outcome_probabilities') if assessment.get('independent_only') else None) or next((g for g in groups.values() if set(g)=={'home','draw','away'}),None)
         if not probabilities: continue
         seen.add(identity)
         candidates=db.execute('''SELECT payload FROM archive_latest_results

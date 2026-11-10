@@ -256,7 +256,7 @@ class ArchiveTests(unittest.TestCase):
             value = response.json()
             self.assertEqual(value['analysis_type'], 'limited_summary')
             self.assertIn('нейросеть не вызывалась', value['text'])
-            self.assertIn('по линии', value['text'])
+            self.assertIn('вероятности не рассчитаны', value['text'])
             self.assertNotIn('волатильность', value['text'])
             self.assertNotIn('в момент начала', value['text'])
             cached = self.client.post('/api/archive/events/101/explain', json={}).json()
@@ -278,7 +278,7 @@ class ArchiveTests(unittest.TestCase):
         value = response.json()
         self.assertEqual(value['analysis_type'], 'limited_summary')
         self.assertTrue(value['context']['markets'][0]['outcomes_complete'])
-        for part in ("1Т 27'", 'Победитель: оценить по доступным данным нельзя', 'не применя'):
+        for part in ("1Т 27'", 'Победитель: оценить по доступным данным нельзя', 'не поддерживается'):
             self.assertIn(part, value['text'])
 
     def test_search_is_not_called_and_live_clock_stays_verbatim(self):
@@ -296,7 +296,7 @@ class ArchiveTests(unittest.TestCase):
             self.assertIn("2Т 13'", result['text'])
             self.assertNotIn('13-я минута второго тайма', result['text'])
             self.assertNotIn('28.10.2026', result['text'])
-            self.assertIn('по линии', result['text'])
+            self.assertIn('вероятности не рассчитаны', result['text'])
             self.assertEqual(result['context']['web_research'], {'state':'disabled','sources':[]})
             saved = self.client.get('/api/analyses/' + result['id']).json()
             self.assertEqual(saved['context']['web_research'], {'state':'disabled','sources':[]})
@@ -354,6 +354,18 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(len(saved['text'].split('\n\n')),4)
         for private in ('half_life','expected_goals','intensities','Gamma','Пуассон'):
             self.assertNotIn(private,json.dumps(saved,ensure_ascii=False))
+
+    def test_on_demand_statistics_keeps_only_selected_stream_event_markets_watched(self):
+        self.feed([header(),header(event_id='102')])
+        response=self.client.post('/api/archive/events/101/statistics/request',json={})
+        self.assertEqual(response.status_code,202,response.text)
+        with self.repo.connection() as db:
+            db.execute('DELETE FROM archive_watches')
+            db.execute('UPDATE statistics_request_jobs SET requested_at=?',((datetime.now(UTC)-timedelta(minutes=3)).isoformat(),))
+        self.assertEqual(archive.watches(self.repo),[101])
+        with self.repo.connection() as db:
+            db.execute("UPDATE statistics_request_jobs SET state='finished'")
+        self.assertEqual(archive.watches(self.repo),[])
 
     def test_qwen_failure_returns_saved_calculation_and_safe_category(self):
         self.feed([header()])

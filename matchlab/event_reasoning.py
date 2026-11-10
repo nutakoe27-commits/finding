@@ -15,6 +15,7 @@ Check participants, dates, periods, filters and freshness. Future fixtures are n
 Scores do not prove dominance; form indices are not win probabilities; raw totals need match counts.
 finished means retrospective only. News and unverified_matches are unconfirmed.
 Never invent facts, change probabilities, promise winnings or reveal model formulas.
+Bookmaker prices and implied chances are excluded. Never infer chances from odds or user-supplied prices.
 Return JSON only, in Russian, without Markdown or hidden reasoning.'''
 EXTRACT=RULES+'''
 Read ALL records. Compare facts and report up to 2 important observations for this match, text <=180 characters each.
@@ -398,7 +399,7 @@ def analyze(settings,context,complete,request):
     forecast={'winner':{k:winner.get(k) for k in ('participant','probability','basis','market','period')} if winner else None,
               'independent':any(r.get('basis')=='history' for r in assessment.get('markets',[])), 'finished':assessment.get('finished')}
     from .chances import report_markets
-    forecast['markets']=[{key:row.get(key) for key in ('market','period','parameter','outcome','probability','basis','odds','push_probability')} for row in report_markets(assessment)]
+    forecast['markets']=[{key:row.get(key) for key in ('market','period','parameter','outcome','probability','basis','push_probability')} for row in report_markets(assessment)]
     final_build=lambda values:{'stage':'synthesis','match':scope,'forecast':forecast,'evidence':values}
     final_ok=False;arguments=None;citations=[];final_error=None
     def reduce_group(group):

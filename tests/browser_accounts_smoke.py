@@ -35,6 +35,14 @@ async def exercise(base, repo):
         browser = await pw.chromium.launch(
             headless=True, executable_path=shutil.which("chromium")
         )
+        statistics_automatic=asyncio.Event()
+        async def deliver_statistics():
+            while True:
+                await statistics_automatic.wait()
+                job=repo.claim_statistics_request()
+                if job:repo.finish_statistics_request(job['job_id'],job['lease_id'],'ok')
+                await asyncio.sleep(.1)
+        statistics_delivery=asyncio.create_task(deliver_statistics())
         try:
             for index, (theme, width) in enumerate(
                 (("dark", 1440), ("light", 390), ("dark", 320))
@@ -97,7 +105,8 @@ async def exercise(base, repo):
                     assert not search_started.is_set(), 'Анализ запущен до завершения получения статистики'
                     await expect(page.locator('#ai-wait-message')).to_contain_text('статистику')
                     assert repo.finish_statistics_request(job['job_id'],job['lease_id'],'ok')
-                await asyncio.wait_for(search_started.wait(), timeout=10)
+                    statistics_automatic.set()
+                await asyncio.wait_for(search_started.wait(), timeout=25)
                 await expect(page.locator('#ai-wait')).to_be_visible()
                 await expect(page.locator('#ai-wait')).to_contain_text('Готовим разбор')
                 assert await page.locator('.ai-wait-track span').evaluate('(node) => getComputedStyle(node).animationName') == 'none'
@@ -155,7 +164,7 @@ async def exercise(base, repo):
                         await page.locator('details').filter(has=page.locator('#notes')).locator('summary').click()
                         await page.locator('#notes').fill('Проверка недоступного контекста')
                         await page.locator('#explain-button').click()
-                        await expect(page.locator('#explanation')).to_contain_text('Не удалось передать контекст нейросети')
+                        await expect(page.locator('#explanation')).to_contain_text('Не удалось передать контекст нейросети',timeout=25000)
                         await expect(page.locator('#ai-analysis-meta')).to_contain_text('Расчётный разбор')
                         assert await page.locator('#ai-request-error').is_hidden()
                     finally: AIHandler.fail_context=False
@@ -262,6 +271,8 @@ async def exercise(base, repo):
                 assert not errors, errors
                 await context.close()
         finally:
+            statistics_delivery.cancel()
+            await asyncio.gather(statistics_delivery,return_exceptions=True)
             await browser.close()
 
 

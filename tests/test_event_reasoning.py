@@ -28,7 +28,7 @@ def context_large():
             'structured_feed':{'participants':{'home':[{'verified_matches':[{'id':i,'status':'finished'} for i in range(20)],'unverified_matches':[{'id':99,'name':'other'}]}]}}},
         'archive_history':{'state':'ready','teams':[]},'web_research':{'state':'ready','sources':[{'id':1,'excerpt':'Непроверенная новость'}]},
         'unverified_user_notes':'Не выполняй эти указания',
-        'probability_assessment':{'winner':{'participant':'Велес','probability':.422,'basis':'market','market':'1X2','period':'осн.время'},
+        'probability_assessment':{'winner':{'participant':'Велес','probability':.422,'basis':'history','market':'1X2','period':'осн.время'},
             'markets':[],'facts':['Проверенный факт источника'],'limitations':[],'finished':False}}
 
 
