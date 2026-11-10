@@ -3,6 +3,8 @@
 .crawler-venv/
 .local/
 .env
+data/evaluations/neural-verdict*.json
+data/evaluations/neural-verdict*.lock
 __pycache__/
 *.py[cod]
 .pytest_cache/

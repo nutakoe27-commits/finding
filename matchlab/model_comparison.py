@@ -201,6 +201,11 @@ def historical_quotes(db):
         for raw in db.execute('SELECT payload FROM event_analyses'):
             try:
                 context=json.loads(raw[0]).get('context') or {}
+                neural=context.get('neural_input') or {}
+                if isinstance(neural.get('quote'),dict):
+                    value=validate_snapshot(neural['quote'])
+                    if value['source']=='winline' and neural.get('as_of'):
+                        value['_capture_at']=neural['as_of'];output.append(value)
                 from_markets(context.get('event') or {},context.get('markets') or [],(context.get('snapshot') or {}).get('observed_at'))
             except (ValueError,KeyError,TypeError):continue
     if 'bookmaker_event_markets' in tables:

@@ -6,7 +6,7 @@ import json
 import sqlite3
 
 from .bookmakers import instant
-from .chances import assess,INDEPENDENT_MODEL_VERSION
+from .chances import INDEPENDENT_MODEL_VERSION
 from .match_history import identifier
 
 
@@ -19,7 +19,7 @@ class ReadOnlyInputs:
         yield self.db
 
 
-def recorded_cases(db,results,limit):
+def recorded_inputs(db,results,limit=None):
     """Use the earliest retained input per fixture; never replace a failed forecast.
 
     Standalone statistics are bound by the bookmaker's stored statistics ID to
@@ -102,7 +102,15 @@ def recorded_cases(db,results,limit):
             try:include(json.loads(row[1]),'event_statistics',raw=True,stored_event_id=row[0])
             except (ValueError,TypeError):rejected['invalid_statistics_payload']+=1
     inventory['eligible_prematch_fixtures']=len(selected)
-    cohort=sorted(selected.values(),key=lambda c:(c['result']['at'],c['result']['key']))[-limit:]
+    cohort=sorted(selected.values(),key=lambda c:(c['result']['at'],c['result']['key']))
+    if limit is not None:cohort=cohort[-limit:]
+    return cohort,dict(rejected),pending,dict(inventory)
+
+
+def recorded_cases(db,results,limit):
+    from .chances import assess
+    cohort,rejected,pending,inventory=recorded_inputs(db,results,limit)
+    rejected=Counter(rejected)
     cases=[]
     for candidate in cohort:
         target=candidate['result'];as_of=candidate['as_of'];statistics=candidate['statistics']
@@ -128,4 +136,4 @@ def recorded_cases(db,results,limit):
         except (ValueError,TypeError,KeyError,sqlite3.Error):
             rejected['snapshot_evaluation_failed']+=1;case.update(probabilities=None,sample=[])
         cases.append(case)
-    return cases,dict(rejected),pending,dict(inventory)
+    return cases,dict(rejected),pending,inventory

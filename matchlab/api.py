@@ -148,7 +148,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         archive_state=archive.overview(repo)
-        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured},
+        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured,"analysis_mode":settings.event_analysis_mode},
                 "bookmakers": repo.bookmaker_status(),
                 "archive":archive_state, "live_fixtures": archive_state["available"] and not archive_state["source_stale"], "live_odds": archive_state["available"] and not archive_state["source_stale"]}
 
@@ -553,7 +553,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from .event_analysis import request_key
         document=inputs['document'];team_statistics=inputs['team_statistics'];archive_history=inputs['archive_history']
         key = request_key(document, request.market_key, request.outcome_key, request.notes, team_statistics,archive_history)
-        return hashlib.sha256((user['id']+':'+key+':web=disabled:markets='+str(settings.qwen_market_limit)+':stats='+str(request.statistics_job_id or '')).encode()).hexdigest()
+        return hashlib.sha256((user['id']+':'+key+':web=disabled:markets='+str(settings.qwen_market_limit)+':stats='+str(request.statistics_job_id or '')+
+            ':mode='+settings.event_analysis_mode+':stake='+str(settings.verdict_max_stake_pct)).encode()).hexdigest()
 
     def explain_event_impl(event_id,request,stream,http_request,inputs=None,generation_settings=None):
         from .event_analysis import analysis_context
@@ -565,6 +566,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cache_seconds = 600
         if cached and cached.get('context',{}).get('ai_generation',{}).get('state') in ('unavailable','partial'):
             cache_seconds=min(cache_seconds,30)
+        verdict=(cached or {}).get('context',{}).get('neural_verdict') or {}
+        if verdict.get('decision')=='bet':
+            packet=cached['context']['neural_input'];now=datetime.now(timezone.utc)
+            if now>=instant(packet['event']['kickoff_at']) or (now-instant(packet['quote']['observed_at'])).total_seconds()>180:
+                cached=None
         if cached and datetime.now(timezone.utc) - instant(cached["generated_at"]) < timedelta(seconds=cache_seconds):
             http_request.state.limited_summary = cached.get('analysis_type') in ('limited_summary','statistical_report','partial_model')
             http_request.state.ai_details=generation_details(cached,True)
@@ -574,13 +580,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             statistics = None
             try:
-                context = analysis_context(document, market_key=request.market_key, outcome_key=request.outcome_key,
+                context = analysis_context(document, market_key=request.market_key if settings.event_analysis_mode!='neural-verdict' else None,
+                                           outcome_key=request.outcome_key if settings.event_analysis_mode!='neural-verdict' else None,
                                            notes=request.notes, statistics=statistics,team_statistics=team_statistics,archive_history=archive_history)
                 if preparation:
                     context['statistics_preparation']={'state':preparation['statistics_state'],'requested_at':preparation['requested_at']}
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             context['web_research'] = {'state':'disabled','sources':[]}
+            if settings.event_analysis_mode=='neural-verdict':
+                from .neural_verdict import build_packet,document_quote
+                as_of=instant(context['request_time']['at'])
+                context['analysis_mode']='neural-verdict'
+                context['neural_input']=build_packet(repo,context['event'],team_statistics,as_of,document_quote(document,as_of),request.notes)
+                text=qwen.explain_event(generation_settings or settings,context)
+                ready=(context.get('ai_generation') or {}).get('state')=='ready'
+                payload={'id':uuid4().hex,'generated_at':utc_now(),'event':context['event'],'observed_at':document['observed_at'],
+                    'market_name':'Вердикт по победе команды','text':text,'context':context,
+                    'analysis_type':'neural_verdict' if ready else 'limited_summary'}
+                repo.save_event_analysis(payload,key,user_id=user['id'])
+                http_request.state.limited_summary=not ready
+                http_request.state.ai_details=generation_details(payload)
+                return {**payload,'cached':False}
             from .chances import assess
             context['probability_assessment']=assess(repo,document,context)
             from .independent_context import independent_context

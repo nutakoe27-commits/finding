@@ -31,6 +31,8 @@ class Settings:
     qwen_parallelism: int = 1
     qwen_job_timeout: float = 900
     qwen_market_limit: int = 8
+    event_analysis_mode: str = 'independent'
+    verdict_max_stake_pct: float = .5
 
     @property
     def database(self) -> Path:
@@ -59,6 +61,12 @@ class Settings:
         parallelism=int(os.getenv('QWEN_PARALLELISM','1'))
         job_timeout=float(os.getenv('QWEN_JOB_TIMEOUT_SECONDS','900'))
         market_limit=int(os.getenv('QWEN_MARKET_LIMIT','8'))
+        analysis_mode=os.getenv('EVENT_ANALYSIS_MODE','independent').strip()
+        stake_limit=float(os.getenv('VERDICT_MAX_STAKE_PCT','0.5'))
+        if analysis_mode not in ('independent','neural-verdict'):
+            raise ValueError('EVENT_ANALYSIS_MODE: independent или neural-verdict.')
+        if not .01<=stake_limit<=.5:
+            raise ValueError('VERDICT_MAX_STAKE_PCT должен быть от 0.01 до 0.5.')
         if market_limit!=0 and not 2<=market_limit<=20:
             raise ValueError('QWEN_MARKET_LIMIT должен быть 0 или от 2 до 20.')
         if not 30<=job_timeout<=1800:
@@ -102,4 +110,5 @@ class Settings:
             qwen_batch_tokens=batch_tokens,qwen_parallelism=parallelism,
             qwen_job_timeout=job_timeout,
             qwen_market_limit=market_limit,
+            event_analysis_mode=analysis_mode,verdict_max_stake_pct=stake_limit,
         )

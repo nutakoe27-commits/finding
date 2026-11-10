@@ -1,7 +1,7 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const state = {
-  forecast:null, ai:false, teamsLoading:false, teamsLoaded:false, teamsRequest:0,
+  forecast:null, ai:false, analysisMode:"independent", teamsLoading:false, teamsLoaded:false, teamsRequest:0,
   forecastRequest:0, selectedQuote:null, marketOffset:0, marketRequest:0,
   marketDetailRequest:0, marketDocument:null, eventId:null, selection:null,
   analysisContext:null, detailTab:"markets", route:"", phase:"upcoming", catalogReturn:"#matches",
@@ -475,7 +475,26 @@ function renderReport(target,parts,assessment=null,generation=null) {
   }
   target.replaceChildren(...nodes);
 }
-function renderAnalysis(target, text, assessment=null,generation=null) {
+function renderNeuralVerdict(target,verdict,generation) {
+  target.classList.add('structured-report','verdict-report');
+  const lead=el('section','report-section report-lead'),heading=el('div','report-heading');
+  const isModel=verdict.engine==='qwen',bet=verdict.decision==='bet' && Number.isFinite(verdict.stake_percent) && verdict.stake_percent>0 && verdict.stake_percent<=.5;
+  heading.append(el('h3','','Вердикт'),el('span','report-badge',isModel?(verdict.data_forced_skip?'Пропуск: недостаточно данных':'Экспериментальное мнение ИИ'):'Решение ограничено данными'));
+  lead.append(heading,el('p','verdict-choice',bet?`Рассмотреть победу команды «${verdict.selection_label}»`:'Пропустить матч'));
+  if(bet) {
+    lead.append(el('p','report-scope','Победа команды в основное время'));
+    lead.append(el('p','verdict-stake',`Лимит риска: до ${verdict.stake_percent.toLocaleString('ru-RU',{maximumFractionDigits:4})}% игрового банка на эту ставку`));
+    if(Number.isFinite(verdict.odds)) lead.append(el('p','small muted',`Коэффициент в снимке: ${verdict.odds.toLocaleString('ru-RU')}`));
+  }
+  if(!isModel) lead.append(el('p','small muted',verdict.engine==='model_error'?'Ответ ИИ не прошёл проверку или не получен. Это защитный пропуск, а не выбор нейросети.':verdict.engine==='timing_guard'?(generation?.reason==='quote_expired'?'Наблюдение коэффициентов устарело во время ожидания.':'Матч начался во время ожидания ответа.'):'Подтверждённого входа для выбора команды недостаточно.'));
+  if(verdict.data_forced_skip && verdict.limitations?.length) lead.append(el('p','small muted',verdict.limitations.join(' ')));
+  const section=el('section','report-section');section.append(el('h3','','Аргументы'));
+  const list=el('ul','report-facts');for(const item of verdict.arguments || []) list.append(el('li','',item.text));section.append(list);
+  target.replaceChildren(lead,section,el('p','verdict-risk-note',verdict.risk_note || 'Проигрыш возможен при любом вердикте.'));
+}
+function renderAnalysis(target, text, assessment=null,generation=null,verdict=null) {
+  target.classList.remove('verdict-report');
+  if(verdict && ['skip','bet'].includes(verdict.decision)) {renderNeuralVerdict(target,verdict,generation);return;}
   const displayed=analysisDisplayText(text), parts=reportParts(displayed);
   target.classList.toggle("structured-report",Boolean(parts));
   if(parts) {renderReport(target,parts,assessment,generation); return;}
@@ -750,7 +769,7 @@ function clearAIOutput() {
 }
 function syncAIButton() {
   $("explain-button").disabled = state.aiBusy || !state.ai || (!state.marketDocument && !state.forecast);
-  $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : "Получить разбор ИИ";
+  $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : state.analysisMode==='neural-verdict'?"Получить вердикт ИИ":"Получить разбор ИИ";
   $("ai-wait").hidden = !(state.aiBusy && state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest);
   $("ai-hint").textContent = !state.ai ? "Сервис ИИ пока не подключён. Рынки доступны для просмотра." : !state.marketDocument && !state.forecast ? "Сначала выберите матч или рассчитайте сценарий." : "ИИ сопоставляет рынки и доступную историю участников. Это разбор фактов, а не гарантия исхода.";
 }
@@ -770,6 +789,7 @@ function startAIWait() {
 function stopAIWait() { clearInterval(aiWaitTimer); aiWaitTimer = null; }
 function selectAI(market = null, outcome = null) {
   if (!state.marketDocument) return;
+  if(state.analysisMode==='neural-verdict') {market=null;outcome=null;}
   state.selection = market ? {marketKey:market.key,outcomeKey:outcome?.key || null} : null;
   clearAIOutput(); renderAISelection(); renderMarketGroups();
 }
@@ -789,7 +809,7 @@ function renderAISelection() {
   $("ai-match-label").textContent = eventTitle(document);
   const market = document.markets.find(item => item.key === state.selection?.marketKey);
   const outcome = market?.outcomes.find(item => item.key === state.selection?.outcomeKey);
-  $("ai-market-label").textContent = market ? [market.name,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ") : "Матч целиком";
+  $("ai-market-label").textContent = state.analysisMode==='neural-verdict' ? 'Вердикт по П1/П2 в основное время' : market ? [market.name,market.period,market.parameter,marketVariantLabel(market)].filter(Boolean).join(" · ") : "Матч целиком";
   $("ai-outcome-label").hidden = !outcome;
   $("ai-outcome-label").textContent = outcome ? `${outcome.name} · ${outcome.odds ?? "недоступен"}` : "";
   $("ai-clear-selection").hidden = !market;
@@ -808,7 +828,7 @@ function renderAIAnalysisMeta() {
   const focused=context.market_selection;
   const focusNote=focused ? (focused.policy === "source-popular-v1" ? ` В разборе ${focused.selected_markets} популярных рынков со страницы Winline.` : ` Для разбора выбрано ${focused.selected_markets} из ${focused.available_markets} рынков.${focused.context_only_keys?.length ? " Свежей линии нет; сохранённая показана только для контекста." : ""}`) : "";
   const prepNote=prep && prep !== "ok" ? " Статистику сейчас обновить не удалось; использованы доступные данные." : analysis.preparation_notice || "";
-  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${focusNote}${prepNote}`;
+  $("ai-analysis-meta").textContent = `${analysis.analysis_type === "neural_verdict" ? "Вердикт ИИ" : analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК.${changed ? ` Данные обновились; ответ относится к снимку от ${moscowTime(context.snapshot.observed_at)} МСК.` : ""}${context.archive_history?.state === "ready" ? " История участников найдена." : ""}${context.team_statistics ? " Статистика участников доступна." : ""}${focusNote}${prepNote}`;
   $("ai-analysis-meta").hidden = false;
   renderResearchSources($("ai-analysis-sources"), context.web_research);
 }
@@ -1049,12 +1069,12 @@ async function requestAI() {
     const latest=document ? state.marketDocument : null;
     if(document && !latest) throw new Error("Не удалось обновить матч. Повторите разбор.");
     const endpoint = document ? eventAPI(eventId)+"/analysis-jobs" : "/api/explain";
-    const body = document ? {content_version:latest.content_version || null, observed_at:latest.observed_at, market_key:selection?.marketKey || null, outcome_key:selection?.outcomeKey || null, notes:$("notes").value, statistics_job_id:statisticsJobId} : {forecast_id:forecastId,notes:$("notes").value};
+    const body = document ? {content_version:latest.content_version || null, observed_at:latest.observed_at, market_key:state.analysisMode==='neural-verdict'?null:selection?.marketKey || null, outcome_key:state.analysisMode==='neural-verdict'?null:selection?.outcomeKey || null, notes:$("notes").value, statistics_job_id:statisticsJobId} : {forecast_id:forecastId,notes:$("notes").value};
     const submitted=pending || await api(endpoint, {method:"POST",body:JSON.stringify(body)});
     const result=document ? await waitForAnalysisJob(submitted,current) : submitted;
     if(!result) return;
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
-    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation); $("explanation").hidden = false;
+    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation,result.context?.neural_verdict); $("explanation").hidden = false;
     window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
     if (result.context) {
       result.preparation_notice=preparationNotice;
@@ -1108,11 +1128,11 @@ async function loadSavedAnalysis(id) {
     const context = analysis.context;
     $("manual-heading").hidden = false;
     $("manual-heading").querySelector("h1").textContent = eventTitle(analysis.event);
-    $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
+    $("manual-heading").querySelector(".subtitle").textContent = `${analysis.analysis_type === "neural_verdict" ? "Вердикт ИИ" : analysis.analysis_type === "limited_summary" ? "Автоматическая сводка" : analysis.analysis_type === "statistical_report" ? "Расчётный разбор" : analysis.analysis_type === "partial_model" ? "Частичный разбор ИИ" : "Разбор"} от ${moscowTime(analysis.generated_at)} МСК · снимок ${moscowTime(analysis.observed_at)} МСК`;
     $("saved-analysis").hidden = false;
     $("saved-analysis-title").textContent = analysis.market_name;
-    renderAnalysis($("saved-analysis-text"),analysis.text,analysis.context?.probability_assessment,analysis.context?.ai_generation);
-    $("saved-analysis-coverage").textContent = (context.market_selection?.policy === "source-popular-v1" ? `Популярные рынки источника: ${context.coverage.analyzed_markets}.` : `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков.`)+" Данные и текст относятся ко времени этого разбора.";
+    renderAnalysis($("saved-analysis-text"),analysis.text,analysis.context?.probability_assessment,analysis.context?.ai_generation,analysis.context?.neural_verdict);
+    $("saved-analysis-coverage").textContent = context.neural_verdict ? 'Вердикт относится к победе команды в основное время и сохранённым данным этого разбора.' : (context.market_selection?.policy === "source-popular-v1" ? `Популярные рынки источника: ${context.coverage.analyzed_markets}.` : `Учтено ${context.coverage.analyzed_markets} из ${context.coverage.stored_markets} сохранённых рынков.`)+" Данные и текст относятся ко времени этого разбора.";
     renderResearchSources($("saved-analysis-sources"), context.web_research);
     $("saved-analysis-open").href = eventRoute(analysis.event);
   } catch (error) { if (request === state.marketDetailRequest) showError("detail-error", error.message); }
@@ -1122,7 +1142,9 @@ async function loadStatus() {
   try {
     const status = await api("/api/status");
     if (request !== state.statusRequest) return;
-    state.ai = Boolean(status.ai?.configured); renderSources(status.data);
+    state.ai = Boolean(status.ai?.configured);state.analysisMode=status.ai?.analysis_mode || 'independent';
+    if(state.analysisMode==='neural-verdict') state.selection=null;
+    renderSources(status.data);
     $("ai-state").textContent = state.ai ? "ИИ настроен" : "ИИ не подключён";
     renderArchiveStatus(status.archive || {});
     const worker = status.bookmakers.worker;

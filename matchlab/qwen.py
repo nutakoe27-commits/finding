@@ -273,6 +273,9 @@ def limited_event_summary(context: dict) -> str | None:
 
 
 def explain_event(settings: Settings, context: dict) -> str:
+    if context.get('analysis_mode')=='neural-verdict':
+        from .neural_verdict import explain as verdict_explain
+        return verdict_explain(settings,context)
     from .independent_context import independent_context
     clean=independent_context(context)
     context.clear();context.update(clean)
