@@ -177,7 +177,7 @@ def main():
     parser.add_argument('--seed',type=int);parser.add_argument('--resume',action='store_true');parser.add_argument('--prepare-only',action='store_true')
     parser.add_argument('--exclude-report',type=Path,action='append',default=[],help='Исключить уже просмотренные матчи; можно указать несколько раз.')
     parser.add_argument('--event-id',action='append',default=[],help='Отладка конкретного события, без заявления о случайной выборке.')
-    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10-v6.json'))
+    parser.add_argument('--output',type=Path,default=Path('data/evaluations/neural-verdict-10-v6-1.json'))
     args=parser.parse_args();settings=Settings.from_env()
     path=args.output;path.parent.mkdir(parents=True,exist_ok=True)
     try:

@@ -98,13 +98,60 @@ class VerdictTests(unittest.TestCase):
     def test_neutral_caveats_are_allowed_but_promises_and_numeric_confidence_are_rejected(self):
         p=self.packet()
         for caveat in ('Это не гарантирует победу.','Это не гарантированная победа.','Гарантий успеха нет.',
-                       'Без гарантии выигрыша.','Победу невозможно гарантировать.','У гостей сохраняются шансы на ничью.'):
+                       'Без гарантии выигрыша.','Победу невозможно гарантировать.','У гостей сохраняются шансы на ничью.',
+                       'Линия не является гарантией результата.','Эти данные не являются гарантиями победы.'):
             v=reply(p);v['market_context']['text']+=' '+caveat
             with self.subTest(caveat=caveat):validate_reply(v,p)
         for claim in ('Гарантированная победа.','Это гарантирует прибыль.','Не не гарантирует победу.',
-                      'Нет гарантий, но выигрыш гарантирован.','Шанс: 70.','Шанс победы 90%.','Это победа без риска.'):
+                      'Нет гарантий, но выигрыш гарантирован.','Шанс: 70.','Шанс победы 90%.','Это победа без риска.',
+                      'Линия является гарантией результата.','Это не не является гарантией победы.',
+                      'Линия не является гарантией, но победа гарантирована.'):
             v=reply(p);v['market_context']['text']+=' '+claim
             with self.subTest(claim=claim),self.assertRaisesRegex(ValueError,'verdict_forbidden_claim'):validate_reply(v,p)
+
+    def test_explicit_inline_citations_are_moved_without_guessing_a_source_or_repeating_the_call(self):
+        p=self.packet();v=reply(p,'skip')
+        home=v['comparison']['home']['fact_ids'][0];away=v['comparison']['away']['fact_ids'][0]
+        market=v['market_context']['fact_ids'][0]
+        v['counterargument']['text']+=f' ({away}).'
+        v['reason']['text']+=f' Учтена исходная линия ({market}); также сохранены факты ({home}, {away}).'
+        v['market_context']['text']+=' Линия не является гарантией результата.'
+        original=deepcopy(v)
+        with patch('matchlab.qwen._completion',return_value=json.dumps(v,ensure_ascii=False)) as model:
+            verdict,g=generate(self.settings,p,historical=True)
+        self.assertEqual(model.call_count,1);self.assertEqual(g['model_calls'],1)
+        self.assertEqual(verdict['engine'],'qwen');self.assertEqual(verdict['preference'],'home')
+        self.assertEqual(verdict['decision'],'skip')
+        self.assertEqual(verdict['reason']['fact_ids'],[home,away,market])
+        self.assertNotIn('('+market+')',render(verdict))
+        self.assertEqual(v,original)
+        self.assertEqual(g['attempts'][0]['normalizations'],verdict['format_normalizations'])
+
+    def test_unknown_inline_sources_and_unstructured_reference_text_are_still_rejected(self):
+        p=self.packet()
+        v=reply(p);v['comparison']['home']['text']+=' Подтверждение (F999).'
+        with self.assertRaises(VerdictValidationError) as caught:validate_reply(v,p)
+        self.assertEqual(str(caught.exception),'verdict_fact_reference')
+        self.assertIn('F999',caught.exception.details['unknown_fact_ids'])
+        for annotation in (' согласно F1.',' (см. F1).',' (F1 гарантирует победу).'):
+            v=reply(p);v['comparison']['home']['text']+=annotation
+            with self.subTest(annotation=annotation),self.assertRaisesRegex(ValueError,'verdict_forbidden_claim'):
+                validate_reply(v,p)
+
+    def test_normalizing_a_citation_does_not_mask_an_unsupported_number_or_promise(self):
+        p=self.packet()
+        for wording,reason in [(' Забито 9999 голов (F1).','unsupported_number'),
+                               (' Победа гарантирована (F1).','verdict_forbidden_claim')]:
+            v=reply(p);v['comparison']['home']['text']+=wording
+            with self.subTest(wording=wording),self.assertRaisesRegex(ValueError,reason):validate_reply(v,p)
+
+    def test_reference_count_limit_applies_to_inline_citations_too(self):
+        p=self.packet();v=reply(p)
+        extra=['F'+str(i) for i in range(104,112)]
+        p['facts'].extend({**p['facts'][0],'id':i} for i in extra)
+        v['comparison']['home']['text']+=' Дополнительные сведения ('+', '.join(extra)+').'
+        with self.assertRaises(VerdictValidationError) as caught:validate_reply(v,p)
+        self.assertEqual(caught.exception.details['maximum_references'],8)
 
     def test_prompt_examples_always_use_existing_facts_for_each_role(self):
         p=self.packet();prompt=system_prompt(p)
