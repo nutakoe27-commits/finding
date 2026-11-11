@@ -73,6 +73,28 @@ class ArchiveSyncTests(unittest.TestCase):
     def tearDown(self):
         self.stack.close()
 
+    def test_http_rejection_reports_operation_and_safe_reason_without_credentials(self):
+        import httpx
+        from winline.sync import checked_response,error_status
+        request=httpx.Request('POST','http://localhost:18081/api/bookmakers/archive/ingest?token=PRIVATE_TOKEN',headers={'X-Matchlab-Collector-Key':'PRIVATE_KEY'})
+        response=httpx.Response(422,request=request,headers={'X-Matchlab-Archive-Reason':'result_cursor_conflict'},json={'detail':'PRIVATE_BODY'})
+        with self.assertRaises(httpx.HTTPStatusError) as raised:
+            checked_response(response,'results')
+        diagnostic=error_status(raised.exception)
+        self.assertEqual(diagnostic['http_status'],422)
+        self.assertEqual(diagnostic['operation'],'results')
+        self.assertEqual(diagnostic['receiver_reason'],'result_cursor_conflict')
+        self.assertNotIn('PRIVATE',json.dumps(diagnostic))
+        response.headers['X-Matchlab-Archive-Reason']='PRIVATE_ARBITRARY_HEADER'
+        self.assertNotIn('receiver_reason',error_status(raised.exception))
+
+    def test_receiver_returns_a_safe_protocol_reason_without_echoing_payload(self):
+        bad={'format':'matchlab.archive.v1','mode':'status','status':{'checked_at':now()}}
+        response=self.client.post('/api/bookmakers/archive/ingest',json=bad)
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.headers['X-Matchlab-Archive-Reason'],'invalid_counter')
+        self.assertEqual(response.json()['detail'],'Некорректный пакет архива')
+
     def test_featured_order_reaches_receiver_and_clears_on_next_source_snapshot(self):
         self.data["events"][0]["_featured_rank"] = 5
         save_snapshot(self.db, self.capture, self.data)

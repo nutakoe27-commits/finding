@@ -6,6 +6,13 @@ import math
 from datetime import UTC, datetime
 
 FORMAT = "matchlab.archive.v1"
+ARCHIVE_REJECTION_CODES = frozenset({
+    "invalid_text", "clock_skew", "invalid_event_id", "market_event_mismatch",
+    "invalid_market", "invalid_event", "invalid_counter", "invalid_worker_state",
+    "invalid_worker_job", "invalid_cycle", "incomplete_feed", "too_many_markets",
+    "invalid_result_cursor", "invalid_result_key", "future_result",
+    "result_identity_mismatch", "result_cursor_conflict", "invalid_packet",
+})
 
 
 def identity(value):

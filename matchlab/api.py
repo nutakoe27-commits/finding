@@ -263,7 +263,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body=await worker_body(request,2*1024*1024)
         try:return archive.ingest(repo,body)
         except (ValueError,KeyError,TypeError,AttributeError) as exc:
-            raise HTTPException(422,'Некорректный пакет архива') from exc
+            raise HTTPException(422,'Некорректный пакет архива',
+                headers={'X-Matchlab-Archive-Reason':archive.rejection_reason(exc)}) from exc
 
     @app.get('/api/bookmakers/archive/watch')
     def archive_watch_queue(request:Request):

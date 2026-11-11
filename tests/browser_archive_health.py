@@ -29,7 +29,7 @@ async def exercise(base,repo):
                 if await page.locator('#age-gate').is_visible():await page.locator('#age-accept').click()
                 if await page.locator('#privacy-banner').is_visible():await page.locator('#privacy-reject').click()
                 await page.locator('[data-admin-tab="results"]').click()
-                await expect(page.locator('#ar-sync-health')).to_contain_text('Архив не обновляется')
+                await expect(page.locator('#ar-sync-health')).to_contain_text('Нет свежего отчёта о доставке архива')
                 await expect(page.locator('#ar-sync-health')).to_contain_text('Последняя доставка')
                 await expect(page.locator('#ar-updated')).to_contain_text('Отчёт пересчитан')
                 await expect(page.locator('#admin-results')).to_have_attribute('data-archive-state','disconnected')

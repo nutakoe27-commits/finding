@@ -16,10 +16,33 @@ from uuid import uuid4
 
 import httpx
 
-from .projection import FORMAT, event, market
+from .projection import ARCHIVE_REJECTION_CODES, FORMAT, event, market
 from .worker import write_status
 
 STOP = False
+
+
+def checked_response(response, operation):
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        exc.archive_operation = operation
+        raise
+    return response
+
+
+def error_status(exc):
+    value = {"state": "error", "at": datetime.now(UTC).isoformat(),
+             "error_type": type(exc).__name__}
+    if isinstance(exc, httpx.HTTPStatusError):
+        value["http_status"] = exc.response.status_code
+        operation = getattr(exc, "archive_operation", None)
+        if operation in {"watch", "feed", "commit", "detail", "results", "status"}:
+            value["operation"] = operation
+        reason = exc.response.headers.get("X-Matchlab-Archive-Reason")
+        if reason in ARCHIVE_REJECTION_CODES:
+            value["receiver_reason"] = reason
+    return value
 
 
 def read_feed(database, watch):
@@ -110,7 +133,7 @@ def result_batch(database, cursor):
 
 def cycle(client, database, state_dir, state):
     reply = client.get("/api/bookmakers/archive/watch")
-    reply.raise_for_status()
+    checked_response(reply, "watch")
     watch = reply.json()["events"]
     write_status(state_dir / "requests.json", {"at": time.time(), "events": watch})
     feed = read_feed(database, watch)
@@ -137,7 +160,7 @@ def cycle(client, database, state_dir, state):
         if len(json.dumps(payload, ensure_ascii=False).encode()) > 1900000:
             raise ValueError("Archive packet exceeds bounded size")
         response = client.post("/api/bookmakers/archive/ingest", json=payload)
-        response.raise_for_status()
+        checked_response(response, mode)
         return response.json()
 
     if state.get("feed") != feed["cycle"]:
@@ -250,11 +273,7 @@ def main():
                 sqlite3.Error,
                 httpx.HTTPError,
             ) as exc:
-                value = {
-                    "state": "error",
-                    "at": datetime.now(UTC).isoformat(),
-                    "error_type": type(exc).__name__,
-                }
+                value = error_status(exc)
                 code = 1
             write_status(args.state_dir / "sync-status.json", value)
             print(json.dumps(value, ensure_ascii=False), flush=True)

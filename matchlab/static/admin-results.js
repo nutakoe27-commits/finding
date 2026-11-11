@@ -129,7 +129,7 @@ window.AdminResults = (() => {
       const health=d.archive_health||{},notice=$('ar-sync-health');root.dataset.archiveState=health.state||'unknown';
       notice.hidden=health.state==='ready'||!health.state;
       const delivery=health.last_delivery_at?' Последняя доставка: '+when(health.last_delivery_at)+' МСК.':'';
-      notice.textContent=health.state==='disconnected'?'Архив не обновляется: нет связи со сборщиком.'+delivery+' Новые итоги не поступают; ожидающие матчи пока не оцениваются.':health.state==='source_stale'?'Доставка работает, но источник давно не обновлял данные.'+delivery:health.state==='catching_up'?'Передача накопленных результатов ещё продолжается.'+delivery:'Статус доставки архива ещё не получен. Показаны только сохранённые итоги.';
+      notice.textContent=health.state==='disconnected'?'Нет свежего отчёта о доставке архива.'+delivery+' Итоги ожидающих матчей пока не подтверждены. Проверьте синхронизацию результатов.':health.state==='source_stale'?'Отчёт о доставке получен, но данные источника устарели.'+delivery:health.state==='catching_up'?'Передача накопленных результатов ещё продолжается.'+delivery:'Статус доставки архива ещё не получен. Показаны только сохранённые итоги.';
       metrics(d);chart($('ar-accuracy-chart'),d.daily,'cumulative_accuracy',{percentage:true,hasData:d.metrics.preferences>0});
       chart($('ar-bank-chart'),d.daily,'cumulative_bank',{hasData:d.metrics.priced_bets>0});decisions(d.metrics);matches(d);exclusions(d);
       $('ar-message').textContent=d.diagnostic_only?'Архивный тест · результаты пересверены с текущим архивом Winline.':'Реальные разборы сайта · автоматическое обновление раз в минуту.';

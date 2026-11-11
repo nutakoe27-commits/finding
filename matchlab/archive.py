@@ -100,6 +100,28 @@ def validate_market(value, parent):
     return value
 
 
+def rejection_reason(exc):
+    # Only protocol-defined categories may leave this authenticated endpoint.
+    # Never echo a request body, parser exception or arbitrary field value.
+    return {
+        "Некорректный текст архива": "invalid_text",
+        "Часы источника опережают сервер": "clock_skew",
+        "Некорректный ID": "invalid_event_id",
+        "Чужой рынок": "market_event_mismatch",
+        "Некорректный счётчик": "invalid_counter",
+        "Неизвестное состояние worker": "invalid_worker_state",
+        "Неизвестное задание": "invalid_worker_job",
+        "Некорректный цикл": "invalid_cycle",
+        "Получен не весь снимок": "incomplete_feed",
+        "Слишком много рынков": "too_many_markets",
+        "Некорректный курсор": "invalid_result_cursor",
+        "Некорректный ключ результата": "invalid_result_key",
+        "Результат относится к будущей встрече": "future_result",
+        "Ключ результата не соответствует встрече": "result_identity_mismatch",
+        "Курсор относится к другой версии результата": "result_cursor_conflict",
+    }.get(str(exc), "invalid_packet")
+
+
 def validate_event(value):
     parent = event_id(value.get("event_id"))
     if type(value.get("sport_id")) is not int or value["sport_id"] < 0:
