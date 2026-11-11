@@ -20,7 +20,7 @@
   <script src="/static/featured-events.js?v=20261111-sports1" defer></script>
   <script src="/static/product.js?v=20261111-public1" defer></script>
   <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
-  <script src="/static/today-picks.js?v=20261111-today1" defer></script>
+  <script src="/static/today-picks.js?v=20261111-today2" defer></script>
   <script src="/static/public-results.js?v=20261111-today1" defer></script>
   <script src="/static/app.js?v=20261111-public1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
@@ -30,7 +30,7 @@
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
   <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
   <link rel="stylesheet" href="/static/public-results.css?v=20261111-today1" />
-  <link rel="stylesheet" href="/static/today-picks.css?v=20261111-today1" />
+  <link rel="stylesheet" href="/static/today-picks.css?v=20261111-today2" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -53,7 +53,6 @@
     <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span><a id="admin-link" href="#admin" hidden>Управление</a><button id="account-button" class="account-button" type="button">Войти</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
-      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Факты о встрече, аргументы и понятное решение — в одном разборе.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span aria-hidden="true">↻</span> Обновить</button></div>
       <section id="results-widget" class="results-widget" aria-labelledby="results-widget-title">
         <div class="pr-heading"><div><p class="eyebrow">ОТ РЕШЕНИЯ К ИТОГУ</p><h2 id="results-widget-title">Результаты ИИ за 30 дней</h2></div><a href="#results">Посмотреть прошлые прогнозы →</a></div>
         <div id="results-widget-metrics" class="pr-metrics" aria-live="polite"></div><p id="results-widget-note">Загружаем подтверждённые результаты…</p>
@@ -61,17 +60,18 @@
       </section>
       <section id="today-picks" class="today-picks" aria-labelledby="today-picks-title">
         <div class="tp-heading"><div><p class="eyebrow">СЕГОДНЯ В ФОКУСЕ</p><h2 id="today-picks-title">Выбор ИИ на сегодня</h2><p class="tp-subtitle">Только вердикты «Ставить». Матчи до запланированного начала · время МСК.</p></div><span id="tp-date" class="tp-date"></span></div>
-        <form id="tp-filters" class="tp-filters"><fieldset class="tp-odds-filter"><legend>Коэффициент прогноза</legend><div class="tp-range"><label>От<input id="tp-min" type="number" min="1.01" max="100000" step="0.01" inputmode="decimal" placeholder="1,50" /></label><span aria-hidden="true">—</span><label>До<input id="tp-max" type="number" min="1.01" max="100000" step="0.01" inputmode="decimal" placeholder="3,00" /></label></div></fieldset><button type="submit" class="secondary-button">Применить</button><button id="tp-reset" type="button" class="text-button">Сбросить</button></form>
         <p id="tp-status" class="tp-status" role="status">Загружаем сохранённые разборы…</p>
+        <button id="tp-retry" class="secondary-button" type="button" hidden>Повторить загрузку</button>
         <div id="tp-cards" class="tp-cards" role="list" aria-busy="true"></div>
         <button id="tp-more" class="secondary-button tp-more" type="button" hidden>Показать ещё</button>
-        <p class="tp-footnote">Команда и аргументы откроются по кнопке «Посмотреть прогноз». Коэффициент зафиксирован при разборе и мог измениться. В подборку входят только готовые рекомендации системного анализа.</p>
+        <p class="tp-footnote">Участники и ответ ИИ откроются по кнопке «Посмотреть прогноз». Коэффициент зафиксирован при разборе и мог измениться. В подборку входят только готовые рекомендации системного анализа.</p>
       </section>
       <div class="discovery-search"><div class="search-field"><label class="sr-only" for="match-search">Найдите команду или турнир</label><span data-ux-icon="search" aria-hidden="true"></span><span class="sr-only">Поиск участника или турнира</span><input id="match-search" type="search" placeholder="Найдите команду или турнир" autocomplete="off" maxlength="200" /><button id="match-search-clear" type="button" aria-label="Очистить поиск" hidden><span data-ux-icon="close"></span></button></div><p>Найдите встречу или выберите её в главных событиях</p></div>
       <section id="quick-guide" class="quick-guide" aria-labelledby="guide-title" hidden>
         <div class="guide-heading"><div><span class="guide-kicker">ПЕРВЫЙ РАЗ ЗДЕСЬ?</span><h2 id="guide-title">От матча к понятному разбору</h2></div><button id="guide-close" class="guide-close" type="button" aria-label="Скрыть подсказку">×</button></div>
         <ol class="guide-steps"><li><span>01</span><div><strong>Выберите матч</strong><small>Найдите команду или турнир</small></div></li><li><span>02</span><div><strong>Запросите разбор</strong><small>Сопоставим доступные факты</small></div></li><li><span>03</span><div><strong>Изучите решение</strong><small>Претендент, аргументы или пропуск</small></div></li></ol>
       </section>
+      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Факты о встрече, аргументы и понятное решение — в одном разборе.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span aria-hidden="true">↻</span> Обновить</button></div>
       <section id="featured-events" class="featured-events" aria-label="Главные события Winline" aria-roledescription="карусель" hidden>
         <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>Главные события</h2><p class="small muted">Подборка Winline · все виды спорта</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события">←</button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события">→</button></div></div>
         <div id="featured-track" class="featured-track" role="list" tabindex="0" aria-label="Список основных событий"></div>

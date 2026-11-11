@@ -11,8 +11,9 @@ from .verdict_sports import PROFILES,prices_valid
 
 
 def preview(item):
-    # Team selection and answer are fetched only when the visitor opens it.
-    return {key:item[key] for key in ('id','event','sport_label','forecast_at','quote_observed_at','origin','decision','odds')}
+    # Participant names, selection and answer are fetched only on opening.
+    return {key:item[key] for key in ('id','sport_label','forecast_at','quote_observed_at','origin','decision','odds')}|{
+        'event':{key:item['event'][key] for key in ('source_event_id','sport','competition','kickoff_at')}}
 
 
 def collection(repo,*,min_odds=None,max_odds=None,now=None,include_started=False):
