@@ -47,6 +47,10 @@ async def exercise(base,repo):
                 await expect(page.locator('#today-picks-title')).to_have_text('Выбор ИИ на сегодня и завтра')
                 await expect(page.locator('#tp-cards .tp-kickoff').first).to_contain_text('Сегодня')
                 await expect(page.locator('#tp-cards .tp-kickoff').last).to_contain_text('Завтра')
+                kickoff=page.locator('.tp-kickoff-blurred').first
+                assert await kickoff.evaluate('e=>getComputedStyle(e).filter')=='blur(6px)'
+                await expect(kickoff).to_have_attribute('aria-hidden','true')
+                assert 'МСК' not in await page.locator('#tp-cards .tp-open').first.get_attribute('aria-label')
                 await expect(page.locator('#today-picks form,#tp-min,#tp-max')).to_have_count(0)
                 await expect(page.locator('.pr-simulator,#widget-stake,#pr-stake')).to_have_count(0)
                 await expect(page.locator('#results-widget-metrics .pr-metric .pr-label').first).to_have_text('Процент верных прогнозов')

@@ -11,13 +11,14 @@ window.TodayPicks=(()=>{
   let active=false,controller=null,timer=null,epoch=0,data=null,shown=6;
   function card(pick){
     const box=node('article','tp-card tp-bet');box.setAttribute('role','listitem');
-    const head=node('div','tp-card-head');head.append(node('span','tp-sport',pick.sport_label),node('span','tp-kickoff',day(pick.event.kickoff_at)+', '+time(pick.event.kickoff_at)+' МСК'));
+    const head=node('div','tp-card-head'),kickoff=node('span','tp-kickoff tp-kickoff-blurred',day(pick.event.kickoff_at)+', '+time(pick.event.kickoff_at)+' МСК');
+    kickoff.setAttribute('aria-hidden','true');head.append(node('span','tp-sport',pick.sport_label),kickoff);
     const competition=node('p','tp-competition tp-competition-blurred','Название турнира');competition.setAttribute('aria-hidden','true');
     const match=node('h3','tp-match'),names=node('span','tp-match-blurred','Участник 1 — Участник 2');names.setAttribute('aria-hidden','true');
     match.append(names,node('span','sr-only','Участники скрыты до открытия прогноза'));
     const preview=node('div','tp-preview');preview.append(node('span','tp-ready-dot'),node('span','','Прогноз готов · команда и аргументы внутри'));
     const line=node('div','tp-line'),price=node('div','tp-price');price.append(node('span','tp-label','Коэффициент при разборе'),node('strong','',odds(pick.odds)));line.append(price);
-    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз →');link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, ${day(pick.event.kickoff_at).toLowerCase()}, ${time(pick.event.kickoff_at)} МСК`);
+    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз →');link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, коэффициент ${odds(pick.odds)}`);
     footer.append(node('span','tp-observed','Разбор '+when(pick.forecast_at)+' МСК'),link);
     box.append(head,competition,match,preview,line,footer);return box;
   }
