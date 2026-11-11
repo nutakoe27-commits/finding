@@ -123,8 +123,8 @@ async def exercise(base, repo):
                         assert pending and pending['state']=='running', pending
                         await page.reload()
                         await page.locator('#market-detail-title').wait_for()
-                        await expect(page.locator('#explain-button')).to_be_enabled()
-                        await page.locator('#explain-button').click()
+                        await expect(page.locator('#event-ai-button')).to_be_enabled()
+                        await page.locator('#event-ai-button').click()
                         await expect(page.locator('#ai-wait')).to_be_visible()
                         same=(await (await context.request.get(base+'/api/analysis-jobs/current')).json())['job']
                         assert same['id']==pending['id'], 'Перезагрузка создала новый разбор'
@@ -169,6 +169,7 @@ async def exercise(base, repo):
                         await expect(page.locator('#ai-analysis-meta')).to_contain_text('Расчётный разбор')
                         assert await page.locator('#ai-request-error').is_hidden()
                     finally: AIHandler.fail_context=False
+                await page.locator("#ai-dialog-close").click()
                 await page.locator("#team-statistics > summary").click()
                 assert MARKER not in await page.locator("#team-statistics").inner_text()
                 assert (
@@ -184,7 +185,7 @@ async def exercise(base, repo):
                 )
                 assert (
                     response.status == 302
-                    and "/stavki/event/102" in response.headers["location"]
+                    and "/stavki/sport/futbol/102" in response.headers["location"]
                 )
                 assert not await page.evaluate(
                     "document.documentElement.scrollWidth>innerWidth"

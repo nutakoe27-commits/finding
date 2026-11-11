@@ -61,6 +61,21 @@ def sport_label(key: str, observed_label: str | None = None) -> str:
     return key.replace("_", " ")
 
 
+def match_url(event: dict) -> str | None:
+    """A match deep link, never Winline's generic event/landing route."""
+    identifier=str(event.get('source_event_id') or '')
+    if not re.fullmatch(r'[0-9]{1,20}',identifier):return None
+    sport=event.get('sport');profile=BY_KEY.get(sport)
+    try:parsed=urlsplit(str(event.get('url') or ''))
+    except ValueError:parsed=urlsplit('')
+    observed=re.fullmatch(r'/(?:stavki|live)/sport/([a-zA-Z0-9_-]+)/(?:[^/?]+/)*'+re.escape(identifier)+r'/?',parsed.path)
+    slug=profile.slugs[0] if profile else None
+    if (observed and parsed.scheme=='https' and parsed.hostname in ('winline.ru','www.winline.ru') and
+        not parsed.username and not parsed.password and sport_from_url(event['url'])==sport):
+        slug=observed[1]
+    return f'https://winline.ru/stavki/sport/{slug}/{identifier}' if slug else None
+
+
 def sport_from_url(value: str) -> str | None:
     parsed = urlsplit(value)
     if parsed.scheme != "https" or parsed.hostname not in ("winline.ru", "www.winline.ru") or parsed.username or parsed.password:

@@ -822,6 +822,13 @@ function clearAIOutput() {
   $("explanation").hidden = true; $("ai-analysis-meta").hidden = true; $("ai-result-toolbar").hidden=true;
   $("ai-analysis-sources").replaceChildren();
   showError("ai-request-error", "");
+  $('ai-context-retry').hidden=true;
+}
+async function openAI() {
+  if(!await Account.ensure(()=>openAI()))return;
+  state.aiDialogEvent=state.eventId;
+  AnalysisDialog.open();syncAIButton();
+  if(!state.aiBusy&&!state.aiAnalysis)requestAI();
 }
 function syncAIButton() {
   const d=state.marketDocument,note=$('event-ai-support');
@@ -830,6 +837,12 @@ function syncAIButton() {
   if(unsupported)note.textContent=d.phase==='live'?'Матч уже идёт. Счёт и рынки доступны, но ИИ-разбор работает до начала матча. Претендент — никто; решение — пропустить.':d.phase==='finished'?'Матч завершён. Решение о ставке больше не применяется.':!supportedVerdict(d)?'Для этого вида спорта или формата события ИИ-разбор пока недоступен. Решение — пропустить.':'Предматчевый статус не подтверждён. Решение — пропустить.';
   $("explain-button").disabled = state.aiBusy || !state.ai || (!state.marketDocument && !state.forecast);
   $("explain-button").textContent = state.aiBusy ? (state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest ? "ИИ готовит разбор…" : "Завершаем предыдущий разбор…") : unsupported?"Посмотреть решение о пропуске":state.aiAnalysis?"Повторить запрос":state.analysisMode==='neural-verdict'?"Получить вердикт ИИ":"Получить разбор ИИ";
+  const action=$('event-ai-button');
+  action.disabled=!d||!state.ai;
+  action.textContent=state.aiBusy&&state.aiTarget===state.eventId?'Разбор готовится…':state.aiAnalysis?'Посмотреть разбор':'Разбор ИИ';
+  action.title=!state.ai?'Сервис ИИ пока недоступен':'Открыть разбор матча';
+  $('manual-ai-button').disabled=!state.forecast||!state.ai;
+  AnalysisDialog.state(state.aiBusy&&state.aiTarget===state.eventId?'loading':state.aiAnalysis?'ready':'idle');
   $("ai-result-toolbar").hidden=$("explanation").hidden;
   $("ai-wait").hidden = !(state.aiBusy && state.aiTarget === state.eventId && state.aiTargetRequest === state.explainRequest);
   $("ai-hint").textContent = !state.ai ? "Сервис ИИ пока не подключён. Рынки доступны для просмотра." : !state.marketDocument && !state.forecast ? "Сначала выберите матч или рассчитайте сценарий." : "ИИ сопоставляет рынки и доступную историю участников. Это разбор фактов, а не гарантия исхода.";
@@ -922,6 +935,11 @@ function openSelection(id, side = null, auto = false, source = null) {
   if (auto && !Account.user) {
     Account.ensure(()=>openSelection(id,side,auto,source)).then(allowed=>{if(allowed)openSelection(id,side,auto,source)}); return;
   }
+  if(auto||side) {
+    state.aiDialogEvent=id;
+    AnalysisDialog.open({loading:state.eventId!==id||!state.marketDocument});
+    if(id===state.eventId&&!side&&(state.aiBusy||state.aiAnalysis))return;
+  }
   state.pendingSelection = {id, side, auto};
   const stream=source ? source==='stream' : state.marketDocument ? state.marketDocument.source_kind === "stream" : state.catalogSource === "stream";
   const target=`#${stream ? "stream" : "match"}/${id}`;
@@ -935,8 +953,8 @@ function applyPendingSelection() {
   const keys = {home:["П1","1"],draw:["X","Х"],away:["П2","2"]};
   const outcome = pending.side && market ? market.outcomes.find(item => typeof pending.side === "object" ? item.key === pending.side.outcomeKey : keys[pending.side].includes(item.name.toUpperCase())) : null;
   selectAI(outcome ? market : null, outcome);
-  if (pending.auto) requestAI();
-  if (pending.side) $("ai-desk").scrollIntoView({behavior:"smooth",block:"nearest"});
+  AnalysisDialog.ready();
+  if (pending.auto) requestAI(false);
 }
 async function loadEvent(refresh = false) {
   const id = state.eventId, request = ++state.marketDetailRequest;
@@ -950,7 +968,12 @@ async function loadEvent(refresh = false) {
     isAdmin() ? api(`/api/archive/events/${id}/history?source=${stream ? "stream" : "legacy"}`) : Promise.resolve(null)
   ]);
   if (request !== state.marketDetailRequest || state.eventId !== id || !isEventRoute()) return;
-  if (detail.status === "rejected") { showError("detail-error", detail.reason.message); return; }
+  if (detail.status === "rejected") {
+    showError("detail-error", detail.reason.message);
+    if(state.aiDialogEvent===id) {AnalysisDialog.ready();showError('ai-request-error',detail.reason.message);$('ai-context-retry').hidden=false;}
+    return;
+  }
+  $('ai-context-retry').hidden=true;
   showError("detail-error", "");
   state.marketDocument = detail.value;
   const document = detail.value;
@@ -1035,7 +1058,7 @@ function renderMarketGroups() {
         const price = outcome.state === "open" ? String(outcome.odds) : outcome.state === "suspended" ? "Пауза" : "Недоступен";
         button.append(el("span", "", [outcome.name,outcome.parameter].filter(Boolean).join(" · ")), el("strong", "", price));
         button.title = state.analysisMode === "neural-verdict" ? "Коэффициент на момент обновления" : "Выбрать для разбора ИИ";
-        if (state.analysisMode !== "neural-verdict") button.addEventListener("click", () => { selectAI(market,outcome); if (window.innerWidth <= 1050) $("ai-desk").scrollIntoView({behavior:"smooth",block:"nearest"}); });
+        if (state.analysisMode !== "neural-verdict") button.addEventListener("click", () => { selectAI(market,outcome);state.aiDialogEvent=state.eventId;AnalysisDialog.open(); });
         outcomes.append(button);
       }); details.append(outcomes);
     };
@@ -1066,6 +1089,7 @@ async function waitForAnalysisJob(job, current) {
     const stage=job.state === "queued" ? "queued" : "background";
     if(state.aiStage !== stage) {
       state.aiStage=stage;
+      ProductUX.wait(stage);
       $("ai-wait-message").textContent=(stage === "queued" ? queueWaitMessages : jobWaitMessages)[0];
     }
     await new Promise(resolve=>setTimeout(resolve,2000));
@@ -1078,13 +1102,14 @@ async function waitForAnalysisJob(job, current) {
   }
   return null;
 }
-async function requestAI() {
+async function requestAI(present=true) {
   if (!await Account.ensure(()=>requestAI())) return;
   const accountId=Account.user.id;
   Account.track("ai_intent",state.eventId || "forecast");
   if (state.aiBusy) { toast("Дождитесь завершения предыдущего разбора."); return; }
   const document = state.marketDocument, forecast = state.forecast;
   if (!document && !forecast) return;
+  if(present){state.aiDialogEvent=state.eventId;AnalysisDialog.open();}
   window.ProductAnalytics?.goal('ai_request_start');
   const request = ++state.explainRequest, selection = state.selection ? {...state.selection} : null;
   const eventId = state.eventId, forecastId = forecast?.id;
@@ -1149,6 +1174,7 @@ async function requestAI() {
     if (result.context) {
       result.preparation_notice=preparationNotice;
       state.aiAnalysis = result; renderAIAnalysisMeta();
+      if(!AnalysisDialog.isOpen)toast('Разбор готов. Откройте его кнопкой «Посмотреть разбор».');
     }
   } catch (error) {
     if(request === state.explainRequest) window.ProductAnalytics?.goal('ai_request_error');
@@ -1156,8 +1182,8 @@ async function requestAI() {
     else if (request === state.explainRequest) showError("ai-request-error", error.message);
   } finally {
     state.aiBusy = false; stopAIWait(); $("explanation").setAttribute("aria-busy", "false"); syncAIButton();
-    if(request===state.explainRequest && !$("explanation").hidden && $("explanation").classList.contains('verdict-report') && matchMedia('(max-width:1100px)').matches)
-      $("explanation").scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
+    if(request===state.explainRequest && AnalysisDialog.isOpen && !$("explanation").hidden)
+      $('ai-dialog').scrollTo({top:0,behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'auto':'smooth'});
   }
 }
 async function calculateEvent() {
@@ -1244,11 +1270,8 @@ async function loadStatus() {
     return true;
   } catch (error) { if (request === state.statusRequest) { showError("global-error", error.message); $("feed-state").textContent = "Нет ответа сервиса"; $("feed-dot").classList.remove("green"); } }
 }
-function moveAIDesk() {
-  const mobile = window.innerWidth <= 1050 || !isAdmin();
-  document.body.classList.toggle("inline-ai-desk", !isAdmin());
-  const host = mobile ? $("ai-mobile-host") : $("ai-desktop-host");
-  if ($("ai-desk").parentElement !== host) host.append($("ai-desk"));
+function syncAnalysisLayout() {
+  document.body.classList.add('inline-ai-desk','without-ai-desk');
 }
 async function route() {
   const previous = state.route;
@@ -1268,7 +1291,8 @@ async function route() {
   document.title=({"#matches":"Матчи","#favorites":"Избранное","#history":"Мои разборы","#account":"Личный кабинет","#admin":"Управление"}[hash]||"Матч")+" · prognozich ai";
   state.route = hash; document.getElementById('view-matches').classList.toggle('ym-show-content',hash === '#matches'); Account.track("page_view",hash); window.ProductAnalytics?.hit(hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
   $("league-nav").hidden=!["#matches","#favorites"].includes(hash) && !match;
-  document.body.classList.toggle("without-ai-desk", ["#matches","#favorites","#history","#archive","#status","#account","#admin"].includes(hash) || Boolean(saved));
+  if(previous!==hash && AnalysisDialog.isOpen && !(match&&match[1]===state.aiDialogEvent))AnalysisDialog.close();
+  document.body.classList.add('without-ai-desk');
   syncGuide();
   state.streamEvent=hash.startsWith("#stream/");
   if (previous !== hash) { invalidateForecast(); state.marketDocument = null; state.analysisContext = null; state.eventId = null; state.selection = null; clearAIOutput(); renderTeamStatistics(null); renderArchiveHistory(null); $("notes").value = ""; $("ai-empty").hidden = false; $("ai-selection").hidden = true; }
@@ -1277,6 +1301,7 @@ async function route() {
   document.querySelectorAll(".nav-link").forEach(link => { const active = link.getAttribute("href") === hash; link.classList.toggle("active",active); active ? link.setAttribute("aria-current","page") : link.removeAttribute("aria-current"); });
   $("nav-favorites").textContent = state.favorites.size;
   $("forecast").hidden = true; $("event-header").hidden = true; $("manual-heading").hidden = true; $("manual-selection").hidden = true;
+  $('manual-ai-button').hidden=hash!=='#calculator';
   showError("detail-error", "");
   if (hash === "#matches" || hash === "#favorites") {
     showView("view-matches");
@@ -1327,7 +1352,7 @@ async function route() {
     }
   }
   if(state.route!==hash)return;
-  moveAIDesk(); syncAIButton();
+  syncAnalysisLayout(); syncAIButton();
   if (previous !== hash) { window.scrollTo(0,restoredPosition?.scroll || 0); $("main-content").focus({preventScroll:true}); }
 }
 function clearQuote() {
@@ -1359,6 +1384,9 @@ for (const id of ["home-team","away-team","odds-home","odds-draw","odds-away"]) 
 $("as-of").addEventListener("change", () => { clearQuote(); invalidateForecast(); for (const key of ["home","draw","away"]) { $("odds-" + key).disabled = $("as-of").value !== today; $("odds-" + key).value = ""; } loadTeams(); });
 $("quote-clear").addEventListener("click", () => { clearQuote(); invalidateForecast(); });
 $("explain-button").addEventListener("click",()=>{window.ProductAnalytics?.goal('ai_intent');requestAI();});
+$('event-ai-button').addEventListener('click',()=>{window.ProductAnalytics?.goal('ai_intent');openAI();});
+$('manual-ai-button').addEventListener('click',openAI);
+$('ai-context-retry').addEventListener('click',()=>{showError('ai-request-error','');$('ai-context-retry').hidden=true;AnalysisDialog.open({loading:true});loadEvent();});
 $("ai-clear-selection").addEventListener("click", () => selectAI());
 $("event-predict").addEventListener("click",calculateEvent);
 $("event-favorite").addEventListener("click", () => toggleFavorite(state.eventId));
@@ -1422,7 +1450,6 @@ $("sport-filter").addEventListener("change", () => chooseSport($("sport-filter")
 for (const tab of ["markets","analysis"]) $("tab-" + tab).addEventListener("click", () => setDetailTab(tab));
 $("event-tabs").addEventListener("keydown", event => { if ($("tab-analysis").hidden || !["ArrowLeft","ArrowRight","Home","End"].includes(event.key)) return; event.preventDefault(); const tab = event.key === "Home" ? "markets" : event.key === "End" ? "analysis" : state.detailTab === "markets" ? "analysis" : "markets"; setDetailTab(tab); $("tab-" + tab).focus(); });
 window.addEventListener("hashchange",route);
-window.addEventListener("resize",moveAIDesk);
 window.addEventListener("storage",event => { if (event.key === "matchlab:favorites:v1") { state.favorites = readFavorites(); $("nav-favorites").textContent = state.favorites.size; if (["#matches","#favorites"].includes(state.route)) loadCatalogue(); if (state.eventId) updateEventFavorite(); } });
 window.addEventListener('storage',event => {
   if (event.key==='matchlab:theme:v1') { themeOverride=storedTheme(); setTheme(themeOverride || (themeMedia?.matches ? 'light' : 'dark')); }
@@ -1494,9 +1521,10 @@ $("archive-prev").addEventListener("click",()=>{state.archiveOffset=Math.max(0,s
 $("archive-next").addEventListener("click",()=>{state.archiveOffset+=30;loadArchive()});
 
 document.addEventListener("accountchange",()=>{
+  AnalysisDialog.close();
   syncRoleUI();
   if (!isAdmin() && ["#archive", "#status", "#calculator"].includes(state.route)) { history.replaceState(null,"","#matches"); route(); }
-  moveAIDesk();
+  syncAnalysisLayout();
   state.explainRequest++;clearAIOutput();syncAIButton();
   if (state.eventId) { setDetailTab("markets"); loadEvent(true); }
   $("history-search").value=""; $("history-search-status").textContent=""; $("history-search-empty").hidden=true;

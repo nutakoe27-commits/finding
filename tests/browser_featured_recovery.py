@@ -67,17 +67,17 @@ async def exercise(base,repo):
                     first=await page.evaluate('state.aiAnalysis');assert first['context']['ai_generation']['model_calls']==3
                     assert first['context']['ai_generation']['token_usage']['total_tokens']==3300
                     await page.screenshot(path=f'/workspace/outputs/product-ai-result-{theme}-{width}.png',full_page=True)
-                    await page.goto(base+'/#match/202');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="202"');await expect(page.locator('#explain-button')).to_be_enabled();await page.locator('#explain-button').click()
+                    await page.goto(base+'/#match/202');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="202"');await expect(page.locator('#event-ai-button')).to_be_enabled();await page.locator('#event-ai-button').click()
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Никто',timeout=30000)
                     await expect(page.locator('#explanation .verdict-choice')).to_have_text('Пропустить матч')
                     assert '9999' not in await page.locator('#explanation').inner_text()
                     assert await page.locator('#ai-request-error').is_hidden()
-                    await page.goto(base+'/#match/203');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="203"');await expect(page.locator('#explain-button')).to_be_enabled();await page.locator('#explain-button').click()
+                    await page.goto(base+'/#match/203');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="203"');await expect(page.locator('#event-ai-button')).to_be_enabled();await page.locator('#event-ai-button').click()
                     await page.wait_for_function('()=>state.aiAnalysis?.event?.source_event_id==="203"')
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Никто',timeout=30000)
                     guarded=await page.evaluate('state.aiAnalysis');assert guarded['context']['ai_generation']['model_calls']==0
                     await page.goto(base+'/#match/299');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="299"');await expect(page.locator('#event-ai-support')).to_be_visible()
-                    old_posts=len(posts);await page.locator('#explain-button').click()
+                    old_posts=len(posts);await page.locator('#event-ai-button').click()
                     await page.wait_for_function('()=>state.aiAnalysis?.event?.source_event_id==="299"')
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Никто',timeout=15000)
                     live=await page.evaluate('state.aiAnalysis');assert live['context']['ai_generation']['reason']=='live_not_supported'

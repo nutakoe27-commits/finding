@@ -19,12 +19,14 @@
   <link rel="stylesheet" href="/static/featured-events.css?v=20261111-source2" />
   <script src="/static/featured-events.js?v=20261111-sports1" defer></script>
   <script src="/static/product.js?v=20261111-ux3" defer></script>
-  <script src="/static/app.js?v=20261111-sports1" defer></script>
+  <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
+  <script src="/static/app.js?v=20261111-popup1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
   <script src="/static/admin-results.js?v=20261111-sports1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
   <script src="/static/admin.js?v=20261111-product2" defer></script>
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
+  <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -72,20 +74,20 @@
       <a id="match-back" class="back-link" href="#matches">← К матчам</a>
       <header id="event-header" class="event-header" hidden>
         <div class="event-topline"><p id="event-competition" class="eyebrow"></p><button id="event-favorite" class="secondary-button" type="button" aria-pressed="false">☆ В избранное</button></div>
-        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p><p id="event-red-card" class="small muted" hidden></p></div><a id="event-source" class="source-link event-bookmaker-button" target="_blank" rel="sponsored noopener noreferrer">Открыть на Winline ↗</a></div>
+        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p><p id="event-red-card" class="small muted" hidden></p></div><div class="event-ai-actions"><button id="event-ai-button" type="button" class="primary-button" disabled><span data-ux-icon="spark" aria-hidden="true"></span>Разбор ИИ</button><a id="event-source" class="source-link event-bookmaker-button" target="_blank" rel="sponsored noopener noreferrer">На Winline ↗</a></div></div>
         <div id="event-primary" class="event-primary" hidden></div>
         <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Запросить свежие данные по этому матчу">Обновить</button><button id="event-show-markets" class="text-button" type="button">Все рынки ↓</button><details class="snapshot-info" hidden><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
         <p id="event-refresh-status" class="small muted" role="status" aria-live="polite"></p>
         <p id="event-ai-support" class="notice" hidden></p>
       </header>
-      <div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
+      <button id="manual-ai-button" class="primary-button" type="button" hidden disabled>Разбор ИИ</button><div id="manual-heading" class="page-heading" hidden><div><p class="eyebrow">СТАТИСТИЧЕСКАЯ МОДЕЛЬ · АПЛ</p><h1>Ручной расчёт<span class="lime">.</span></h1><p class="subtitle">Проверьте сценарий с выбранными командами и датой.</p></div></div>
       <details id="team-statistics" data-admin-only class="panel team-statistics"><summary>Статистика участников <span id="team-statistics-status" class="muted"></span></summary><p id="team-statistics-note" class="small muted"></p><a id="team-statistics-source" class="source-link" target="_blank" rel="noopener noreferrer" hidden>Статистика Winline <svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></a><div id="team-statistics-sections"></div></details>
       <section id="archive-team-history" data-admin-only class="panel archive-team-history" hidden>
         <div class="panel-heading"><h2>История участников</h2><span id="archive-binding" class="small muted"></span></div>
         <p id="archive-team-note" class="small muted" role="status"></p><div id="archive-team-cards" class="archive-team-grid"></div>
         <details id="archive-h2h"><summary>Личные встречи</summary><div id="archive-h2h-list"></div></details>
       </section>
-      <div id="ai-mobile-host"></div><div id="detail-error" class="notice error" role="alert" hidden></div>
+      <div id="detail-error" class="notice error" role="alert" hidden></div>
       <div id="event-tabs" class="detail-tabs" role="tablist" aria-label="Информация о матче"><button type="button" id="tab-markets" role="tab" aria-selected="true" aria-controls="market-detail" tabindex="0">Все рынки <span id="market-count"></span></button><button type="button" id="tab-analysis" data-admin-only role="tab" aria-selected="false" aria-controls="analysis-panel" tabindex="-1">Статистика</button></div>
       <article id="market-detail" class="panel market-detail" role="tabpanel" aria-labelledby="tab-markets">
         <div class="market-tools"><label class="search-field"><span aria-hidden="true">⌕</span><span class="sr-only">Поиск по рынкам</span><input id="market-search" type="search" placeholder="Рынок, период или параметр" /></label><label class="sr-only" for="market-group-filter">Группа рынков</label><select id="market-group-filter"><option value="">Все группы</option></select></div>
@@ -430,32 +432,37 @@
           <article class="panel"><h3>Кампании и доставка</h3><div id="admin-campaigns" class="admin-table-wrap"></div></article>
         </div>
         <div data-admin-panel="promos" hidden><div class="admin-section-heading"><h2>Промокоды</h2><span class="small muted">Активации и бонусные разборы</span></div><article class="panel"><form id="admin-promo-form" class="admin-promo-grid"><label>Код<input id="admin-promo-code" pattern="[A-Za-z0-9_-]{4,40}" maxlength="40" required placeholder="WELCOME"/></label><label>Название кампании<input id="admin-promo-title" maxlength="100" required placeholder="Ранний доступ"/></label><label>Бонусных разборов<input id="admin-promo-bonus" type="number" min="1" max="1000" value="5" required/></label><label>Лимит активаций<input id="admin-promo-limit" type="number" min="1" max="100000" value="100" required/></label><label>Начало<input id="admin-promo-start" type="datetime-local" required/></label><label>Окончание<input id="admin-promo-end" type="datetime-local" required/></label><p class="small muted">Промокод создаётся черновиком. Один аккаунт может активировать его один раз. Бонусы сохраняются и используются при включённом дневном лимите.</p><button type="submit" class="primary-button">Создать черновик</button></form></article><article class="panel"><h3>Все промокоды</h3><div id="admin-promos" class="admin-table-wrap"></div></article></div>
-        <div data-admin-panel="links" hidden><article class="panel"><span class="eyebrow">ПАРТНЁРСКИЕ ПЕРЕХОДЫ</span><h2>Ссылки Winline</h2><p class="muted">Все кнопки перехода к событию используют одно правило. Пока шаблон пуст, открывается прямая ссылка на матч.</p><form id="admin-link-form"><label for="admin-link-template">Шаблон реферальной ссылки</label><input id="admin-link-template" maxlength="2000" placeholder="https://partner.example/click?url={url}&event={event_id}"/><p class="small muted"><code>{url}</code> — закодированная ссылка на событие, <code>{event_id}</code> — номер события. Используйте HTTPS-ссылку, выданную вашей партнёрской программой.</p><button class="primary-button" type="submit">Сохранить правило</button></form></article></div>
+        <div data-admin-panel="links" hidden><article class="panel"><span class="eyebrow">ПАРТНЁРСКИЕ ПЕРЕХОДЫ</span><h2>Ссылки Winline</h2><p class="muted">Все кнопки перехода к событию используют одно правило. Пока шаблон пуст, открывается прямая ссылка на матч.</p><form id="admin-link-form"><label for="admin-link-template">Шаблон реферальной ссылки</label><input id="admin-link-template" maxlength="2000" placeholder="https://partner.example/click?url={url}&event={event_id}"/><p class="small muted"><code>{url}</code> — закодированная ссылка на событие, <code>{event_id}</code> — номер события. Шаблон должен содержать {url} или {event_id}, чтобы переход вёл на выбранный матч. Используйте HTTPS-ссылку, выданную вашей партнёрской программой.</p><button class="primary-button" type="submit">Сохранить правило</button></form></article></div>
         <div data-admin-panel="audit" hidden><article class="panel"><h2>Журнал действий</h2><p class="muted">Изменения пользователей, промокодов, ссылок и отправки уведомлений.</p><div id="admin-audit" class="admin-table-wrap"></div><div class="pagination"><button id="admin-audit-prev" class="secondary-button" type="button">← Назад</button><button id="admin-audit-next" class="secondary-button" type="button">Дальше →</button></div></article></div>
       </div>
     </section>
     <footer class="page-footer"><div class="footer-intro"><span class="footer-brand">prognozich <span>ai</span></span><p>Спортивные данные и разборы с ИИ. Прогнозы могут ошибаться и не гарантируют результат.</p><span class="footer-age">18+</span></div><nav class="footer-links" aria-label="Документы и контакты"><div><strong>Документы</strong><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/privacy.html">Политика конфиденциальности</a><a href="/static/legal/consent.html">Согласие на обработку данных</a><a href="/static/legal/cookies.html">Файлы cookie</a><a href="/static/legal/advertising-consent.html">Согласие на push</a><button type="button" id="privacy-settings">Настройки cookie</button></div><div><strong>Контакты</strong><a href="mailto:m@krichigin.ru">m@krichigin.ru</a><span>ИП Кричигин Михаил Олегович</span><span>ИНН 510302739790</span><span>ОГРНИП 325774600131414</span></div></nav><p class="footer-disclaimer">Сервис не принимает ставки. Ссылки на Winline могут быть партнёрскими; переход ведёт на сторонний сайт.</p></footer>
   </main>
 
-  <div id="ai-desktop-host">
-    <aside id="ai-desk" class="ai-desk" aria-label="Разбор спортивного события с ИИ">
+  <dialog id="ai-dialog" class="ai-dialog" aria-labelledby="ai-dialog-title">
+    <header class="ai-dialog-header"><div class="ai-dialog-title"><span class="ai-symbol" aria-hidden="true"><span data-ux-icon="spark"></span></span><div><p class="eyebrow">ВАШ АНАЛИТИК</p><h2 id="ai-dialog-title">Разбор ИИ</h2></div></div><button id="ai-dialog-close" type="button" aria-label="Закрыть разбор">×</button></header>
+    <section id="ai-desk" class="ai-desk" aria-label="Разбор спортивного события с ИИ">
+      <div id="ai-context-loading" role="status" hidden><span class="ai-context-spinner" aria-hidden="true"></span>Загружаем выбранный матч…</div>
       <div class="ai-composer"><div class="ai-desk-heading"><span class="ai-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M5.6 18.4 18.4 5.6"/></svg></span><div><span class="eyebrow">ВАШ АНАЛИТИК</span><h2>Разбор матча</h2></div></div>
       <div id="ai-empty" class="ai-empty"><span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span><h3>Выберите событие</h3><p>Выберите матч. ИИ изучит доступные сведения, назовёт претендента или предложит пропустить встречу.</p></div>
       <p class="ai-intro">Кто выглядит сильнее и есть ли основания для выбора? ИИ сравнит доступные факты и объяснит решение.</p>
       <div id="ai-selection" hidden><p id="ai-match-label" class="ai-match-label"></p><p id="ai-market-label" class="muted small"></p><p id="ai-outcome-label" class="ai-outcome-label" hidden></p><button type="button" id="ai-clear-selection" class="text-button" hidden>Разобрать весь матч</button><p id="ai-snapshot-label" class="small muted"></p></div>
-      <details id="ai-notes-details" class="ai-notes"><summary>Добавить сведения о матче</summary><label class="sr-only" for="notes">Ваши сведения о матче</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Например, новость об участнике или составе. Эти сведения будут отмечены как непроверенные."></textarea></details>
-      <p class="ai-visibility">Ваши разборы и заметки сохраняются в личном аккаунте.</p>
-      <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
-      <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
-      </div><div id="ai-request-error" class="notice error" role="alert" hidden></div>
+      </div><div id="ai-request-error" class="notice error" role="alert" hidden></div><button id="ai-context-retry" class="secondary-button" type="button" hidden>Повторить загрузку матча</button>
       <div id="ai-wait" class="ai-wait" role="status" aria-live="polite" hidden>
         <div class="ai-wait-top"><div class="ai-wait-orbit" aria-hidden="true"><span></span><i></i><b></b></div><div><span class="ai-wait-label">ВАШ АНАЛИТИК</span><strong>Готовим разбор<span class="ai-wait-dots" aria-hidden="true"><i></i><i></i><i></i></span></strong><p id="ai-wait-message">Проверяем доступные сведения о матче.</p></div></div>
         <ol id="ai-progress" class="ai-progress" aria-label="Этапы подготовки"><li data-step="data"><span>1</span>Данные матча</li><li data-step="analysis"><span>2</span><b id="ai-progress-analysis">Разбор ИИ</b></li><li data-step="ready"><span>3</span>Результат</li></ol><p class="wait-timing">Время ожидания <span id="ai-wait-elapsed" aria-hidden="true">0:00</span></p>
         <p id="ai-wait-note" class="ai-wait-note">Разбор сохранится в <a href="#history">вашей истории</a>. Пока можно посмотреть другие матчи.</p>
       </div>
       <div id="ai-result-toolbar" class="report-toolbar" hidden><span class="small muted">Ваш разбор</span><button class="text-button" data-copy-target="explanation" type="button">Копировать разбор</button></div><div id="explanation" class="explanation" aria-live="polite" hidden></div><p id="ai-analysis-meta" class="small muted" hidden></p><div id="ai-analysis-sources"></div>
-    </aside>
-  </div>
+      <div class="ai-followup">
+      <details id="ai-notes-details" class="ai-notes"><summary>Добавить сведения о матче</summary><label class="sr-only" for="notes">Ваши сведения о матче</label><textarea id="notes" maxlength="2000" rows="3" placeholder="Например, новость об участнике или составе. Эти сведения будут отмечены как непроверенные."></textarea></details>
+      <p class="ai-visibility">Ваши разборы и заметки сохраняются в личном аккаунте.</p>
+      <button type="button" id="explain-button" class="primary-button" disabled>Получить разбор ИИ <span aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M3 3h10v10" /></svg></span></button>
+      <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
+      </div>
+    </section>
+    <footer class="ai-dialog-footer"><p>Решение ИИ — мнение по доступным данным. Выигрыш не гарантирован.</p><button id="ai-dialog-dismiss" type="button" class="secondary-button">Закрыть</button></footer>
+  </dialog>
   <p id="ux-status" class="sr-only" role="status"></p>
   <div id="toast" class="toast" role="status" hidden></div>
   <section id="privacy-banner" class="privacy-banner" aria-label="Настройки cookie" hidden><div><strong>Настройки cookie</strong><p>Необходимые файлы помогают работать сайту. С вашего согласия мы используем Яндекс Метрику и собственную аналитику для подсчёта посещений и действий. <a href="/static/legal/cookies.html">Подробнее</a></p><label class="privacy-replay"><input id="privacy-webvisor" type="checkbox"><span>Также разрешаю Вебвизору записывать взаимодействия на странице списка матчей. Личные разделы и поля ввода помечены для скрытия.</span></label><p id="privacy-message" class="form-error" role="alert"></p></div><div class="privacy-actions"><button id="privacy-reject" type="button" class="secondary-button">Только необходимые</button><button id="privacy-allow" type="button" class="primary-button">Разрешить аналитику</button></div></section>

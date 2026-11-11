@@ -153,7 +153,8 @@ async def exercise(base,repo,fixtures):
                 await page.goto(base+'/#stream/101');await page.wait_for_function('()=>state.marketDocument?.source_event_id==="101"')
                 for target in ('#team-statistics','#archive-team-history','#tab-analysis','#analysis-panel'):
                     await expect(page.locator(target)).to_be_hidden()
-                await expect(page.locator('#ai-mobile-host #ai-desk')).to_be_visible()
+                await expect(page.locator('#ai-mobile-host,#ai-desktop-host')).to_have_count(0)
+                await expect(page.locator('#event-ai-button')).to_be_visible()
                 await expect(page.locator('#market-detail')).to_be_visible()
                 assert not any('/101/statistics' in u or '/101/history?' in u or '/101/analysis' in u for u in requests),'ordinary UI loaded technical data'
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'match overflow')

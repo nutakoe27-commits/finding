@@ -123,20 +123,13 @@ def outbound(repo, event_id, source="stream"):
     )
     if not doc:
         raise HTTPException(404, "Событие не найдено.")
-    fallback = f"https://winline.ru/stavki/event/{event_id}"
-    url = doc.get("url") or fallback
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname not in ("winline.ru", "www.winline.ru")
-        or parsed.username
-        or not parsed.path.startswith("/stavki/")
-    ):
-        url = fallback
+    from .sports import match_url
+    url = match_url(doc)
+    if not url:raise HTTPException(404,'Ссылка на этот матч пока не подтверждена.')
     template = setting(repo, "winline_referral")
     return (
         template.replace("{url}", quote(url, safe="")).replace("{event_id}", event_id)
-        if template
+        if template and any(marker in template for marker in ('{url}','{event_id}'))
         else url
     )
 
@@ -145,6 +138,8 @@ def referral_template(value):
     value = text(value, 2000, True)
     if not value:
         return ""
+    if not any(marker in value for marker in ('{url}','{event_id}')):
+        raise HTTPException(422,'Для перехода на матч добавьте {url} или {event_id} в партнёрскую ссылку.')
     unknown = re.findall(r"\{([^}]+)\}", value)
     if any(k not in ("url", "event_id") for k in unknown) or "{" in re.sub(
         r"\{(?:url|event_id)\}", "", value
@@ -596,7 +591,7 @@ def install(app, repo, settings):
         accounts.admin_user(request)
         return {
             "template": setting(repo, "winline_referral"),
-            "example": "https://winline.ru/stavki/event/12345",
+            "example": "https://winline.ru/stavki/sport/xokkej/17130653",
             "placeholders": ["{url}", "{event_id}"],
         }
 
