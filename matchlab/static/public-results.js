@@ -5,22 +5,34 @@ window.PublicResults=(()=>{
   const fmt=value=>Number(value||0).toLocaleString('ru-RU',{maximumFractionDigits:2});
   const percent=value=>value==null?'—':(value*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%';
   const when=value=>new Date(value).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-  let route='',epoch=0,timer=null,offset=0;
+  let route='',epoch=0,timer=null,offset=0,stake=5,widgetData=null,listData=null;
+  try{const saved=Number(localStorage.getItem('ml-paper-stake'));if(Number.isInteger(saved)&&saved>=5&&saved<=10)stake=saved;}catch{}
+  const money=value=>fmt(value)+' ₽';
+  const signedPercent=value=>value==null?'—':(value>0?'+':'')+percent(value);
   async function get(path){const r=await fetch(path,{credentials:'same-origin'});if(!r.ok)throw new Error('Не удалось загрузить результаты. Попробуйте ещё раз.');return r.json();}
-  function outcome(row){return row.state==='settled'?(row.bet_won?['Выигрыш','win']:['Проигрыш','loss']):row.state==='unresolved'?['Итог не подтверждён','pending']:['Ожидаем итог','pending'];}
+  function outcome(row){return row.state==='settled'?(row.bet_won?['Выигрыш','win']:['Проигрыш','loss']):row.today_pick?[row.started?'Время начала уже наступило':'До начала матча','pending']:row.state==='unresolved'?['Итог не подтверждён','pending']:['Ожидаем итог','pending'];}
   function metric(label,value,description,cls=''){
     const box=node('div','pr-metric '+cls);box.append(node('span','pr-label',label),node('strong','',value),node('span','pr-caption',description));return box;
   }
   function renderMetrics(target,data,compact=false){
-    const m=data.metrics;
-    target.replaceChildren(metric('Выигранные решения',percent(m.win_rate),`${fmt(m.won)} из ${fmt(m.settled)} проверенных`),
+    const m=data.metrics,sim=data.simulation,s=sim.scenarios.find(row=>row.stake_percent===stake);
+    target.replaceChildren(metric('Процент выигрышей',percent(m.win_rate),`${fmt(m.won)} из ${fmt(m.settled)} проверенных`,m.win_rate==null?'':'win-rate'),
       metric('Решений «Ставить»',fmt(m.decisions),`${fmt(m.matches)} матчей · ${fmt(m.pending)} ожидают итога`),
       metric('Выигрыши / проигрыши',`${fmt(m.won)} / ${fmt(m.lost)}`,m.unresolved?`${fmt(m.unresolved)} итогов пока не подтверждены`:'По подтверждённым итогам'),
-      metric('Виртуальная доходность',percent(m.paper_roi),m.paper_staked?`${m.paper_profit>0?'+':''}${fmt(m.paper_profit)} ед. · ставка ${fmt(m.paper_staked)} ед.`:'Появится после первых расчётов',m.paper_roi>0?'positive':m.paper_roi<0?'negative':''));
+      metric('Изменение виртуального банка',signedPercent(s.bank_return),s.final_bank==null?'Появится после подтверждённых итогов':`${money(sim.initial_bank)} → ${money(s.final_bank)} · ${s.profit>0?'+':''}${money(s.profit)}`,s.bank_return>0?'positive':s.bank_return<0?'negative':''));
+    const prefix=compact?'widget':'pr';
+    $(prefix+'-stake').value=String(stake);$(prefix+'-stake-value').textContent=stake+'%';
+    $(prefix+'-stake-note').textContent=`Виртуальный пример: старт ${money(sim.initial_bank)}, на каждую ставку ${money(s.stake)} (${stake}% начального банка). Рассчитано ставок: ${fmt(sim.settled_bets)}.${sim.pending_bets?` Ещё ${fmt(sim.pending_bets)} ждут итога.`:''} Сумма ставки фиксирована; это пересчёт истории, а не рекомендация размера ставки.`;
+  }
+  function changeStake(value){
+    stake=Number(value);try{localStorage.setItem('ml-paper-stake',String(stake));}catch{}
+    for(const prefix of ['widget','pr']){$(prefix+'-stake').value=String(stake);$(prefix+'-stake-value').textContent=stake+'%';}
+    if(widgetData)renderMetrics($('results-widget-metrics'),widgetData,true);
+    if(listData)renderMetrics($('pr-metrics'),listData);
   }
   async function widget(){
     const current=epoch;
-    try{const data=await get('/api/results?limit=1');if(current!==epoch)return;renderMetrics($('results-widget-metrics'),data,true);$('results-widget-note').textContent=data.metrics.decisions?'Только реальные рекомендации «Ставить» до начала матчей.':'История заполняется: подтверждённые рекомендации появятся здесь.';}
+    try{const data=await get('/api/results?limit=1');if(current!==epoch)return;widgetData=data;renderMetrics($('results-widget-metrics'),data,true);$('results-widget-note').textContent=data.metrics.decisions?'Только реальные рекомендации «Ставить» до начала матчей. Доля выигрышей рассчитана по подтверждённым итогам.':'История заполняется: подтверждённые рекомендации появятся здесь.';}
     catch(error){if(current===epoch)$('results-widget-note').textContent='Результаты временно недоступны. Откройте историю, чтобы повторить загрузку.';}
   }
   function chart(data){
@@ -45,7 +57,7 @@ window.PublicResults=(()=>{
     offset=nextOffset;const current=++epoch;$('pr-status').textContent='Сверяем решения с итогами матчей…';$('pr-list').setAttribute('aria-busy','true');
     try{
       const data=await get('/api/results?'+new URLSearchParams({sport:$('pr-sport').value,offset:String(offset),limit:'20'}));if(current!==epoch||route!=='#results')return;
-      renderMetrics($('pr-metrics'),data);chart(data);
+      listData=data;renderMetrics($('pr-metrics'),data);chart(data);
       const chosen=data.sport;$('pr-sport').replaceChildren(new Option('Все виды спорта',''),...Object.entries(data.sports).map(([id,p])=>new Option(p.label,id)));$('pr-sport').value=chosen;
       $('pr-list').replaceChildren(...(data.matches.length?data.matches.map(item):[node('p','pr-empty','За этот период подходящих рекомендаций пока нет. Пропуски и неподтверждённые ответы ИИ сюда не добавляются.')]));
       $('pr-methodology').replaceChildren(...data.methodology.map(line=>node('p','',line)));
@@ -57,13 +69,19 @@ window.PublicResults=(()=>{
   }
   async function detail(id){
     const current=++epoch,box=$('public-result-content');box.replaceChildren(node('p','muted','Загружаем сохранённый ответ…'));
+    $('public-result-title').textContent='Рекомендация ИИ';$('public-result-meta').textContent='';
+    $('public-result-back').href='#results';$('public-result-back').textContent='← Ко всем результатам';
     try{
       const row=await get('/api/results/'+id);if(current!==epoch||route!=='#result/'+id)return;
       $('public-result-title').textContent=`${row.event.home} — ${row.event.away}`;
       $('public-result-meta').textContent=`${row.sport_label} · ${row.event.competition} · ${when(row.event.kickoff_at)} МСК`;
+      if(row.today_pick){$('public-result-back').href='#matches';$('public-result-back').textContent='← К выбору на сегодня';}
       const [label,cls]=outcome(row),lead=node('section','pr-answer-lead');
       lead.append(node('span','pr-outcome '+cls,label),node('p','pr-caption',`Рекомендация зафиксирована ${when(row.forecast_at)} МСК`),node('h2','',`Победа «${row.selection_label}»`),
-        node('p','',`${row.market_label} · коэффициент ${fmt(row.odds)}`),node('p','pr-caption',`Решение: ставить. Лимит риска: до ${fmt(row.stake_percent)}% начального игрового банка.`));
+        node('p','',`${row.market_label}${row.odds==null?'':` · коэффициент при разборе ${fmt(row.odds)}`}`));
+      if(row.today_pick)lead.querySelector('h2').textContent='Претендент: '+row.selection_label;
+      lead.append(node('p','pr-answer-decision',row.decision==='bet'?'Решение: ставить':'Решение: пропустить'));
+      if(row.decision==='bet')lead.append(node('p','pr-caption',`В сохранённом ответе ИИ: до ${fmt(row.stake_percent)}% начального игрового банка. Переключатель виртуального примера 5–10% не меняет это решение.`));
       if(row.actual_score)lead.append(node('p','pr-final-score','Итог матча: '+row.actual_score));
       const blocks=row.blocks.map(block=>{const section=node('section','pr-answer-block');section.append(node('h3','',block.label),node('p','',block.text));return section;});
       box.replaceChildren(lead,...blocks,node('p','pr-answer-notice',row.notice));
@@ -71,11 +89,14 @@ window.PublicResults=(()=>{
   }
   function activate(next){
     clearInterval(timer);epoch++;route=next;
+    window.TodayPicks?.activate(next==='#matches');
     if(next==='#results'){offset=0;list(0);timer=setInterval(()=>list(),60000);}
     else if(next.startsWith('#result/'))detail(next.slice(8));
     else if(next==='#matches'){widget();timer=setInterval(widget,60000);}
   }
   $('pr-sport').addEventListener('change',()=>list(0));$('pr-refresh').addEventListener('click',()=>list());
+  for(const id of ['widget-stake','pr-stake'])$(id).addEventListener('input',event=>changeStake(event.target.value));
+  changeStake(stake);
   $('pr-prev').addEventListener('click',()=>list(Math.max(0,offset-20)));$('pr-next').addEventListener('click',()=>list(offset+20));
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)activate(route);});
   return {activate};

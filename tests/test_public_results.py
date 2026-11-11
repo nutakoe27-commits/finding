@@ -85,3 +85,25 @@ class PublicResultsTests(unittest.TestCase):
             self.assertEqual(client.get('/api/admin/verdict-outcomes').status_code,401)
             for query in ('offset=-1','limit=1000','sport=not_supported'):
                 self.assertEqual(client.get('/api/results?'+query).status_code,422)
+
+    def test_simulation_uses_fixed_initial_capital_and_prices_not_original_risk_sizes(self):
+        win=self.save(score='2:0')
+        other=self.save(score='2:0');other['context']['neural_input']['quote']['odds']['home']=2.4
+        other['context']['neural_verdict']['odds']=2.4;other['context']['neural_verdict']['stake_percent']=.5;self.update(other)
+        self.save(preference='away',score='2:0');self.save(score=None);self.save(decision='skip')
+        data=report(self.repo,limit=1);sim=data['simulation']
+        # Net return of a one-unit stake: +1 +1.4 -1 = +1.4, regardless
+        # of the original .25%/.5% risk sizes or which page is requested.
+        self.assertEqual((sim['initial_bank'],sim['settled_bets'],sim['pending_bets']),(10000,3,1))
+        first,last=sim['scenarios'][0],sim['scenarios'][-1]
+        self.assertEqual((first['stake'],first['profit'],first['final_bank']),(500,700,10700))
+        self.assertAlmostEqual(first['bank_return'],.07)
+        self.assertEqual((last['stake'],last['profit'],last['final_bank']),(1000,1400,11400))
+        self.assertEqual(detail(self.repo,win['id'])['stake_percent'],.25)
+
+    def test_empty_simulation_is_unknown_and_losing_history_keeps_a_negative_result(self):
+        self.save(score=None)
+        self.assertIsNone(report(self.repo)['simulation']['scenarios'][0]['bank_return'])
+        self.save(preference='away',score='2:0')
+        loss=report(self.repo)['simulation']['scenarios'][0]
+        self.assertEqual((loss['profit'],loss['final_bank'],loss['bank_return']),(-500,9500,-.05))

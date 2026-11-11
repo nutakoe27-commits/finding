@@ -20,7 +20,8 @@
   <script src="/static/featured-events.js?v=20261111-sports1" defer></script>
   <script src="/static/product.js?v=20261111-public1" defer></script>
   <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
-  <script src="/static/public-results.js?v=20261111-public1" defer></script>
+  <script src="/static/today-picks.js?v=20261111-today1" defer></script>
+  <script src="/static/public-results.js?v=20261111-today1" defer></script>
   <script src="/static/app.js?v=20261111-public1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
   <script src="/static/admin-results.js?v=20261111-system-results1" defer></script>
@@ -28,7 +29,8 @@
   <script src="/static/admin.js?v=20261111-public1" defer></script>
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
   <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
-  <link rel="stylesheet" href="/static/public-results.css?v=20261111-public1" />
+  <link rel="stylesheet" href="/static/public-results.css?v=20261111-today1" />
+  <link rel="stylesheet" href="/static/today-picks.css?v=20261111-today1" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -55,6 +57,15 @@
       <section id="results-widget" class="results-widget" aria-labelledby="results-widget-title">
         <div class="pr-heading"><div><p class="eyebrow">ОТ РЕШЕНИЯ К ИТОГУ</p><h2 id="results-widget-title">Результаты ИИ за 30 дней</h2></div><a href="#results">Посмотреть прошлые прогнозы →</a></div>
         <div id="results-widget-metrics" class="pr-metrics" aria-live="polite"></div><p id="results-widget-note">Загружаем подтверждённые результаты…</p>
+        <div class="pr-simulator"><div class="pr-stake-control"><label for="widget-stake">Размер виртуальной ставки <output for="widget-stake" id="widget-stake-value">5%</output></label><input id="widget-stake" type="range" min="5" max="10" step="1" value="5" aria-describedby="widget-stake-note" /><div class="pr-range-ends"><span>5%</span><span>10%</span></div></div><p id="widget-stake-note" class="pr-simulation-note">Пример с начальным банком 10 000 ₽. Каждая ставка — одна и та же сумма от начального банка.</p></div>
+      </section>
+      <section id="today-picks" class="today-picks" aria-labelledby="today-picks-title">
+        <div class="tp-heading"><div><p class="eyebrow">СЕГОДНЯ В ФОКУСЕ</p><h2 id="today-picks-title">Выбор ИИ на сегодня</h2><p class="tp-subtitle">Только вердикты «Ставить». Матчи до запланированного начала · время МСК.</p></div><span id="tp-date" class="tp-date"></span></div>
+        <form id="tp-filters" class="tp-filters"><fieldset class="tp-odds-filter"><legend>Коэффициент прогноза</legend><div class="tp-range"><label>От<input id="tp-min" type="number" min="1.01" max="100000" step="0.01" inputmode="decimal" placeholder="1,50" /></label><span aria-hidden="true">—</span><label>До<input id="tp-max" type="number" min="1.01" max="100000" step="0.01" inputmode="decimal" placeholder="3,00" /></label></div></fieldset><button type="submit" class="secondary-button">Применить</button><button id="tp-reset" type="button" class="text-button">Сбросить</button></form>
+        <p id="tp-status" class="tp-status" role="status">Загружаем сохранённые разборы…</p>
+        <div id="tp-cards" class="tp-cards" role="list" aria-busy="true"></div>
+        <button id="tp-more" class="secondary-button tp-more" type="button" hidden>Показать ещё</button>
+        <p class="tp-footnote">Команда и аргументы откроются по кнопке «Посмотреть прогноз». Коэффициент зафиксирован при разборе и мог измениться. В подборку входят только готовые рекомендации системного анализа.</p>
       </section>
       <div class="discovery-search"><div class="search-field"><label class="sr-only" for="match-search">Найдите команду или турнир</label><span data-ux-icon="search" aria-hidden="true"></span><span class="sr-only">Поиск участника или турнира</span><input id="match-search" type="search" placeholder="Найдите команду или турнир" autocomplete="off" maxlength="200" /><button id="match-search-clear" type="button" aria-label="Очистить поиск" hidden><span data-ux-icon="close"></span></button></div><p>Найдите встречу или выберите её в главных событиях</p></div>
       <section id="quick-guide" class="quick-guide" aria-labelledby="guide-title" hidden>
@@ -80,13 +91,14 @@
     <section id="view-results" data-view hidden>
       <div class="page-heading"><div><p class="eyebrow">ОТКРЫТАЯ ИСТОРИЯ РЕШЕНИЙ</p><h1>Результаты ИИ<span class="lime">.</span></h1><p class="subtitle">Последние 30 дней. Только предматчевые рекомендации «Ставить» и их фактические итоги.</p></div><button id="pr-refresh" class="secondary-button" type="button">Обновить</button></div>
       <div id="pr-metrics" class="pr-metrics" aria-live="polite"></div>
+      <div class="pr-simulator pr-simulator-history"><div class="pr-stake-control"><label for="pr-stake">Размер виртуальной ставки <output for="pr-stake" id="pr-stake-value">5%</output></label><input id="pr-stake" type="range" min="5" max="10" step="1" value="5" aria-describedby="pr-stake-note" /><div class="pr-range-ends"><span>5%</span><span>10%</span></div></div><p id="pr-stake-note" class="pr-simulation-note">Пример с начальным банком 10 000 ₽. Каждая ставка — одна и та же сумма от начального банка.</p></div>
       <section class="pr-chart-panel"><h2>Выигрыши и проигрыши по дням</h2><div id="pr-chart" class="pr-chart" role="list" aria-label="Подтверждённые решения по датам матчей"></div><div class="pr-legend"><span>Выигрыши</span><span>Проигрыши</span></div></section>
       <div class="pr-tools"><label><span class="sr-only">Вид спорта</span><select id="pr-sport"><option value="">Все виды спорта</option></select></label><p id="pr-status" role="status"></p></div>
       <div id="pr-list" class="pr-list"></div><div class="pr-pagination"><span id="pr-page" class="small muted"></span><div class="button-row"><button id="pr-prev" class="secondary-button" type="button">← Назад</button><button id="pr-next" class="secondary-button" type="button">Дальше →</button></div></div>
       <details class="pr-method"><summary>Как считаем результаты</summary><div id="pr-methodology"></div></details>
     </section>
     <section id="view-result" data-view hidden>
-      <a class="back-link" href="#results">← Ко всем результатам</a><div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЙ ПРЕДМАТЧЕВЫЙ ОТВЕТ</p><h1 id="public-result-title">Рекомендация ИИ</h1><p id="public-result-meta" class="subtitle"></p></div></div>
+      <a id="public-result-back" class="back-link" href="#results">← Ко всем результатам</a><div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЙ ПРЕДМАТЧЕВЫЙ ОТВЕТ</p><h1 id="public-result-title">Рекомендация ИИ</h1><p id="public-result-meta" class="subtitle"></p></div></div>
       <article id="public-result-content" class="pr-answer"></article>
     </section>
     <section id="view-analysis" data-view hidden>

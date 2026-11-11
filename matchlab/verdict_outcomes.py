@@ -151,6 +151,7 @@ def summarize(cases):
         'skip_unassessed':sum(c['decision_result']=='no_preference' for c in skips),
         'bet_coverage':len(bets)/len(completed) if completed else None,
         'priced_bets':len(priced),'paper_staked':staked,'paper_profit':profit,'paper_bank':100+profit,
+        'flat_profit_units':sum(c['paper_profit']/c['paper_stake'] for c in priced),
         'paper_roi':profit/staked if staked else None}
 
 
