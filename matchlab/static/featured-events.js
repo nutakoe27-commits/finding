@@ -22,7 +22,11 @@ window.FeaturedEvents=(()=>{
       const card=node('article','featured-card');card.setAttribute('role','listitem');card.dataset.eventId=e.source_event_id;
       const top=node('div','featured-top'),competition=node('span','featured-competition',e.competition);competition.title=e.competition;
       top.append(node('span',e.phase==='live'?'featured-phase live':'featured-phase',e.phase==='live'?'● LIVE':e.sport_label||'Матч'),competition);
-      const main=node('a','featured-main');main.href=p.route(e);main.dataset.featured='match-'+e.source_event_id;
+      const main=node('a','featured-main');main.href=e.public_url||p.route(e);main.dataset.featured='match-'+e.source_event_id;
+      if(e.public_url)main.addEventListener('click',action=>{
+        if(action.defaultPrevented||action.button!==0||action.ctrlKey||action.metaKey||action.shiftKey||action.altKey)return;
+        action.preventDefault();location.hash=p.route(e);
+      });
       const teams=node('div','featured-teams');
       for(const [side,label] of [['home','Хозяева'],['away','Гости']]){
         const row=node('div','featured-team'),initial=String(e[side]).trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase();

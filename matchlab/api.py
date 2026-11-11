@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
@@ -118,6 +118,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from . import public_results
     public_results.install(app,repo)
     billing.install(app,repo,settings)
+    from . import seo
+    seo.install(app,repo,settings)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     models = OrderedDict()
@@ -138,7 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def index(request:Request):
-        response=FileResponse(STATIC / "index.html",headers={'Cache-Control':'no-store'})
+        response=HTMLResponse(seo.home_html(settings),headers={'Cache-Control':'no-store'})
         if not growth.analytics_allowed(repo,request) and request.cookies.get('prognozich_visitor'):
             response.delete_cookie('prognozich_visitor',path='/')
         return response
@@ -477,9 +479,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 or (event_ids is not None and (len(event_ids) > 100 or any(not item.isdigit() or len(item) > 20 for item in event_ids)))):
             raise HTTPException(422, "Некорректная страница списка событий.")
         if archive.overview(repo)['available']:
-            return archive.catalog(repo,include_started=include_started,limit=limit,offset=offset,
+            return seo.public_links(archive.catalog(repo,include_started=include_started,limit=limit,offset=offset,
                                    search=search.strip(),competition=competition,phase=phase,
-                                   day=day.isoformat() if day else None,event_ids=event_ids,sort=sort,sport=sport)
+                                   day=day.isoformat() if day else None,event_ids=event_ids,sort=sort,sport=sport))
         result = repo.market_events(include_started=include_started, limit=limit, offset=offset,
                                    search=search.strip(), competition=competition, phase=phase,
                                    day=day.isoformat() if day else None, event_ids=event_ids, sort=sort, sport=sport)
@@ -487,7 +489,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for event in result["events"]:
             event["age_seconds"] = max(0, int((current - instant(event["capture_started_at"])).total_seconds()))
             event["is_stale"] = event["age_seconds"] > 180
-        return result
+        return seo.public_links(result)
 
     @app.get("/api/bookmakers/events/{event_id}/markets")
     def market_detail(event_id: str):
@@ -545,7 +547,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if len(sport)>40 or phase not in ('','upcoming','live') or not 1<=limit<=100:
             raise HTTPException(422,'Некорректные параметры подборки.')
         from .featured_events import collection
-        return collection(repo,sport=sport,phase=phase,limit=limit)
+        return seo.public_links(collection(repo,sport=sport,phase=phase,limit=limit))
 
     def event_analysis_inputs(event_id,request,stream):
         from .statistics import analysis_statistics

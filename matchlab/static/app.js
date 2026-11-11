@@ -773,7 +773,7 @@ function renderCatalogue(result) {
       favorite.setAttribute("aria-label", state.favorites.has(event.source_event_id) ? "Удалить матч из избранного" : "Добавить матч в избранное");
       favorite.addEventListener("click", () => toggleFavorite(event.source_event_id)); card.append(favorite);
       const info = el("div", "match-info");
-      const title = el("a", "match-card-title", event.title || `${event.home}\n${event.away}`); title.href = eventRoute(event); title.dataset.focusKey=event.source_event_id+":title";
+      const title = el("a", "match-card-title", event.title || `${event.home}\n${event.away}`); publicMatchLink(title,event); title.dataset.focusKey=event.source_event_id+":title";
       if (event.live_score) info.append(el("strong","live-score",`${event.live_score}${event.live_clock ? " · " + event.live_clock : ""}`));
       const meta = el("div", "match-card-meta"); meta.append(el("span", event.phase === "live" ? "phase-label live" : "phase-label", phaseLabel(event)), el("span", "", event.kickoff_at ? moscowTime(event.kickoff_at) : "Время не указано"));
       info.append(title, meta); card.append(info);
@@ -788,7 +788,7 @@ function renderCatalogue(result) {
       const canAnalyze=state.analysisMode!=='neural-verdict'||(supportedVerdict(event)&&event.phase==='prematch');
       const ai = el("button", "match-ai-button", canAnalyze?"Разбор ИИ":"Открыть матч"); ai.type = "button"; ai.dataset.focusKey=event.source_event_id+":ai"; ai.prepend(ProductUX.icon(canAnalyze?"spark":"arrow"));
       ai.addEventListener("click", () => {if(canAnalyze)window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id,null,canAnalyze,event.source_kind==='stream'?'stream':'legacy');});
-      const markets = el("a", "match-open", "О матче →"); markets.href = eventRoute(event); markets.dataset.focusKey=event.source_event_id+":open";
+      const markets = el("a", "match-open", "О матче →"); publicMatchLink(markets,event); markets.dataset.focusKey=event.source_event_id+":open";
       const bookmaker=el("a","match-bookmaker-link","На Winline ↗");bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.dataset.focusKey=event.source_event_id+":source";bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
       actions.append(ai, markets, bookmaker); card.append(actions);
       const freshness = el("div", "match-freshness"); freshness.append(el("span", event.is_stale ? "freshness-badge stale" : "freshness-badge", ageLabel(event)));
@@ -940,6 +940,13 @@ function renderResearchSources(target, research) {
   details.append(list); target.append(details);
 }
 function eventRoute(event) { return `#${event.source_kind === "stream" ? "stream" : "match"}/${event.source_event_id}`; }
+function publicMatchLink(link,event) {
+  link.href=event.public_url||eventRoute(event);
+  if(event.public_url)link.addEventListener('click',action=>{
+    if(action.defaultPrevented||action.button!==0||action.ctrlKey||action.metaKey||action.shiftKey||action.altKey)return;
+    action.preventDefault();location.hash=eventRoute(event);
+  });
+}
 function eventAPI(id) { return `${state.streamEvent ? "/api/archive/events/" : "/api/bookmakers/events/"}${id}`; }
 function isEventRoute() { return /^#(?:match|stream)\//.test(state.route); }
 function openSelection(id, side = null, auto = false, source = null) {
@@ -1307,7 +1314,7 @@ async function route() {
   const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/),publicSaved=hash.match(/^#result\/([a-f0-9]{32})$/);
   if (!["#matches","#results","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved && !publicSaved) { hash = "#matches"; history.replaceState(null,"",hash); }
   if(previous!==hash)ProductUX.capture(previous,state);
-  document.title=({"#matches":"Матчи","#favorites":"Избранное","#history":"Мои разборы","#account":"Личный кабинет","#admin":"Управление"}[hash]||"Матч")+" · prognozich ai";
+  document.title=hash==='#matches'?'Прогнозы на спорт от ИИ — prognozich ai':({"#favorites":"Избранное","#history":"Мои разборы","#account":"Личный кабинет","#admin":"Управление"}[hash]||"Матч")+" · prognozich ai";
   state.route = hash; document.getElementById('view-matches').classList.toggle('ym-show-content',hash === '#matches'); Account.track("page_view",hash); window.ProductAnalytics?.hit(hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
   PublicResults.activate(hash);
   $("league-nav").hidden=!["#matches","#favorites"].includes(hash) && !match;
