@@ -41,12 +41,13 @@ def key(value):
 
 
 def supported(event):
-    return event.get('sport') in PROFILES and event.get('event_kind') in (None, 'match')
+    from .sports import catalog_sport
+    return event.get('sport') in PROFILES and catalog_sport(event.get('sport')) and event.get('event_kind') in (None, 'match')
 
 
 def capabilities():
     return {sport: {'label': p.label, 'scope': p.scope, 'market_label': p.market_label,
-                    'draw_possible': p.draw} for sport, p in PROFILES.items()}
+                    'draw_possible': p.draw} for sport, p in PROFILES.items() if supported({'sport':sport})}
 
 
 def market_matches(market, sport):

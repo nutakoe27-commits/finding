@@ -131,6 +131,8 @@ class Repository:
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS system_event_once ON ai_analysis_jobs(source,event_id) WHERE lane='system'")
             from .featured_automation import SCHEMA as AUTOMATION_SCHEMA
             db.executescript(AUTOMATION_SCHEMA)
+            automation_columns={r[1] for r in db.execute('PRAGMA table_info(featured_analysis_events)')}
+            if 'selection_source' not in automation_columns:db.execute("ALTER TABLE featured_analysis_events ADD COLUMN selection_source TEXT NOT NULL DEFAULT 'featured'")
             from .growth import SCHEMA as GROWTH_SCHEMA
             db.executescript(GROWTH_SCHEMA)
             from .billing import SCHEMA as BILLING_SCHEMA
@@ -572,7 +574,10 @@ class Repository:
 
     def market_events(self, *, include_started=False, limit=100, offset=0,
                       search="", competition="", phase="", day=None, event_ids=None, sort="kickoff", sport="") -> dict:
-        query, params, clauses = "FROM bookmaker_event_markets", [], []
+        from .sports import HIDDEN_CATALOG_SPORTS,catalog_sport
+        visible="COALESCE(json_extract(metadata, '$.sport'),'football') NOT IN ("+','.join('?' for _ in HIDDEN_CATALOG_SPORTS)+')'
+        hidden=sorted(HIDDEN_CATALOG_SPORTS)
+        query, params, clauses = "FROM bookmaker_event_markets", list(hidden), [visible]
         current = datetime.now(timezone.utc)
         now = current.isoformat(timespec='microseconds')
         if sport:
@@ -615,8 +620,8 @@ class Repository:
                     row = db.execute("SELECT payload FROM bookmaker_event_markets WHERE event_id = ?", (event["source_event_id"],)).fetchone()
                     document = json.loads(zlib.decompress(row[0]))
                     event['primary_odds'], event['headline'] = main_odds(document), headline_preview(document)
-            sport_where = " WHERE json_extract(metadata, '$.sport') = ?" if sport else ""
-            sport_params = [sport] if sport else []
+            sport_where = ' WHERE '+visible+(" AND json_extract(metadata, '$.sport') = ?" if sport else '')
+            sport_params = [*hidden,*([sport] if sport else [])]
             competitions = [row[0] for row in db.execute("SELECT DISTINCT json_extract(metadata, '$.competition') FROM bookmaker_event_markets" + sport_where + " ORDER BY 1", sport_params)]
             summary = dict(db.execute("""SELECT COUNT(*) AS total,
                 COALESCE(SUM(phase NOT IN ('live', 'finished') AND (kickoff_at IS NULL OR kickoff_at > ?)), 0) AS upcoming,
@@ -629,6 +634,6 @@ class Repository:
                 FROM bookmaker_event_markets GROUP BY 1""")}
             from .sports import SPORTS, sport_label
             keys = [item.key for item in SPORTS] + sorted(set(counts) - {item.key for item in SPORTS})
-            sports = [{'key':key, 'label':sport_label(key, counts.get(key, {}).get('label')), 'total':counts.get(key, {}).get('total', 0)} for key in keys]
+            sports = [{'key':key, 'label':sport_label(key, counts.get(key, {}).get('label')), 'total':counts.get(key, {}).get('total', 0)} for key in keys if catalog_sport(key)]
         return {"events": events, "total": total, "offset": offset, "limit": limit,
                 "competitions": competitions, "summary": summary, "sports": sports}

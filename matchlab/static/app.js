@@ -632,7 +632,7 @@ function renderSports(sports = state.sports) {
     select.options[0].value = "";select.dataset.optionsKey=optionsKey;
   }
   if(document.activeElement!==select) select.value = selected;
-  const popular = ["","football","hockey","tennis","basketball","volleyball","table_tennis"];
+  const popular = ["","football","hockey","tennis","basketball","volleyball"];
   if (selected && !popular.includes(selected)) popular.push(selected);
   ProductUX.replaceContent("sport-tabs",popular.map(key => {
     const button = el("button", key === selected ? "sport-tab active" : "sport-tab", sportLabel(key)); button.type = "button";
@@ -1479,7 +1479,7 @@ window.addEventListener('storage',event => {
 });
 setInterval(() => { if (document.visibilityState !== "visible") return; loadStatus(); if (["#matches","#favorites"].includes(state.route)) loadCatalogue(); else if (state.eventId) loadEvent(true); else if(state.route === "#archive") loadArchive(); },10000);
 state.favorites = readFavorites(); $("as-of").value = today;
-try { const key = localStorage.getItem("matchlab:sport:v1"); if (key !== null && (!key || /^[a-z][a-z0-9_-]{0,49}$/.test(key))) state.sport = key; } catch { /* Default to football when storage is unavailable. */ }
+try { const key = localStorage.getItem("matchlab:sport:v1"); if (key !== null && key!=='table_tennis' && (!key || /^[a-z][a-z0-9_-]{0,49}$/.test(key))) state.sport = key; } catch { /* Default to football when storage is unavailable. */ }
 setTheme(document.documentElement.dataset.theme); syncRoleUI(); loadStatus(); route();
 
 function renderArchiveStatus(data) {

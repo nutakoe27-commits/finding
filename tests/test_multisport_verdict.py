@@ -22,7 +22,7 @@ from outcome_helpers import forecast
 from sports_fixtures import document as sports_document
 
 
-SPORTS = ('hockey', 'basketball', 'tennis', 'volleyball', 'table_tennis')
+SPORTS = ('hockey', 'basketball', 'tennis', 'volleyball')
 SCORES = {'hockey': '3:1 (1:0 1:1 1:0)', 'basketball': '90:80 (20:20 20:20 25:20 25:20)',
           'tennis': '2:0 (6:3 6:4)', 'volleyball': '3:0 (25:20 25:21 25:19)',
           'table_tennis': '3:0 (11:6 11:7 11:8)'}
@@ -91,7 +91,7 @@ class MultisportVerdictTests(unittest.TestCase):
         market = fixture('hockey', self.now)['markets'][0]
         market['name'] += ' с ОТ'; self.assertFalse(market_matches(market, 'hockey'))
 
-    def test_all_five_sports_generate_from_compact_bound_history_without_math(self):
+    def test_active_nonfootball_sports_generate_from_compact_bound_history_without_math(self):
         for sport in SPORTS:
             with self.subTest(sport=sport), patch('matchlab.chances.assess', side_effect=AssertionError('math called')):
                 packet = self.packet(sport)
@@ -215,7 +215,7 @@ class MultisportVerdictTests(unittest.TestCase):
         return payload
 
     def test_admin_settles_each_sport_independently_including_regulation_draw_loss(self):
-        for sport in SPORTS:
+        for sport in (*SPORTS,'table_tennis'):
             self.saved(sport, SCORES[sport], sport)
         forecast(self.repo, 'football', event={'source_event_id': 'football', 'sport': 'football',
             'home': 'Альфа', 'away': 'Бета', 'competition': 'Тестовый турнир', 'phase': 'prematch',

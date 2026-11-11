@@ -3,12 +3,14 @@ from datetime import datetime, timezone
 import re
 
 from .bookmakers import instant
+from .sports import catalog_sport
 
 
 def select(events, *, limit=100, now=None):
     current = now or datetime.now(timezone.utc)
     candidates = {}
     for event in events:
+        if not catalog_sport(event.get('sport')):continue
         rank = event.get('featured_rank')
         if type(rank) is not int or not 0 <= rank < 1000:
             continue

@@ -13,7 +13,7 @@ from .bookmakers import instant
 from .token_usage import capture_usage,track_generation
 from .verdict_sports import PROFILES,ANALYSIS_FOCUS,supported,market_matches,prices_valid
 
-VERSION='neural-verdict-v8'
+VERSION='neural-verdict-v9'
 MAX_ATTEMPTS=3
 LOG=logging.getLogger('uvicorn.error')
 RISK_NOTE='Можно потерять всю сумму ставки. Пропуск матча допустим; вердикт не гарантирует выигрыш.'

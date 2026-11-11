@@ -10,7 +10,7 @@ from matchlab.neural_verdict import build_packet,generate
 from matchlab.season_evidence import source_pairs
 from matchlab.statistics import analysis_statistics
 from matchlab.statistics_feed import extract_passive_feed
-from matchlab.verdict_sports import PROFILES
+from matchlab.verdict_sports import PROFILES,capabilities
 from matchlab.widget_results import reported_full_time,REPORTED_WARNING
 from test_multisport_verdict import answer
 from verdict_helpers import statistics
@@ -119,8 +119,8 @@ class SourceSportsEvidenceTests(unittest.TestCase):
             'odds':{'home':1.9,'away':2.1,**({'draw':3.3} if p.draw else {})}}
         return build_packet(None,event,snapshot,self.now,quote)
 
-    def test_all_six_sports_keep_source_captions_without_a_hardcoded_metric_whitelist(self):
-        for sport in PROFILES:
+    def test_all_active_sports_keep_source_captions_without_a_hardcoded_metric_whitelist(self):
+        for sport in capabilities():
             with self.subTest(sport=sport):
                 packet=self.packet(sport,self.snapshot(sport,season=True))
                 self.assertFalse(packet['policy']['force_skip'],packet['limitations'])
@@ -161,7 +161,7 @@ class SourceSportsEvidenceTests(unittest.TestCase):
         self.assertTrue(all(f['measurement']=='total' for f in self.packet('basketball',s)['facts'] if f['kind']=='statistics'))
 
     def test_all_sports_can_use_consistent_source_full_time_history_without_claiming_independent_confirmation(self):
-        for sport in PROFILES:
+        for sport in capabilities():
             with self.subTest(sport=sport):
                 packet=self.packet(sport,self.snapshot(sport,history=True))
                 self.assertFalse(packet['policy']['force_skip'],packet['limitations'])

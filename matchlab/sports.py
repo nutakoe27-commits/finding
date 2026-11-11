@@ -47,6 +47,12 @@ BY_KEY = {sport.key: sport for sport in SPORTS}
 BY_SLUG = {slug: sport.key for sport in SPORTS for slug in sport.slugs}
 EXCLUDED = re.compile(r"kiber|cyber|esport|virtual|simulat|кибер|виртуал|симуляц|24\s*[xх/_-]?\s*7", re.I)
 KEY = re.compile(r"[a-z][a-z0-9_\-]{0,49}")
+HIDDEN_CATALOG_SPORTS=frozenset({'table_tennis'})
+
+
+def catalog_sport(key):
+    # Keep identities and archived results for existing forecasts/payments.
+    return key not in HIDDEN_CATALOG_SPORTS
 
 
 def ordinary_sport(key: str) -> bool:

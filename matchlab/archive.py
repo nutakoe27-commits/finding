@@ -557,11 +557,13 @@ def project(e, markets=None):
 
 
 def catalog(repo, **query):
+    from .sports import catalog_sport
     with repo.connection() as db:
         rows = db.execute(
             "SELECT r.payload FROM archive_feed_rows r JOIN archive_feed f ON r.cycle=f.cycle"
         ).fetchall()
-    events = [project(unpacked(r["payload"])) for r in rows]
+    events = [project(unpacked(r['payload'])) for r in rows]
+    events = [e for e in events if catalog_sport(e['sport'])]
     summary = {
         "upcoming": sum(e["phase"] == "prematch" for e in events),
         "live": sum(e["phase"] == "live" for e in events),
@@ -614,7 +616,7 @@ def catalog(repo, **query):
     )
     offset, limit = query.get("offset", 0), query.get("limit", 100)
     compact = []
-    for e in selected[offset : offset + limit]:
+    for e in selected[offset : offset + limit if limit is not None else None]:
         value = {k: v for k, v in e.items() if k != "markets"}
         value["primary_odds"] = value.get("headline")
         compact.append(value)

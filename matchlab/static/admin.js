@@ -109,8 +109,8 @@ window.Admin = (() => {
     const data=await api('/api/admin/featured-automation');if(tab!=='automation')return;
     $('auto-analysis-enabled').checked=data.enabled;
     const states={preparing:'Получаем статистику',queued:'В очереди ИИ',running:'ИИ готовит ответ',completed:'Ответ сохранён',skipped:'Пропущено',failed:'Ошибка'};
-    $('auto-analysis-status').textContent=(data.configured?(data.enabled?'Автоматический анализ включён.':'Автоматический анализ выключен.'):'Для запуска подключите ИИ в режиме вердикта.')+` Сохранено: ${data.counts.completed||0}; готовится: ${(data.counts.preparing||0)+(data.counts.queued||0)+(data.counts.running||0)}; пропущено: ${data.counts.skipped||0}.`;
-    $('auto-analysis-events').replaceChildren(table(['Матч','Состояние','Обновление','Комментарий'],data.events.map(e=>[`${e.home} — ${e.away}`,states[e.state]||e.state,when(e.updated_at),e.last_error||'—'])));
+    $('auto-analysis-status').textContent=(data.configured?(data.enabled?'Автоматический анализ включён.':'Автоматический анализ выключен.'):'Для запуска подключите ИИ в режиме вердикта.')+` Выбор ИИ на сегодня и завтра: ${data.picks_ready||0} из ${data.pick_target||5}. Сохранено: ${data.counts.completed||0}; готовится: ${(data.counts.preparing||0)+(data.counts.queued||0)+(data.counts.running||0)}; пропущено: ${data.counts.skipped||0}.`;
+    $('auto-analysis-events').replaceChildren(table(['Матч','Очередь','Состояние','Обновление','Комментарий'],data.events.map(e=>[`${e.home} — ${e.away}`,e.selection_source==='catalogue'?'Предстоящие матчи':'Главные события',states[e.state]||e.state,when(e.updated_at),e.last_error||'—'])));
   }
   async function loadAudit(){
     const data=await api("/api/admin/audit?offset="+auditOffset);if(tab!=="audit")return;

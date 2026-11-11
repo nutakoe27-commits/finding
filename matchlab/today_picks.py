@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from .bookmakers import instant
 from .verdict_outcomes import MSK,site_records,prepare_record,number
-from .verdict_sports import PROFILES,prices_valid
+from .verdict_sports import PROFILES,prices_valid,supported
 
 
 def preview(item):
@@ -29,6 +29,7 @@ def collection(repo,*,min_odds=None,max_odds=None,now=None,include_started=False
             if row['verdict'].get('decision')!='bet':continue
             if not today<=row['kickoff'].astimezone(MSK).date()<=tomorrow or (not include_started and row['kickoff']<=current):continue
             event=row['event'];quote=row.get('quote') or {};verdict=row['verdict'];side=verdict.get('preference')
+            if not supported(event):continue
             if not include_started:
                 source=db.execute('''SELECT r.payload FROM archive_feed_rows r JOIN archive_feed f ON r.cycle=f.cycle
                     WHERE r.event_id=?''',(event['source_event_id'],)).fetchone()
