@@ -107,6 +107,28 @@ class ArchiveSyncTests(unittest.TestCase):
         cycle(self.client, self.path, self.root, state)
         self.assertEqual(self.client.get("/api/bookmakers/featured-events").json()["events"],[])
 
+    def test_future_result_no_longer_blocks_cursor_or_following_completed_results(self):
+        from datetime import datetime,timedelta,timezone
+        suspicious=result()['data'];suspicious['date']=(datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
+        good=result()['data']
+        save_results(self.db,self.capture,1,0,[suspicious,good])
+        state={}
+        first=cycle(self.client,self.path,self.root,state)
+        self.assertEqual(first['state'],'ok')
+        self.assertEqual((first['cursor'],first['pending']),(2,0))
+        overview=self.client.get('/api/archive/status').json()
+        self.assertTrue(overview['connected'])
+        self.assertEqual(overview['quarantined_results'],1)
+        self.assertEqual(overview['stored_results'],1)
+        self.assertEqual(overview['sent_cursor'],2)
+        # Repeating the cycle keeps the held row and does not duplicate results.
+        cycle(self.client,self.path,self.root,state)
+        corrected=deepcopy(good);corrected['score']='3:1'
+        save_results(self.db,self.capture,1,0,[corrected])
+        last=cycle(self.client,self.path,self.root,state)
+        self.assertEqual(last['cursor'],3)
+        self.assertEqual(self.client.get('/api/archive/results').json()['results'][0]['score'],'3:1')
+
     def test_replicates_all_events_results_selected_markets_and_replays_without_duplicates(
         self,
     ):

@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS archive_versions (
  PRIMARY KEY(source,cursor));
 CREATE INDEX IF NOT EXISTS archive_versions_sport ON archive_versions(sport_id,observed_at);
 CREATE INDEX IF NOT EXISTS archive_versions_result ON archive_versions(result_key,observed_at);
+CREATE TABLE IF NOT EXISTS archive_quarantined_results (
+ source TEXT NOT NULL,cursor INTEGER NOT NULL,result_key TEXT NOT NULL,sport_id INTEGER NOT NULL,
+ sport_label TEXT NOT NULL,observed_at TEXT NOT NULL,received_at TEXT NOT NULL,payload TEXT NOT NULL,
+ reason TEXT NOT NULL,PRIMARY KEY(source,cursor));
+CREATE INDEX IF NOT EXISTS archive_quarantined_result ON archive_quarantined_results(result_key);
 CREATE TABLE IF NOT EXISTS archive_latest_results (
  result_key TEXT PRIMARY KEY,sport_id INTEGER NOT NULL,sport_label TEXT NOT NULL,
  start_at TEXT NOT NULL,member1 TEXT NOT NULL,member2 TEXT NOT NULL,score TEXT,
@@ -161,6 +166,7 @@ def ingest(repo, body):
         raise ValueError("Неизвестный формат архива")
     mode = body.get("mode")
     received = now()
+    quarantined = 0
     with repo.connection() as db:
         if mode == "status":
             value = body["status"]
@@ -293,10 +299,9 @@ def ingest(repo, body):
                 unidentified = r.get("date") is None or not (
                     r.get("member1") or r.get("member2")
                 )
-                if r.get("date") is not None and instant(r["date"]) > instant(
+                future_result = r.get("date") is not None and instant(r["date"]) > instant(
                     observed
-                ) + timedelta(minutes=2):
-                    raise ValueError("Результат относится к будущей встрече")
+                ) + timedelta(minutes=2)
                 result_identity = {
                     k: r.get(k)
                     for k in ("idRadar", "date", "championship", "member1", "member2")
@@ -308,18 +313,28 @@ def ingest(repo, body):
                     raise ValueError("Ключ результата не соответствует встрече")
                 label(row["sport_label"], 100)
                 payload = encode(r)
-                existing = db.execute(
-                    "SELECT result_key,sport_id,sport_label,observed_at,payload FROM archive_versions WHERE source=? AND cursor=?",
-                    (source, cursor),
-                ).fetchone()
-                if existing and tuple(existing) != (
-                    row["result_key"],
-                    row["sport_id"],
-                    row["sport_label"],
-                    observed,
-                    payload,
+                for existing in db.execute(
+                    """SELECT result_key,sport_id,sport_label,observed_at,payload
+                    FROM archive_versions WHERE source=? AND cursor=? UNION ALL
+                    SELECT result_key,sport_id,sport_label,observed_at,payload
+                    FROM archive_quarantined_results WHERE source=? AND cursor=?""",
+                    (source, cursor, source, cursor),
                 ):
-                    raise ValueError("Курсор относится к другой версии результата")
+                    if tuple(existing) != (
+                        row["result_key"], row["sport_id"], row["sport_label"], observed, payload,
+                    ):
+                        raise ValueError("Курсор относится к другой версии результата")
+                if future_result:
+                    # A malformed observation must not poison the whole batch.
+                    # Preserve it outside BOTH result tables: even once its date
+                    # has passed, it is not a confirmed historical result.
+                    db.execute(
+                        "INSERT OR IGNORE INTO archive_quarantined_results VALUES (?,?,?,?,?,?,?,?,?)",
+                        (source, cursor, row["result_key"], row["sport_id"], row["sport_label"],
+                         observed, received, payload, "future_result"),
+                    )
+                    quarantined += 1
+                    continue
                 db.execute(
                     "INSERT OR IGNORE INTO archive_versions VALUES (?,?,?,?,?,?,?,?)",
                     (
@@ -359,7 +374,7 @@ def ingest(repo, body):
                     )
         else:
             raise ValueError("Неизвестный пакет")
-    return {"accepted": True}
+    return {"accepted": True, **({"quarantined": quarantined} if quarantined else {})}
 
 
 def overview(repo):
@@ -374,6 +389,11 @@ def overview(repo):
             ).fetchone()[0],
             unidentified_results=db.execute(
                 "SELECT count(DISTINCT v.result_key) FROM archive_versions v LEFT JOIN archive_latest_results r ON v.result_key=r.result_key WHERE r.result_key IS NULL"
+            ).fetchone()[0],
+            quarantined_results=db.execute(
+                """SELECT count(DISTINCT q.result_key) FROM archive_quarantined_results q
+                LEFT JOIN archive_latest_results r ON r.result_key=q.result_key
+                WHERE r.result_key IS NULL"""
             ).fetchone()[0],
             sports=[
                 dict(r)

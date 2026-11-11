@@ -1438,6 +1438,7 @@ function renderArchiveStatus(data) {
   const text=data.last_snapshot_at ? `Последнее наблюдение: ${moscowTime(data.last_snapshot_at)} МСК. Исторических результатов: ${(data.stored_results || 0).toLocaleString("ru-RU")}.${data.sent_cursor < data.source_cursor ? " Начальная передача истории ещё идёт." : ""}${!data.connected ? " Нет свежего отчёта о доставке." : data.source_stale ? " Источник давно не обновлялся; время у каждого матча указано отдельно." : ""}` : "База на сервере заполняется. После первой передачи здесь появятся данные.";
   $("archive-service-title").textContent=label; $("archive-service-note").textContent=text;
   if(data.unidentified_results) $("archive-service-note").textContent+=` Записей источника без даты или участников: ${data.unidentified_results}; они сохранены отдельно от списка результатов.`;
+  if(data.quarantined_results) $("archive-service-note").textContent+=` Отдельно сохранено записей с датой позже наблюдения: ${data.quarantined_results}; до корректного подтверждения они не используются в результатах и аналитике.`;
   $("archive-total").textContent=(data.stored_results || 0).toLocaleString("ru-RU");
   $("archive-events-total").textContent=(data.events || 0).toLocaleString("ru-RU");
   $("archive-sync-note").textContent=text;

@@ -517,18 +517,102 @@ class ArchiveTests(unittest.TestCase):
             1,
         )
 
-    def test_future_results_and_result_identity_collisions_are_rejected(self):
+    def test_future_results_are_quarantined_and_result_identity_collisions_rejected(self):
         row = result()
         row["data"]["date"] = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-        self.assertEqual(
-            self.send("results", source="a" * 64, rows=[rekey(row)]).status_code, 422
-        )
+        response=self.send("results", source="a" * 64, rows=[rekey(row)])
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['quarantined'],1)
+        self.assertEqual(self.client.get('/api/archive/status').json()['quarantined_results'],1)
         row = result()
         row["data"]["member1"] = "Другая команда"
         self.assertEqual(
             self.send("results", source="a" * 64, rows=[row]).status_code, 422
         )
         self.assertEqual(self.client.get("/api/archive/results").json()["total"], 0)
+
+    def test_mixed_batch_future_result_does_not_block_final_scores(self):
+        suspicious=result(cursor=2)
+        suspicious['data']['date']=(datetime.now(UTC)+timedelta(days=1)).isoformat()
+        rows=[result(cursor=1),rekey(suspicious),result(cursor=3,score='2:1')]
+        response=self.send('results',source='a'*64,rows=rows)
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertEqual(response.json()['quarantined'],1)
+        self.assertEqual(self.client.get('/api/archive/results').json()['total'],2)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],2)
+            held=db.execute('SELECT * FROM archive_quarantined_results').fetchone()
+            self.assertEqual(held['cursor'],2)
+            self.assertEqual(held['reason'],'future_result')
+            self.assertEqual(json.loads(held['payload']),suspicious['data'])
+
+    def test_quarantine_replay_is_idempotent_and_immutable(self):
+        suspicious=result()
+        suspicious['data']['date']=(datetime.now(UTC)+timedelta(days=1)).isoformat()
+        rekey(suspicious)
+        for _ in range(2):
+            self.assertEqual(self.send('results',source='a'*64,rows=[suspicious]).status_code,200)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_quarantined_results').fetchone()[0],1)
+        changed=deepcopy(suspicious);changed['data']['score']='9:0'
+        response=self.send('results',source='a'*64,rows=[changed])
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.headers['X-Matchlab-Archive-Reason'],'result_cursor_conflict')
+        with self.repo.connection() as db:
+            self.assertEqual(json.loads(db.execute('SELECT payload FROM archive_quarantined_results').fetchone()[0])['score'],'1:0')
+
+    def test_quarantine_cannot_supply_history_or_grade_forecast_without_confirmation(self):
+        from outcome_helpers import forecast
+        from matchlab.verdict_outcomes import run
+        from matchlab.winline_backtest import results
+        current=datetime.now(UTC)
+        suspicious=result(observed=(current-timedelta(days=1)).isoformat())
+        suspicious['data']['date']=(current-timedelta(hours=12)).isoformat();rekey(suspicious)
+        data=suspicious['data']
+        event={'source_event_id':'101','home':data['member1'],'away':data['member2'],
+               'competition':data['championship'],'kickoff_at':data['date'],'sport':'football','phase':'prematch'}
+        forecast(self.repo,event=event,kickoff=datetime.fromisoformat(data['date']),score=None)
+        self.assertEqual(self.send('results',source='a'*64,rows=[suspicious]).status_code,200)
+        # The fixture date has passed now. That cannot make the old observation true.
+        self.assertEqual(run(self.repo)['metrics']['pending'],1)
+        with self.repo.connection() as db:
+            self.assertEqual(results(db)[0],[])
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],0)
+        valid=deepcopy(suspicious);valid.update(cursor=2,observed_at=(current-timedelta(seconds=1)).isoformat())
+        valid['data']['score']='1:1'
+        self.assertEqual(self.send('results',source='a'*64,rows=[valid]).status_code,200)
+        report=run(self.repo)
+        self.assertEqual(report['metrics']['bet_losses'],1)
+        self.assertEqual(report['matches'][0]['actual_score'],'1:1')
+        self.assertEqual(self.client.get('/api/archive/status').json()['quarantined_results'],0)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_quarantined_results').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],1)
+
+    def test_future_observation_clock_and_bad_identity_are_not_quarantined(self):
+        row=result(observed=(datetime.now(UTC)+timedelta(hours=1)).isoformat())
+        response=self.send('results',source='a'*64,rows=[row])
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.headers['X-Matchlab-Archive-Reason'],'clock_skew')
+        row=result();row['data']['date']=(datetime.now(UTC)+timedelta(days=1)).isoformat()
+        self.assertEqual(self.send('results',source='a'*64,rows=[row]).status_code,422)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_quarantined_results').fetchone()[0],0)
+
+    def test_invalid_row_rolls_back_the_mixed_batch(self):
+        suspicious=result();suspicious['data']['date']=(datetime.now(UTC)+timedelta(days=1)).isoformat();rekey(suspicious)
+        invalid=result(cursor=2);invalid['data']['member1']='Wrong identity'
+        self.assertEqual(self.send('results',source='a'*64,rows=[suspicious,invalid]).status_code,422)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_quarantined_results').fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],0)
+
+    def test_upgrade_creates_quarantine_without_changing_existing_results(self):
+        self.assertEqual(self.send('results',source='a'*64,rows=[result()]).status_code,200)
+        with self.repo.connection() as db:db.execute('DROP TABLE archive_quarantined_results')
+        self.repo.initialize()
+        self.assertEqual(self.client.get('/api/archive/results').json()['total'],1)
+        self.assertEqual(self.client.get('/api/archive/status').json()['quarantined_results'],0)
 
     def test_source_placeholder_is_preserved_without_becoming_a_completed_match(self):
         row = result()
