@@ -320,7 +320,28 @@ def initialize(target,schema=None):
             if updated!=marker['schema']:
                 marker['schema']=updated
                 connection.raw.cursor().execute('UPDATE `_matchlab_migration` SET payload=%s WHERE id=1',(json.dumps(marker,ensure_ascii=False),))
+        ensure_verdict_projection(connection)
     finally:connection.close()
+
+
+def ensure_verdict_projection(connection):
+    # STORED generation parses the large snapshot once on write, not eleven
+    # times per historical row on every results/picks page. Raw UPDATEs also
+    # regenerate it atomically, so there is no stale side cache to grade from.
+    from .verdict_projection import MYSQL_COLUMN,mysql_definition
+    cursor=connection.raw.cursor()
+    lock_name=connection.lock_name.replace('matchlab-write-','matchlab-schema-',1)
+    cursor.execute('SELECT GET_LOCK(%s,120)',(lock_name,))
+    if cursor.fetchone()[0]!=1:raise ValueError('Could not acquire the report-schema preparation lock')
+    try:
+        cursor.execute("SELECT column_name,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='event_analyses'")
+        columns=dict(cursor.fetchall())
+        if not columns:return
+        if MYSQL_COLUMN not in columns:
+            cursor.execute('ALTER TABLE `event_analyses` ADD COLUMN '+mysql_definition())
+        elif 'STORED GENERATED' not in columns[MYSQL_COLUMN]:
+            raise ValueError('Report projection must be an automatically stored generated column')
+    finally:cursor.execute('SELECT RELEASE_LOCK(%s)',(lock_name,))
 
 
 def merge_schema(saved,current):

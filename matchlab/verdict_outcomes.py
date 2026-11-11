@@ -36,15 +36,11 @@ def report_files(directory):
 def site_records(db):
     # Project only the public fixture and verdict. Notes and the full prompt are
     # never returned or parsed into the dashboard.
-    for row in db.execute('''SELECT id,generated_at,json_extract(payload,
-        '$.context.neural_input.event','$.context.event','$.event',
-        '$.context.neural_verdict','$.context.ai_generation',
-        '$.context.neural_input.as_of','$.context.neural_input.quote',
-        '$.context.team_statistics.observed_at','$.context.team_statistics.match_phase',
-        '$.context.neural_input.policy.force_skip','$.context.analysis_origin') fields
-        FROM event_analyses WHERE json_valid(payload)
-        AND json_type(payload,'$.context.neural_verdict')='object'
-        ORDER BY julianday(generated_at),id'''):
+    from .verdict_projection import MYSQL_COLUMN,sqlite_expression
+    mysql=getattr(db,'dialect',None)=='mysql'
+    fields=MYSQL_COLUMN if mysql else sqlite_expression()
+    predicate=MYSQL_COLUMN+' IS NOT NULL' if mysql else "json_valid(payload) AND json_type(payload,'$.context.neural_verdict')='object'"
+    for row in db.execute('SELECT id,generated_at,'+fields+' fields FROM event_analyses WHERE '+predicate+' ORDER BY julianday(generated_at),id'):
         try:
             e,context_event,public_event,v,g,as_of,q,stats_at,phase,forced,origin=json.loads(row['fields'])
             yield {'id':row['id'],'event':e or context_event or public_event,'verdict':v,'generation':g or {},
@@ -238,11 +234,12 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
                 excluded['duplicate_forecast']+=1;continue
             cohort[cohort_key]=row
             by_fixture[group_key].append(row)
-        from .winline_backtest import results
-        try:truth,invalid_results=results(db)
-        except ValueError:truth=[];invalid_results={}
-        truth=[{**t,'sport':'football'} for t in truth]
         if selection=='distinct_bets':truth=[];invalid_results={}
+        else:
+            from .winline_backtest import results
+            try:truth,invalid_results=results(db)
+            except ValueError:truth=[];invalid_results={}
+            truth=[{**t,'sport':'football'} for t in truth]
         from .multisport_evidence import archive_results
         for kind in {r['event']['sport'] for r in cohort.values()}-({'football'} if selection=='first_fixture' else set()):
             extra,rejected=archive_results(db,kind,include_unresolved=True)

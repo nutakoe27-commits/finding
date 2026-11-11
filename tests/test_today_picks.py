@@ -104,8 +104,9 @@ class TodayPicksTests(unittest.TestCase):
 
     def test_guest_api_cannot_be_changed_into_a_skip_feed_and_requires_no_model(self):
         item=self.save();skip=self.save(decision='skip')
-        with TestClient(create_app(Settings(self.root,'',''))) as client,patch('matchlab.today_picks.datetime') as clock,patch('matchlab.qwen._completion',side_effect=AssertionError('called model')):
+        with TestClient(create_app(Settings(self.root,'',''))) as client,patch('matchlab.today_picks.datetime') as clock,patch('matchlab.verdict_outcomes.datetime') as report_clock,patch('matchlab.qwen._completion',side_effect=AssertionError('called model')):
             clock.now.return_value=self.now
+            report_clock.now.return_value=self.now
             response=client.get('/api/picks/today?min_odds=1.5&decision=skip')
             self.assertEqual(response.status_code,200);self.assertEqual(response.json()['total'],1)
             self.assertNotIn('selection_label',response.json()['picks'][0]);self.assertNotIn('blocks',response.json()['picks'][0])
