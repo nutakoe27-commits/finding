@@ -17,7 +17,7 @@ import httpx
 
 from .statistics import collect_statistics
 from .worker_protocol import market_feed
-from .winline_markets import ensure_event_page, read_marketbook, discover_statistics_link, market_document, primary_quote
+from .winline_markets import ensure_event_page, read_marketbook, discover_statistics_link, market_document, primary_quote, event_navigation_url, EventNavigationError
 from .winline_browser import event_id_from_url
 
 LOG=logging.getLogger(__name__)
@@ -105,9 +105,10 @@ async def refresh_market(context,client,event):
     page.on('websocket',opened)
     stage='navigation'
     try:
-        response=await page.goto(event['url'],wait_until='domcontentloaded',timeout=45000)
+        navigation_url=event_navigation_url(event['url'],event)
+        response=await page.goto(navigation_url,wait_until='domcontentloaded',timeout=45000)
         if response and response.status in (401,403,429): return 'blocked'
-        await ensure_event_page(page,event['url'],event)
+        await ensure_event_page(page,navigation_url,event)
         stage='markets'
         snapshot=await read_marketbook(page)
         if not any(feed['connected'] and 0 <= time.monotonic()-feed['last_frame'] <= 180 for feed in feeds):
@@ -128,7 +129,9 @@ async def refresh_market(context,client,event):
             response.raise_for_status()
         return 'ok' if document['coverage']['complete'] else 'partial'
     except Exception as error:
-        LOG.warning('Event %s refresh failed at %s (%s)',event.get('source_event_id'),stage,type(error).__name__)
+        reason=error.code if isinstance(error,EventNavigationError) else 'timeout' if type(error).__name__=='TimeoutError' else 'unavailable'
+        LOG.warning('Event %s refresh failed at %s (%s) reason=%s',event.get('source_event_id'),stage,type(error).__name__,reason)
+        if reason=='access_check':return 'blocked'
         try:
             body=(await page.locator('body').inner_text())[:1000]
             if any(marker in body.lower() for marker in ('access denied','verify you are human','проверка безопасности')): return 'blocked'
@@ -149,7 +152,7 @@ async def refresh_job(context,client,job):
         response.raise_for_status(); detail=response.json()
         url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
         if not url:
-            statistics_state='missing_link'
+            statistics_state=market_state if market_state in ('unavailable','blocked') else 'missing_link'
         else:
             previous=(detail.get('statistics') or {}).get('latest_attempt') or {}
             blocked_until=None
@@ -182,9 +185,9 @@ async def refresh_job(context,client,job):
 
 async def statistics_request_job(context,client,job):
     """Fetch statistics only for an explicitly requested match."""
-    event=job['event']; state='unavailable'
+    event=job['event']; state='unavailable';market_state='unavailable'
     async def fetch():
-        nonlocal state
+        nonlocal state,market_state
         prefix='/api/archive/events/' if event.get('source_kind')=='stream' else '/api/bookmakers/events/'
         endpoint=prefix+event['source_event_id']+'/statistics'
         response=await client.get(endpoint); response.raise_for_status(); detail=response.json()
@@ -195,7 +198,7 @@ async def statistics_request_job(context,client,job):
                     state='blocked'; return
             except (ValueError,TypeError): pass
         try:
-            await asyncio.wait_for(refresh_market(context,client,event),timeout=115)
+            market_state=await asyncio.wait_for(refresh_market(context,client,event),timeout=115)
         except Exception as error:
             LOG.warning('Popular markets for event %s were not refreshed (%s)',event['source_event_id'],type(error).__name__)
         url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
@@ -205,7 +208,7 @@ async def statistics_request_job(context,client,job):
             response=await client.get(endpoint); response.raise_for_status(); detail=response.json()
             url=detail.get('statistics_url') if detail.get('link_status')=='found' else None
         if not url:
-            state='missing_link'; return
+            state=market_state if market_state in ('unavailable','blocked') else 'missing_link'; return
         page=await context.new_page()
         try:
             async def publish_fast(value):
@@ -223,7 +226,7 @@ async def statistics_request_job(context,client,job):
     response=await client.post('/api/bookmakers/refresh/finish',json={
         'kind':'statistics','job_id':job['job_id'],'lease_id':job['lease_id'],'statistics_state':state})
     response.raise_for_status()
-    return {'source_event_id':event['source_event_id'],'statistics_state':state}
+    return {'source_event_id':event['source_event_id'],'statistics_state':state,'market_state':market_state}
 
 
 async def run(args):

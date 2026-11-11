@@ -10,9 +10,31 @@ from urllib.parse import urlsplit
 from .bookmakers import DATE_RE, EPL, FORMAT as QUOTE_FORMAT, instant, iso, kickoff, lines, make_snapshot
 from .markets import FORMAT, identity, label, validate_event_markets
 from .winline_browser import event_id_from_url, open_event_link, public_event_id, event_statistics_link, statistics_id_from_url
-from .sports import sport_from_url, sport_label
+from .sports import sport_from_url, sport_label, match_url
 
 PARSER_VERSION = "winline-marketbook-dom-v5-popular"
+
+class EventNavigationError(ValueError):
+    """Fixed diagnostic categories; never include page contents or credentials."""
+    def __init__(self,code):
+        self.code=code
+        super().__init__(code)
+
+
+def event_navigation_url(expected_url,metadata=None):
+    try:
+        parsed=urlsplit(expected_url)
+        wanted=event_id_from_url(expected_url)
+    except (ValueError,TypeError):
+        raise EventNavigationError('invalid_event_url') from None
+    if not wanted or parsed.username or parsed.password:raise EventNavigationError('invalid_event_url')
+    metadata=metadata or {}
+    if metadata.get('source_event_id') not in (None,wanted):raise EventNavigationError('event_identity_mismatch')
+    sport=sport_from_url(expected_url)
+    if sport and metadata.get('sport') and sport!=metadata['sport']:raise EventNavigationError('sport_identity_mismatch')
+    # The sport comes from the already verified catalogue, never guessed from
+    # the event number or teams. This also repairs jobs queued by old receivers.
+    return match_url({**metadata,'source_event_id':wanted,'url':expected_url}) or parsed._replace(query='',fragment='').geturl()
 
 # Bounded public DOM context for ambiguous outcomes. No HTML, URLs, inputs,
 # form content or browser state are collected.
@@ -223,10 +245,11 @@ def validate_event_labels_for_diagnostics(document: dict) -> None:
 
 
 async def ensure_event_page(page, expected_url: str, metadata: dict | None = None):
+    expected_url=event_navigation_url(expected_url,metadata)
     wanted = event_id_from_url(expected_url)
     if not wanted:
         raise ValueError("Некорректный адрес события Winline.")
-    if public_event_id(page.url) != wanted:
+    if public_event_id(page.url) != wanted or (sport_from_url(expected_url) and not sport_from_url(page.url)):
         # A short /event link can initialize on the homepage first. Follow its
         # real current anchor when present, exactly as the verified diagnostic.
         try:
@@ -241,9 +264,9 @@ async def ensure_event_page(page, expected_url: str, metadata: dict | None = Non
                 raise
             beginning = (await page.locator('body').inner_text())[:500]
             if re.search(r'verify you are human|access denied|подтвердите.{0,40}человек|проверка безопасности', beginning, re.I):
-                raise ValueError('Source requires an access check')
+                raise EventNavigationError('access_check')
             if not await page.locator('a[href="/stavki"],a[href="https://winline.ru/stavki"]').count():
-                raise ValueError('The public application did not initialize')
+                raise EventNavigationError('app_not_initialized')
             await page.evaluate("url => { history.pushState({}, '', url); dispatchEvent(new PopStateEvent('popstate')); }", expected_url)
             await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted, timeout=15000)
     if not sport_from_url(page.url):
@@ -253,8 +276,12 @@ async def ensure_event_page(page, expected_url: str, metadata: dict | None = Non
         try:
             await page.wait_for_url(lambda value: public_event_id(str(value)) == wanted and bool(sport_from_url(str(value))), timeout=15000)
         except Exception as exc:
-            raise ValueError('Не дождались подтверждённой страницы вида спорта для события') from exc
-    await page.wait_for_selector('ww-feature-marketbook-dsk button.market-header', timeout=30000)
+            raise EventNavigationError('sport_route_unresolved') from exc
+    if public_event_id(page.url)!=wanted:raise EventNavigationError('event_identity_mismatch')
+    if metadata and metadata.get('sport') and sport_from_url(page.url)!=metadata['sport']:
+        raise EventNavigationError('sport_identity_mismatch')
+    try:await page.wait_for_selector('ww-feature-marketbook-dsk button.market-header', timeout=30000)
+    except Exception as exc:raise EventNavigationError('marketbook_not_loaded') from exc
 
 
 async def read_marketbook(page, *, maximum_passes=200) -> dict:

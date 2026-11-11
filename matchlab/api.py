@@ -374,6 +374,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if stream and stream_statistics(event_id)['link_status']=='found':
             document=repo.event_markets(event_id)
         document={**document,'source_kind':'stream' if stream else 'legacy'}
+        from .sports import match_url
+        document={**document,'url':match_url(document) or document['url']}
         if stream:
             try:archive.watch(repo,event_id)
             except LookupError:pass

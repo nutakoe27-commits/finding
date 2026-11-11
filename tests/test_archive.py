@@ -157,7 +157,7 @@ class ArchiveTests(unittest.TestCase):
         job=self.repo.claim_statistics_request()
         self.assertEqual(job['event']['source_event_id'],'101')
         self.assertEqual(job['event']['source_kind'],'stream')
-        self.assertEqual(job['event']['url'],'https://winline.ru/stavki/event/101')
+        self.assertEqual(job['event']['url'],'https://winline.ru/stavki/sport/futbol/101')
         self.assertIsNone(self.repo.claim_statistics_request())
         self.assertTrue(self.repo.finish_statistics_request(job['job_id'],job['lease_id'],'missing_link'))
         status=self.client.get(f"/api/archive/events/101/statistics/request/{job['job_id']}").json()
