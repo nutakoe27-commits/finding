@@ -10,6 +10,7 @@ import sys
 from datetime import datetime,timezone
 
 ROOT=Path(__file__).resolve().parent.parent
+sys.path.insert(0,str(ROOT))
 
 
 def main():
@@ -25,7 +26,13 @@ def main():
     data_dir=Path(os.getenv('MATCHLAB_DATA_DIR') or values.get('MATCHLAB_DATA_DIR') or ROOT/'.local')
     if not data_dir.is_absolute():data_dir=ROOT/data_dir
     database=data_dir/'matchlab.sqlite3'
-    if database.exists():
+    database_url=os.getenv('MATCHLAB_DATABASE_URL') or values.get('MATCHLAB_DATABASE_URL')
+    if database_url:
+        from matchlab.mysql_backend import MySQLTarget
+        from matchlab.database_migration import export_sqlite
+        snapshot=data_dir/('matchlab-before-billing-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.sqlite3')
+        export_sqlite(MySQLTarget(database_url),snapshot)
+    elif database.exists():
         snapshot=data_dir/('matchlab-before-billing-'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')+'.sqlite3')
         with sqlite3.connect(database) as source,sqlite3.connect(snapshot) as destination:source.backup(destination)
         snapshot.chmod(0o600)

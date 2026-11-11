@@ -9,7 +9,8 @@ from .verdict_sports import PROFILES, key, result_score
 
 def archive_results(db, sport, as_of=None, participants=None, include_unresolved=False):
     p = PROFILES[sport]
-    db.create_function('verdict_key', 1, key)
+    mysql=getattr(db,'dialect',None)=='mysql'
+    if not mysql:db.create_function('verdict_key', 1, key)
     params = [p.archive_id, key(p.label)]
     if as_of is None:
         sql = 'SELECT result_key,payload,start_at FROM archive_latest_results WHERE sport_id=? AND verdict_key(sport_label)=?'
@@ -22,7 +23,19 @@ def archive_results(db, sport, as_of=None, participants=None, include_unresolved
             SELECT result_key,payload FROM ranked WHERE n=1'''
         params += [at, at]
     records = {}; rejected = Counter()
-    for raw in db.execute(sql, params):
+    if mysql:
+        if as_of is None:
+            candidates=db.execute('SELECT result_key,payload,start_at,sport_label FROM archive_latest_results WHERE sport_id=?',(p.archive_id,))
+        else:
+            candidates=db.execute('''SELECT result_key,payload,sport_label FROM archive_versions WHERE sport_id=?
+                AND julianday(observed_at)<=julianday(?) AND julianday(received_at)<=julianday(?)
+                ORDER BY result_key,julianday(observed_at) DESC,julianday(received_at) DESC''',(p.archive_id,at,at))
+        selected=[];seen=set()
+        for row in candidates:
+            if key(row['sport_label'])!=key(p.label) or as_of is not None and row['result_key'] in seen:continue
+            seen.add(row['result_key']);selected.append(row)
+    else:selected=db.execute(sql,params)
+    for raw in selected:
         try:
             value = json.loads(raw['payload']); at = instant(value['date'])
             if at >= (as_of or datetime.now(timezone.utc)):

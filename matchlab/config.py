@@ -37,9 +37,13 @@ class Settings:
     billing_public_testing: bool = False
     yookassa_shop_id: str = ''
     yookassa_secret_key: str = field(default='',repr=False)
+    database_url: str = field(default='',repr=False)
 
     @property
-    def database(self) -> Path:
+    def database(self):
+        if self.database_url:
+            from .mysql_backend import MySQLTarget
+            target=MySQLTarget(self.database_url);target.options();return target
         return self.data_dir / "matchlab.sqlite3"
 
     @property
@@ -103,6 +107,7 @@ class Settings:
             raise ValueError('Для тестовых платежей нужны Shop ID и тестовый ключ ЮKassa.')
         return cls(
             data_dir=Path(os.getenv("MATCHLAB_DATA_DIR", str(ROOT / ".local"))),
+            database_url=os.getenv('MATCHLAB_DATABASE_URL','').strip(),
             qwen_base_url=os.getenv("QWEN_BASE_URL", "").rstrip("/"),
             qwen_model=os.getenv("QWEN_MODEL", ""),
             qwen_api_key=os.getenv("QWEN_API_KEY", ""),

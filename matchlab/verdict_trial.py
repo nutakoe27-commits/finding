@@ -187,8 +187,8 @@ def main():
         with path.with_suffix('.lock').open('a') as lock:
             try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise ValueError('Этот файл теста уже обрабатывается.')
-            with sqlite3.connect('file:'+uri_quote(str((args.database or settings.database).resolve()))+'?mode=ro',uri=True) as db:
-                db.row_factory=sqlite3.Row
+            from .mysql_backend import readonly
+            with readonly(args.database or settings.database) as db:
                 if args.resume:
                     report=json.loads(path.read_text())
                 else:

@@ -19,6 +19,16 @@ class Repository:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
+        from .mysql_backend import MySQLTarget,Connection
+        if isinstance(self.path,MySQLTarget):
+            connection=Connection(self.path)
+            try:
+                yield connection
+                connection.commit()
+            except BaseException:
+                connection.rollback();raise
+            finally:connection.close()
+            return
         connection = sqlite3.connect(self.path, timeout=30)
         connection.row_factory = sqlite3.Row
         try:
@@ -28,6 +38,8 @@ class Repository:
             connection.close()
 
     def initialize(self) -> None:
+        from .mysql_backend import MySQLTarget,initialize
+        if isinstance(self.path,MySQLTarget):initialize(self.path);return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
             db.executescript("""
@@ -261,15 +273,19 @@ class Repository:
             raise ValueError("Время получения снимка находится в будущем. Проверьте часы компьютера-сборщика.")
         batch_id = hashlib.sha256(json.dumps(sorted(row["id"] for row in rows)).encode()).hexdigest()
         with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
             previous = db.execute("SELECT report FROM bookmaker_imports WHERE id = ?", (batch_id,)).fetchone()
             if previous:
                 return {**json.loads(previous[0]), "inserted": 0, "already_imported": True}
-            before = db.total_changes
+            identifiers=sorted({row['id'] for row in rows});existing=0
+            for start in range(0,len(identifiers),500):
+                chunk=identifiers[start:start+500]
+                existing+=db.execute('SELECT count(*) FROM bookmaker_quotes WHERE id IN ('+','.join('?' for _ in chunk)+')',chunk).fetchone()[0]
             db.executemany("INSERT OR IGNORE INTO bookmaker_quotes VALUES (?, ?, ?, ?, ?, ?, ?)", [
                 (row["id"], row["event_key"], row["fixture_key"], row["source"], row["kickoff_at"], row["observed_at"], json.dumps(row, ensure_ascii=False))
                 for row in rows
             ])
-            report = {"batch_id": batch_id, "inserted": db.total_changes - before, "parsed_snapshots": len(rows),
+            report = {"batch_id": batch_id, "inserted":len(identifiers)-existing,"parsed_snapshots": len(rows),
                       "events": len({row["event_key"] for row in rows}), "report": parsed["report"]}
             db.execute("INSERT INTO bookmaker_imports VALUES (?, ?, ?, ?)",
                        (batch_id, utc_now(), report["inserted"], json.dumps(report, ensure_ascii=False)))
@@ -574,6 +590,8 @@ class Repository:
 
     def market_events(self, *, include_started=False, limit=100, offset=0,
                       search="", competition="", phase="", day=None, event_ids=None, sort="kickoff", sport="") -> dict:
+        from .mysql_backend import MySQLTarget
+        python_search=bool(search and isinstance(self.path,MySQLTarget))
         from .sports import HIDDEN_CATALOG_SPORTS,catalog_sport
         visible="COALESCE(json_extract(metadata, '$.sport'),'football') NOT IN ("+','.join('?' for _ in HIDDEN_CATALOG_SPORTS)+')'
         hidden=sorted(HIDDEN_CATALOG_SPORTS)
@@ -591,7 +609,7 @@ class Repository:
             params.append(now)
         elif phase == "live":
             clauses.append("phase = 'live'")
-        if search:
+        if search and not python_search:
             clauses.append("instr(casefold(COALESCE(json_extract(metadata, '$.home'), '') || ' ' || COALESCE(json_extract(metadata, '$.away'), '') || ' ' || COALESCE(json_extract(metadata, '$.title'), '') || ' ' || json_extract(metadata, '$.competition')), ?) > 0")
             params.append(search.casefold())
         if competition:
@@ -608,8 +626,18 @@ class Repository:
         order = {"kickoff": "COALESCE(kickoff_at, '9999'), event_id", "freshness": "observed_at DESC, event_id"}[sort]
         with self.connection() as db:
             db.create_function("casefold", 1, lambda value: value.casefold() if value else "", deterministic=True)
-            total = db.execute("SELECT COUNT(*) " + query, params).fetchone()[0]
-            rows = db.execute("SELECT metadata, observed_at, changed_at " + query + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*params, limit, offset])
+            if python_search:
+                candidates=db.execute('SELECT metadata,observed_at,changed_at '+query+' ORDER BY '+order,params)
+                matching=[]
+                for row in candidates:
+                    meta=json.loads(row['metadata'])
+                    if meta.get('competition') is None:continue
+                    text=' '.join(str(meta.get(k) if meta.get(k) is not None else '') for k in ('home','away','title','competition'))
+                    if search.casefold() in text.casefold():matching.append(row)
+                total=len(matching);rows=matching[offset:offset+limit]
+            else:
+                total = db.execute("SELECT COUNT(*) " + query, params).fetchone()[0]
+                rows = db.execute("SELECT metadata, observed_at, changed_at " + query + " ORDER BY " + order + " LIMIT ? OFFSET ?", [*params, limit, offset])
             events = [{**json.loads(row["metadata"]), "observed_at": row["observed_at"], "changed_at": row["changed_at"]} for row in rows]
             # Older snapshots predate the compact headline field. Read only
             # those visible on this page, rather than rebuilding the database

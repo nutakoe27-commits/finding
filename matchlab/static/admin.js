@@ -138,13 +138,13 @@ window.Admin = (() => {
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
   async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
     if(allowed)await load();
   }
-  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminTokens.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
+  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminTokens.stop();AdminBilling.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
   $("admin-refresh").addEventListener("click",load);$("admin-period").addEventListener("change",load);
   let userSearch;$("admin-user-search").addEventListener("input",()=>{clearTimeout(userSearch);userSearch=setTimeout(()=>{userOffset=0;loadUsers().catch(e=>message(e.message,true));},300);});
   $("admin-users-prev").addEventListener("click",()=>{userOffset=Math.max(0,userOffset-30);load();});$("admin-users-next").addEventListener("click",()=>{userOffset+=30;load();});

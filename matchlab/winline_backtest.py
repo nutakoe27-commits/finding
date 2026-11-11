@@ -204,9 +204,8 @@ def save(report,path):
 
 
 def evaluate_path(path,mode='saved',limit=10):
-    uri='file:'+quote(str(Path(path).resolve()))+'?mode=ro'
-    with sqlite3.connect(uri,uri=True) as db:
-        db.row_factory=sqlite3.Row
+    from .mysql_backend import readonly
+    with readonly(path) as db:
         return run(db,mode,limit)
 
 

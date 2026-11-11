@@ -262,7 +262,7 @@ class ArchiveTests(unittest.TestCase):
             cached = self.client.post('/api/archive/events/101/explain', json={}).json()
             self.assertTrue(cached['cached'])
         with self.repo.connection() as db:
-            statuses = [row[0] for row in db.execute('SELECT status FROM ai_usage ORDER BY rowid')]
+            statuses = [row[0] for row in db.execute('SELECT status FROM ai_usage ORDER BY at,id')]
         self.assertEqual(statuses, ['limited', 'limited'])
 
     def test_selected_first_half_market_receives_complete_market_calculation(self):
@@ -328,7 +328,7 @@ class ArchiveTests(unittest.TestCase):
         saved['context']['ai_generation']['attempts']=[{'call':1,'stage':'evidence','status':'invalid_response','validation':'quotation_mismatch'}]
         with self.repo.connection() as db:
             db.execute('UPDATE event_analyses SET payload=? WHERE id=?',(json.dumps(saved),saved['id']))
-            row=db.execute('SELECT id,details FROM ai_usage ORDER BY rowid DESC LIMIT 1').fetchone()
+            row=db.execute('SELECT id,details FROM ai_usage ORDER BY at DESC,id DESC LIMIT 1').fetchone()
             details=json.loads(row['details']);details['reason']='context_limit'
             db.execute('UPDATE ai_usage SET details=? WHERE id=?',(json.dumps(details),row['id']))
         signed_in(self.client,self.repo,'admin_fixture','admin')
@@ -386,7 +386,7 @@ class ArchiveTests(unittest.TestCase):
             cached=self.client.post('/api/archive/events/101/explain',json={}).json()
         self.assertTrue(cached['cached'])
         with self.repo.connection() as db:
-            details=[json.loads(row['details']) for row in db.execute('SELECT details FROM ai_usage ORDER BY rowid')]
+            details=[json.loads(row['details']) for row in db.execute('SELECT details FROM ai_usage ORDER BY at,id')]
         self.assertEqual(details[0]['state'],'ready')
         self.assertGreaterEqual(details[0]['model_calls'],2)
         self.assertEqual(details[0]['parts_completed'],details[0]['parts_total'])

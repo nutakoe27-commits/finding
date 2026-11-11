@@ -360,8 +360,8 @@ def main():
             from .config import Settings
             args.database=Settings.from_env().database
         if args.database:
-            with sqlite3.connect('file:'+quote(str(args.database.resolve()))+'?mode=ro',uri=True) as db:
-                db.row_factory=sqlite3.Row
+            from .mysql_backend import readonly
+            with readonly(args.database) as db:
                 quotes=historical_quotes(db)
                 result=compare(json.loads(raw),quotes,db)
         else:result=compare(json.loads(raw),quotes)

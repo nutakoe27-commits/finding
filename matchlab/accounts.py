@@ -222,7 +222,7 @@ def make_session(repo, user_id):
         db.execute("UPDATE users SET last_login_at=? WHERE id=?", (now(), user_id))
         # A finite number of sessions also limits stale devices after password changes.
         db.execute(
-            "DELETE FROM user_sessions WHERE user_id=? AND token_hash NOT IN (SELECT token_hash FROM user_sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 10)",
+            "DELETE FROM user_sessions WHERE user_id=? AND token_hash NOT IN (SELECT token_hash FROM (SELECT token_hash FROM user_sessions WHERE user_id=? ORDER BY created_at DESC LIMIT 10) AS recent_sessions)",
             (user_id, user_id),
         )
     return token

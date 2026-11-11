@@ -248,6 +248,8 @@ def apply_refund(repo,settings,value):
 
 
 def install(app,repo,settings):
+    from . import billing_analytics
+    billing_analytics.install(app,repo)
     @app.get('/api/billing/config')
     def config(request:Request):
         allowed=test_checkout_allowed(settings,accounts.current_user(request,False))

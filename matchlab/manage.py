@@ -114,6 +114,12 @@ def main():
     args = parser.parse_args()
     settings = Settings.from_env()
     if args.action == "backup":
+        from .mysql_backend import MySQLTarget
+        if isinstance(settings.database,MySQLTarget):
+            from .database_migration import export_sqlite
+            target=settings.data_dir/'backups'/('matchlab-'+datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')+'.sqlite3')
+            export_sqlite(settings.database,target)
+            print('Проверенная переносимая резервная копия MySQL: '+str(target));return
         if not settings.database.is_file():
             parser.exit(1, "База ещё не создана.\n")
         if (

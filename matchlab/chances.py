@@ -55,15 +55,25 @@ def football_sample(repo, event, as_of):
     if not norm(event.get('competition')): return []
     cutoff=min(as_of,instant(event['kickoff_at'])) if event.get('kickoff_at') else as_of
     with repo.connection() as db:
-        db.create_function('competition_key',1,norm)
-        rows=db.execute('''SELECT payload,start_at FROM archive_latest_results
+        if getattr(db,'dialect',None)=='mysql':
+            # Keep Python's exact NFKC/casefold matching; MySQL LOWER differs.
+            candidates=db.execute('''SELECT payload,start_at,sport_label,member1,member2 FROM archive_latest_results
+                WHERE sport_id=1 AND start_at<? AND observed_at<=? AND received_at<=? ORDER BY start_at DESC''',
+                (cutoff.isoformat(),as_of.isoformat(),as_of.isoformat())).fetchall()
+            members={norm(event.get('home')),norm(event.get('away'))}
+            rows=[r for r in candidates if norm(r['sport_label'])==norm(event.get('sport_label') or 'Футбол') and
+                  (norm(json.loads(r['payload']).get('championship'))==norm(event.get('competition')) or
+                   norm(r['member1']) in members or norm(r['member2']) in members)][:1500]
+        else:
+            db.create_function('competition_key',1,norm)
+            rows=db.execute('''SELECT payload,start_at FROM archive_latest_results
             WHERE sport_id=1 AND competition_key(sport_label)=? AND start_at<?
               AND observed_at<=? AND received_at<=? AND (competition_key(json_extract(payload,'$.championship'))=?
               OR competition_key(member1) IN (?,?) OR competition_key(member2) IN (?,?))
             ORDER BY start_at DESC LIMIT 1500''',
-            (norm(event.get('sport_label') or 'Футбол'),cutoff.isoformat(),
-             as_of.isoformat(),as_of.isoformat(),norm(event.get('competition')),
-             norm(event.get('home')),norm(event.get('away')),norm(event.get('home')),norm(event.get('away')))).fetchall()
+                (norm(event.get('sport_label') or 'Футбол'),cutoff.isoformat(),
+                 as_of.isoformat(),as_of.isoformat(),norm(event.get('competition')),
+                 norm(event.get('home')),norm(event.get('away')),norm(event.get('home')),norm(event.get('away')))).fetchall()
     result=[]; seen=set()
     for row in rows:
         data=json.loads(row['payload']); parsed=football_result(data.get('score'))

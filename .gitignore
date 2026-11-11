@@ -5,6 +5,12 @@
 .env
 .env.before-yookassa-*
 .env.yookassa-new
+.env.before-database-*
+mysql-target.env
+database-migrations/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 matchlab-before-billing-*.sqlite3
 data/evaluations/neural-verdict*.json
 data/evaluations/neural-verdict*.lock

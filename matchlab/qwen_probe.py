@@ -12,8 +12,9 @@ from .event_reasoning import Budget,EXTRACT,FACT_EXTRACT,direct_system,trusted_f
 
 
 def saved_sample(settings,full=False):
-    if not settings.database.is_file():return None,None
-    with sqlite3.connect('file:'+quote(str(settings.database.resolve()))+'?mode=ro',uri=True) as db:
+    from .mysql_backend import readonly,MySQLTarget
+    if not isinstance(settings.database,MySQLTarget) and not settings.database.is_file():return None,None
+    with readonly(settings.database) as db:
         audit=bool(db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_analysis_inputs'").fetchone())
         query=('SELECT a.id,a.generated_at,a.payload,i.payload FROM event_analyses a LEFT JOIN event_analysis_inputs i ON i.analysis_id=a.id '
                if audit else 'SELECT id,generated_at,payload,NULL FROM event_analyses ')

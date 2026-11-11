@@ -460,8 +460,14 @@ def document(repo, parent):
         for m in result["markets"]:
             m["is_stale"] = True
         with repo.connection() as db:
-            db.create_function("norm", 1, key)
-            matches = db.execute(
+            if getattr(db,'dialect',None)=='mysql':
+                candidates=db.execute('''SELECT payload,observed_at,received_at,sport_label,member1,member2 FROM archive_latest_results
+                    WHERE sport_id=? AND abs(julianday(start_at)-julianday(?))*86400<120''',(e['sport_id'],e['kickoff_at']))
+                matches=[r for r in candidates if key(r['sport_label'])==key(e['sport_label']) and
+                    key(r['member1'])==key(result['home'] or '') and key(r['member2'])==key(result['away'] or '')][:2]
+            else:
+                db.create_function("norm", 1, key)
+                matches = db.execute(
                 """SELECT payload,observed_at,received_at FROM archive_latest_results
               WHERE sport_id=? AND norm(sport_label)=? AND norm(member1)=? AND norm(member2)=?
               AND abs(julianday(start_at)-julianday(?))*86400<120 LIMIT 2""",
@@ -662,6 +668,12 @@ def watches(repo):
 
 def results(repo, search="", sport=None, limit=50, offset=0):
     with repo.connection() as db:
+        if getattr(db,'dialect',None)=='mysql':
+            candidates=db.execute('SELECT * FROM archive_latest_results'+(' WHERE sport_id=?' if sport is not None else '')+' ORDER BY start_at DESC',
+                (sport,) if sport is not None else ())
+            rows=[r for r in candidates if not search or key(search) in key(r['member1']+' '+r['member2']+' '+r['payload'])]
+            fields=('result_key','sport_id','sport_label','start_at','member1','member2','score','observed_at')
+            return {'results':[{k:r[k] for k in fields} for r in rows[offset:offset+limit]],'total':len(rows),'limit':limit,'offset':offset}
         db.create_function("norm", 1, key)
         where = "WHERE 1"
         args = []

@@ -21,3 +21,5 @@ pywebpush==2.5.0
 cryptography==50.0.2
 requests==2.34.2
 mcp==1.29.0
+PyMySQL[rsa]==1.1.2
+sqlglot==27.29.0

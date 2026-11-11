@@ -52,8 +52,8 @@ def evaluate(db):
 def main():
     from .config import Settings
     settings=Settings.from_env()
-    uri='file:'+quote(str(settings.database.resolve()))+'?mode=ro'
-    with sqlite3.connect(uri,uri=True) as db: report=evaluate(db)
+    from .mysql_backend import readonly
+    with readonly(settings.database) as db: report=evaluate(db)
     print(json.dumps(report,ensure_ascii=False,indent=2))
 
 
