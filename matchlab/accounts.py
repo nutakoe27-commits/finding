@@ -403,7 +403,7 @@ def install(app, repo, settings):
                     raise HTTPException(403,'Выберите матч для ИИ-разбора.')
                 mutation(request)
                 if not agreements_current(repo,user['id']):
-                    raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})
+                    raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1','X-Legal-Version':LEGAL_VERSION})
                 limited(repo, "ai:" + user["id"], 6, 60)
                 request.state.user = user
                 usage = None if AI_JOB_ROUTE.fullmatch(path) else start_usage(
@@ -460,6 +460,7 @@ def install(app, repo, settings):
             "user": public_user(user, settings) if user else None,
             "csrf": csrf(request.cookies[cookie_name(request)]) if user else None,
             "providers": ["local"],
+            "legal_version": LEGAL_VERSION,
         }
 
     @app.post("/api/auth/register")

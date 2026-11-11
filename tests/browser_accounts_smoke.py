@@ -207,7 +207,7 @@ async def exercise(base, repo):
                 await page.locator("#auth-submit").click()
                 await expect(page.locator("#admin-link")).to_be_visible()
                 if index == 0:
-                    await page.evaluate("Account.api('/api/bookmakers/events/102/explain',{method:'POST',body:'{}'}).catch(()=>{})")
+                    await page.evaluate("{ Account.api('/api/bookmakers/events/102/explain',{method:'POST',body:'{}'}).catch(()=>{}); }")
                     await expect(page.locator('#legal-renewal')).to_be_visible()
                     for selector in ('#legal-terms','#legal-data','#legal-age'):
                         await page.locator(selector).check()

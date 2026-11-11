@@ -1,30 +1,49 @@
 "use strict";
 window.Account = (() => {
   const byId = id => document.getElementById(id);
-  let user = null, csrf = null, afterLogin = null, mode = "register";
-  async function api(url, options={}) {
+  let user = null, csrf = null, afterLogin = null, mode = "register", legalVersion = null, legalPrompt = null;
+  async function api(url, options={}, legalRetried=false) {
     const response = await fetch(url, {credentials:"same-origin",...options,headers:{"Content-Type":"application/json",...(csrf ? {"X-CSRF-Token":csrf} : {}),...options.headers}});
     let body;
     try { body = await response.json(); } catch { throw new Error(`Сервис вернул HTTP ${response.status}. Попробуйте позже.`); }
     if (!response.ok) {
       const error = new Error(Array.isArray(body.detail) ? body.detail.map(i=>i.msg).join("; ") : body.detail || `Ошибка ${response.status}`);
       if(response.status===401 && (!url.startsWith("/api/auth/") && url!=="/api/admin/reauth" || url==="/api/auth/logout")){user=null;csrf=null;sync();}
-      if(response.headers.get('X-Legal-Required') === '1') showLegal();
-      error.status = response.status; error.reauth = response.headers.get("X-Reauth-Required") === "1"; throw error;
+      error.status = response.status; error.reauth = response.headers.get("X-Reauth-Required") === "1";
+      // This header means the server rejected the action before starting it.
+      if(response.status===403 && response.headers.get('X-Legal-Required') === '1' && !legalRetried){
+        const accountId=user?.id;
+        if(await showLegal(response.headers.get('X-Legal-Version')) && user?.id===accountId) return api(url,options,true);
+      }
+      throw error;
     }
     return body;
   }
   function sync() {
+    if(legalPrompt && legalPrompt.userId!==user?.id) finishLegal(false);
     byId("account-button").textContent = user ? user.username : "Войти";
     byId("admin-link").hidden = user?.role !== "admin";
     document.dispatchEvent(new Event("accountchange"));
   }
   async function refresh() {
-    try { const result = await api("/api/auth/me"); user = result.user; csrf = result.csrf; sync(); }
+    try { const result = await api("/api/auth/me"); user = result.user; csrf = result.csrf; legalVersion=result.legal_version; sync(); }
     catch { user = null; csrf = null; sync(); }
   }
   const ready = refresh();
-  function showLegal() { if(!byId('legal-renewal').open) byId('legal-renewal').showModal(); }
+  function showLegal(version) {
+    if(!legalPrompt){
+      let resolve;const promise=new Promise(done=>{resolve=done;});
+      legalPrompt={promise,resolve,version:version||legalVersion,userId:user?.id};
+      byId('legal-form').reset();byId('legal-error').textContent='';
+      if(!byId('legal-renewal').open) byId('legal-renewal').showModal();
+    }
+    return legalPrompt.promise;
+  }
+  function finishLegal(accepted){
+    const pending=legalPrompt;legalPrompt=null;
+    if(byId('legal-renewal').open) byId('legal-renewal').close();
+    pending?.resolve(accepted);
+  }
   function show(nextMode="register", callback=null) {
     afterLogin = callback; mode = nextMode;
     byId("auth-title").textContent = mode === "register" ? "Ваш личный аналитик" : "С возвращением";
@@ -44,10 +63,17 @@ window.Account = (() => {
   byId("auth-close").addEventListener("click",()=>{ afterLogin=null; byId("auth-dialog").close(); });
   byId("auth-dialog").addEventListener("cancel",()=>{ afterLogin=null; });
   byId("auth-switch").addEventListener("click",()=>show(mode === "register" ? "login" : "register",afterLogin));
-  byId('legal-close').addEventListener('click',()=>byId('legal-renewal').close());
+  byId('legal-close').addEventListener('click',()=>finishLegal(false));
+  byId('legal-renewal').addEventListener('cancel',()=>finishLegal(false));
+  byId('legal-renewal').addEventListener('close',()=>finishLegal(false));
   byId('legal-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=byId('legal-submit');button.disabled=true;byId('legal-error').textContent='';
-    try {await api('/api/auth/confirm-documents',{method:'POST',body:JSON.stringify({terms_accepted:byId('legal-terms').checked,personal_data_consent:byId('legal-data').checked,age_confirmed:byId('legal-age').checked,legal_version:'2026-11-09.v2'})});byId('legal-renewal').close();}
+    try {
+      const version=legalPrompt?.version;
+      if(!version) throw new Error('Не удалось загрузить редакцию документов. Обновите страницу и повторите действие.');
+      await api('/api/auth/confirm-documents',{method:'POST',body:JSON.stringify({terms_accepted:byId('legal-terms').checked,personal_data_consent:byId('legal-data').checked,age_confirmed:byId('legal-age').checked,legal_version:version})});
+      legalVersion=version;finishLegal(true);
+    }
     catch(error){byId('legal-error').textContent=error.message;}finally{button.disabled=false;}
   });
   byId("auth-form").addEventListener("submit",async event=>{
@@ -55,7 +81,11 @@ window.Account = (() => {
     try {
       const submittedMode=mode;
       const credentials={username:byId("auth-username").value,password:byId("auth-password").value};
-      if(submittedMode === "register") Object.assign(credentials,{terms_accepted:byId("auth-terms").checked,personal_data_consent:byId("auth-personal-data").checked,age_confirmed:byId("auth-age").checked,legal_version:"2026-11-09.v2"});
+      if(submittedMode === "register") {
+        await ready;
+        if(!legalVersion) throw new Error('Не удалось загрузить редакцию документов. Обновите страницу и повторите регистрацию.');
+        Object.assign(credentials,{terms_accepted:byId("auth-terms").checked,personal_data_consent:byId("auth-personal-data").checked,age_confirmed:byId("auth-age").checked,legal_version:legalVersion});
+      }
       const result=await api("/api/auth/"+(submittedMode === "register" ? "register" : "login"),{method:"POST",body:JSON.stringify(credentials)});
       window.ProductAnalytics?.goal(submittedMode === 'register' ? 'registration_success' : 'login_success');
       user=result.user;csrf=result.csrf;byId("auth-password").value="";sync();

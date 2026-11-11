@@ -427,7 +427,10 @@ class AccountTests(unittest.TestCase):
         self.assertEqual(row['webvisor'],0)
 
     def test_registration_requires_all_explicit_current_confirmations(self):
-        value={'username':'legal_test','password':PASSWORD,'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':accounts.LEGAL_VERSION}
+        metadata=self.client.get('/api/auth/me')
+        self.assertEqual(metadata.json()['legal_version'],accounts.LEGAL_VERSION)
+        self.assertEqual(metadata.headers['cache-control'],'no-store')
+        value={'username':'legal_test','password':PASSWORD,'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':metadata.json()['legal_version']}
         for key in ('terms_accepted','personal_data_consent','age_confirmed','legal_version'):
             invalid={**value,key:False}
             self.assertEqual(self.client.post('/api/auth/register',json=invalid).status_code,422)
@@ -444,11 +447,29 @@ class AccountTests(unittest.TestCase):
         response=self.client.post('/api/bookmakers/events/123/explain',json={})
         self.assertEqual(response.status_code,403)
         self.assertEqual(response.headers.get('X-Legal-Required'),'1')
+        self.assertEqual(response.headers.get('X-Legal-Version'),accounts.LEGAL_VERSION)
         with self.repo.connection() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM ai_usage WHERE user_id=?',(user_id,)).fetchone()[0],0)
         value={'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':accounts.LEGAL_VERSION}
         self.assertEqual(self.client.post('/api/auth/confirm-documents',json=value).status_code,200)
         self.assertTrue(accounts.agreements_current(self.repo,user_id))
+
+    def test_admin_renews_the_server_version_once_before_a_protected_action(self):
+        user_id=self.admin()
+        path='/api/bookmakers/events/98765432/analysis-jobs'
+        response=self.client.post(path,json={})
+        self.assertEqual(response.status_code,403)
+        version=response.headers['X-Legal-Version']
+        value={'terms_accepted':True,'personal_data_consent':True,'age_confirmed':True,'legal_version':version}
+        self.assertEqual(self.client.post('/api/auth/confirm-documents',json={**value,'legal_version':'obsolete'}).status_code,422)
+        self.assertFalse(accounts.agreements_current(self.repo,user_id))
+        for _ in range(2):
+            self.assertEqual(self.client.post('/api/auth/confirm-documents',json=value).status_code,200)
+            response=self.client.post(path,json={})
+            self.assertEqual(response.status_code,404,response.text)
+            self.assertNotIn('X-Legal-Required',response.headers)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM registration_agreements WHERE user_id=?',(user_id,)).fetchone()[0],3)
 
     def test_production_cookie_is_secure_httponly_and_host_scoped(self):
         root = self.root / "secure"
