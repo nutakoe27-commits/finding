@@ -9,31 +9,16 @@ from .verdict_outcomes import run
 METHODOLOGY=[
     'Только предматчевые ответы ИИ с решением «Ставить» и подтверждёнными коэффициентами. Претенденты и пропуски не входят в показатели.',
     'Изменение линии даёт отдельное решение. Одинаковые рекомендации по тому же матчу и линии учитываются один раз; связанные решения не являются независимыми матчами.',
-    'Ожидающие и неподтверждённые итоги исключены из процента выигранных решений и виртуальной доходности.',
-    'Виртуальный пример: начальный банк 10 000 ₽, каждая рассчитанная ставка — от 5% до 10% именно начального банка (500–1 000 ₽). Сумма ставки не увеличивается после побед.',
-    'Изменение банка — суммарная прибыль или убыток по подтверждённым решениям, делённые на начальные 10 000 ₽. Ожидающие итога решения не рассчитаны. Одновременные ставки и наличие свободных средств не моделируются.',
-    'Переключатель меняет только виртуальный пример. Сохранённые решения ИИ и указанный в них размер ставки не меняются. Реальные деньги не используются.',
+    'Процент верных прогнозов и счётчик «Решение ИИ верно / не верно» используют только подтверждённые исходы рекомендаций «Ставить». Ожидающие и неподтверждённые итоги не считаются верными или неверными.',
+    'Средний коэффициент — среднее арифметическое сохранённых коэффициентов всех учтённых рекомендаций «Ставить», включая ожидающие итога. Он не зависит от размера ставки или страницы списка. Коэффициенты зафиксированы при разборе.',
 ]
-
-
-def simulation(metrics):
-    initial=10000
-    scenarios=[]
-    for percent in range(5,11):
-        stake=initial*percent/100
-        profit=round(stake*metrics['flat_profit_units'],2) if metrics['priced_bets'] else None
-        scenarios.append({'stake_percent':percent,'stake':stake,'profit':profit,
-            'final_bank':round(initial+profit,2) if profit is not None else None,
-            'bank_return':profit/initial if profit is not None else None})
-    return {'initial_bank':initial,'basis':'fixed_initial_bank','settled_bets':metrics['priced_bets'],
-        'pending_bets':metrics['pending']+metrics['unresolved'],'scenarios':scenarios}
 
 
 def case(row):
     # A whitelist; never return admin diagnostics, user identity, notes, input
     # facts, tokens or the original full context through the public endpoint.
     return {k:row.get(k) for k in ('id','event','forecast_at','sport_label','market_label','origin','state',
-        'decision','stake_percent','actual_score','actual_outcome','bet_won','decision_result','odds','paper_stake','paper_profit')}|{
+        'decision','stake_percent','actual_score','actual_outcome','bet_won','decision_result','odds')}|{
         'selection_label':row['preference_label']}
 
 
@@ -43,9 +28,8 @@ def report(repo,*,sport='',offset=0,limit=20,days=30,analysis_id=''):
     return {'format':'matchlab.public-results.v1','checked_at':data['checked_at'],'days':days,'sport':sport,'sports':data['sports'],
         'metrics':{'decisions':m['fixtures'],'matches':data['unique_fixtures'],'settled':m['settled'],'won':m['bet_wins'],
             'lost':m['bet_losses'],'pending':m['pending'],'unresolved':m['unresolved'],'win_rate':m['bet_accuracy'],
-            'paper_roi':m['paper_roi'],'paper_profit':m['paper_profit'],'paper_staked':m['paper_staked']},
-        'simulation':simulation(m),
-        'daily':[{k:row.get(k) for k in ('day','bet_wins','bet_losses','pending','paper_profit','cumulative_bank')} for row in data['daily']],
+            'average_odds':m['average_odds'],'average_odds_count':m['average_odds_count']},
+        'daily':[{k:row.get(k) for k in ('day','bet_wins','bet_losses','pending')} for row in data['daily']],
         'matches':[case(row) for row in data['matches']],'total':data['total'],'offset':offset,'limit':limit,
         'methodology':METHODOLOGY,'archive_current':data['archive_health']['state']=='ready'}
 

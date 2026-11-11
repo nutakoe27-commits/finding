@@ -5,17 +5,19 @@ window.TodayPicks=(()=>{
   const odds=value=>Number(value).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
   const time=value=>new Date(value).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'});
   const when=value=>new Date(value).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  const dateKey=value=>new Date(value).toLocaleDateString('en-CA',{timeZone:'Europe/Moscow',year:'numeric',month:'2-digit',day:'2-digit'});
+  const day=value=>dateKey(value)===data.date?'Сегодня':'Завтра';
   const plural=new Intl.PluralRules('ru'),count=value=>`${value} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[plural.select(value)]}`;
   let active=false,controller=null,timer=null,epoch=0,data=null,shown=6;
   function card(pick){
     const box=node('article','tp-card tp-bet');box.setAttribute('role','listitem');
-    const head=node('div','tp-card-head');head.append(node('span','tp-sport',pick.sport_label),node('span','tp-kickoff',time(pick.event.kickoff_at)+' МСК'));
-    const competition=node('p','tp-competition',pick.event.competition);competition.title=pick.event.competition;
+    const head=node('div','tp-card-head');head.append(node('span','tp-sport',pick.sport_label),node('span','tp-kickoff',day(pick.event.kickoff_at)+', '+time(pick.event.kickoff_at)+' МСК'));
+    const competition=node('p','tp-competition tp-competition-blurred','Название турнира');competition.setAttribute('aria-hidden','true');
     const match=node('h3','tp-match'),names=node('span','tp-match-blurred','Участник 1 — Участник 2');names.setAttribute('aria-hidden','true');
     match.append(names,node('span','sr-only','Участники скрыты до открытия прогноза'));
     const preview=node('div','tp-preview');preview.append(node('span','tp-ready-dot'),node('span','','Прогноз готов · команда и аргументы внутри'));
     const line=node('div','tp-line'),price=node('div','tp-price');price.append(node('span','tp-label','Коэффициент при разборе'),node('strong','',odds(pick.odds)));line.append(price);
-    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз →');link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, ${time(pick.event.kickoff_at)} МСК`);
+    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз →');link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, ${day(pick.event.kickoff_at).toLowerCase()}, ${time(pick.event.kickoff_at)} МСК`);
     footer.append(node('span','tp-observed','Разбор '+when(pick.forecast_at)+' МСК'),link);
     box.append(head,competition,match,preview,line,footer);return box;
   }
@@ -25,11 +27,14 @@ window.TodayPicks=(()=>{
     cards.replaceChildren(...picks.slice(0,shown).map(card));
     if(focused)[...cards.querySelectorAll('.tp-open')].find(link=>link.getAttribute('href')===focused)?.focus({preventScroll:true});
     if(!picks.length){
-      const box=node('div','tp-empty');box.append(node('strong','','На сегодня готовых прогнозов пока нет'),node('p','','Карточки появятся автоматически, когда системный анализ сохранит вердикт «Ставить» для сегодняшнего матча.'));
+      const box=node('div','tp-empty');box.append(node('strong','','На сегодня и завтра готовых прогнозов пока нет'),node('p','','Карточки появятся автоматически, когда системный анализ сохранит вердикт «Ставить» для матча на сегодня или завтра.'));
       cards.append(box);
     }
     $('tp-more').hidden=picks.length<=shown;$('tp-more').textContent='Показать ещё · осталось '+Math.max(0,picks.length-shown);
-    $('tp-date').textContent=new Date(data.checked_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow',day:'numeric',month:'long'});
+    const dateFormat={timeZone:'Europe/Moscow',day:'numeric',month:'long'};
+    const start=new Date(data.date+'T12:00:00Z').toLocaleDateString('ru-RU',dateFormat);
+    const end=new Date((data.through_date||data.date)+'T12:00:00Z').toLocaleDateString('ru-RU',dateFormat);
+    $('tp-date').textContent=start===end?start:start+' — '+end;
     $('tp-status').textContent=`${count(picks.length)} · обновлено ${time(data.checked_at)} МСК`;
   }
   async function load(){

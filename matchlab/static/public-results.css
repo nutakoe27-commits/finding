@@ -8,13 +8,8 @@
 :root { --pr-success:#237b53;--pr-loss:#b65046; }
 html[data-theme="dark"] { --pr-success:#82c6a0;--pr-loss:#ed9999; }
 .pr-metric.win-rate>strong,.pr-metric.positive>strong { color:var(--pr-success); }.pr-metric.negative>strong { color:var(--pr-loss); }
-.pr-simulator { display:flex;gap:28px;align-items:center;border-top:1px solid var(--line);padding-top:18px;margin-top:18px; }
-.pr-stake-control { flex:0 0 230px;max-width:100%;min-width:0; }.pr-stake-control label { display:flex;justify-content:space-between;align-items:center;gap:14px;font-size:11px;font-weight:600;color:var(--text); }
-.pr-stake-control output { color:var(--lime);font-size:16px;font-weight:700; }.pr-stake-control input[type="range"] { display:block;accent-color:var(--lime);width:100%;min-height:28px;margin:8px 0 0;padding:0;cursor:pointer; }
-.pr-range-ends { display:flex;justify-content:space-between;font-size:10px;color:var(--muted); }
-.pr-simulation-note { max-width:84ch;margin:0;color:var(--muted);font-size:11px;line-height:1.8; }.pr-simulator-history { padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel); }
+.pr-metric.accuracy>.pr-label { font-weight:700;color:var(--text); }
 .pr-answer-decision { font-weight:700; }
-@media(max-width:700px) { .pr-simulator { flex-direction:column;gap:14px;align-items:stretch; }.pr-stake-control { flex-basis:auto;width:100%; }.pr-simulation-note { font-size:11px; } }
 #results-widget-note { margin:16px 0 0;font-size:11px;color:var(--muted);line-height:1.7; }
 .pr-tools { display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:24px 0 16px; }.pr-tools select { min-height:42px;max-width:100%;padding:10px 28px 10px 12px;border:1px solid var(--line);background:var(--panel);color:var(--text); }.pr-tools p { margin:0;font-size:11px;color:var(--muted); }
 .pr-chart-panel { margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:16px;background:var(--panel); }.pr-chart-panel h2 { font-size:19px;margin:0 0 12px; }.pr-chart { height:150px;display:flex;align-items:stretch;gap:5px;margin:24px 0 8px; }.pr-chart>p { align-self:center; }

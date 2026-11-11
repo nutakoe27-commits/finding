@@ -142,6 +142,7 @@ def summarize(cases):
     priced=[c for c in bets if c['paper_profit'] is not None]
     staked=sum(c['paper_stake'] for c in priced);profit=sum(c['paper_profit'] for c in priced)
     hits=sum(c['preference_hit'] for c in predictions);wins=sum(c['bet_won'] for c in bets)
+    quoted=[c['odds'] for c in cases if c['decision']=='bet' and number(c.get('odds'),1.0000001,100000)]
     return {'fixtures':len(cases),'settled':len(completed),'pending':sum(c['state']=='pending' for c in cases),
         'unresolved':sum(c['state']=='unresolved' for c in cases),'preferences':len(predictions),'hits':hits,
         'accuracy':hits/len(predictions) if predictions else None,'bets':len(bets),'bet_wins':wins,'bet_losses':len(bets)-wins,
@@ -151,7 +152,7 @@ def summarize(cases):
         'skip_unassessed':sum(c['decision_result']=='no_preference' for c in skips),
         'bet_coverage':len(bets)/len(completed) if completed else None,
         'priced_bets':len(priced),'paper_staked':staked,'paper_profit':profit,'paper_bank':100+profit,
-        'flat_profit_units':sum(c['paper_profit']/c['paper_stake'] for c in priced),
+        'average_odds':sum(quoted)/len(quoted) if quoted else None,'average_odds_count':len(quoted),
         'paper_roi':profit/staked if staked else None}
 
 

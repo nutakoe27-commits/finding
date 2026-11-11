@@ -35,13 +35,16 @@ class TodayPicksTests(unittest.TestCase):
     def update(self,item):
         with self.repo.connection() as db:db.execute('UPDATE event_analyses SET payload=? WHERE id=?',(json.dumps(item),item['id']))
 
-    def test_today_only_system_ready_upcoming_bets_and_never_skip_or_preference(self):
+    def test_today_and_tomorrow_only_system_ready_upcoming_bets_and_never_skip_or_preference(self):
         bet=self.save();skip=self.save(decision='skip',preference='away',price=3.5)
         self.save(origin='human');self.save(engine='model_error');self.save(engine='data_guard')
-        self.save(kickoff=self.now+timedelta(days=1));self.save(kickoff=self.now-timedelta(minutes=10),at=self.now-timedelta(minutes=20))
+        tomorrow=self.save(kickoff=self.now+timedelta(days=1));self.save(kickoff=self.now+timedelta(days=2))
+        self.save(kickoff=self.now-timedelta(minutes=10),at=self.now-timedelta(minutes=20))
         with patch('matchlab.qwen._completion',side_effect=AssertionError('called model')):
             data=collection(self.repo,now=self.now)
-        self.assertEqual(data['available'],1);self.assertEqual({p['id'] for p in data['picks']},{bet['id']})
+        self.assertEqual(data['available'],2);self.assertEqual({p['id'] for p in data['picks']},{bet['id'],tomorrow['id']})
+        self.assertEqual((data['date'],data['through_date']),('2026-11-11','2026-11-12'))
+        self.assertEqual(detail(self.repo,tomorrow['id'],now=self.now)['id'],tomorrow['id'])
         row=data['picks'][0]
         self.assertNotIn(skip['id'],{p['id'] for p in data['picks']})
         self.assertNotIn('PRIVATE_',json.dumps(data));self.assertNotIn('context',row);self.assertNotIn('token_usage',row)
@@ -58,11 +61,12 @@ class TodayPicksTests(unittest.TestCase):
     def test_moscow_day_can_differ_from_utc_and_started_cards_expire(self):
         self.now=datetime(2026,11,11,21,30,tzinfo=timezone.utc)
         item=self.save(kickoff=self.now+timedelta(minutes=10))
-        self.save(kickoff=datetime(2026,11,12,21,10,tzinfo=timezone.utc))
+        tomorrow=self.save(kickoff=datetime(2026,11,12,21,10,tzinfo=timezone.utc))
+        self.save(kickoff=datetime(2026,11,13,21,10,tzinfo=timezone.utc))
         before=collection(self.repo,now=self.now)
-        self.assertEqual(before['date'],'2026-11-12');self.assertEqual(before['total'],1)
+        self.assertEqual((before['date'],before['through_date']),('2026-11-12','2026-11-13'));self.assertEqual(before['total'],2)
         later=self.now+timedelta(minutes=11)
-        self.assertEqual(collection(self.repo,now=later)['total'],0)
+        self.assertEqual([row['id'] for row in collection(self.repo,now=later)['picks']],[tomorrow['id']])
         self.assertTrue(detail(self.repo,item['id'],now=later)['started'])
 
     def test_stale_future_or_different_event_quotes_cannot_be_published(self):
@@ -74,6 +78,15 @@ class TodayPicksTests(unittest.TestCase):
                 else:q['external_id']='another-match';q['home']='Чужая команда'
                 self.update(item)
         self.assertEqual(collection(self.repo,now=self.now)['total'],0)
+
+    def test_today_tomorrow_window_crosses_year_boundary_in_moscow(self):
+        self.now=datetime(2026,12,31,20,59,tzinfo=timezone.utc)
+        first=self.save(kickoff=datetime(2026,12,31,21,0,tzinfo=timezone.utc))
+        last=self.save(kickoff=datetime(2027,1,1,20,59,tzinfo=timezone.utc))
+        self.save(kickoff=datetime(2027,1,1,21,0,tzinfo=timezone.utc))
+        data=collection(self.repo,now=self.now)
+        self.assertEqual((data['date'],data['through_date']),('2026-12-31','2027-01-01'))
+        self.assertEqual({p['id'] for p in data['picks']},{first['id'],last['id']})
 
     def test_first_system_answer_is_not_replaced_with_a_better_filtered_price(self):
         first=self.save(price=1.8)
@@ -97,10 +110,12 @@ class TodayPicksTests(unittest.TestCase):
             self.assertEqual(response.status_code,200);self.assertEqual(response.json()['total'],1)
             self.assertNotIn('selection_label',response.json()['picks'][0]);self.assertNotIn('blocks',response.json()['picks'][0])
             self.assertNotIn('home',response.json()['picks'][0]['event']);self.assertNotIn('away',response.json()['picks'][0]['event'])
+            self.assertNotIn('competition',response.json()['picks'][0]['event'])
             self.assertEqual(response.headers['cache-control'],'no-store')
             saved=client.get('/api/results/'+item['id']);self.assertEqual(saved.status_code,200)
             self.assertTrue(saved.json()['today_pick']);self.assertEqual(saved.json()['decision'],'bet')
             self.assertEqual(saved.json()['event']['home'],item['event']['home'])
+            self.assertEqual(saved.json()['event']['competition'],item['event']['competition'])
             self.assertEqual(client.get('/api/results/'+skip['id']).status_code,404)
             self.assertEqual(client.get('/api/picks/today?min_odds=4&max_odds=2').status_code,422)
             self.assertEqual(client.get('/api/admin/verdict-outcomes').status_code,401)

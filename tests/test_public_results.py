@@ -43,6 +43,7 @@ class PublicResultsTests(unittest.TestCase):
         changed['context']['neural_verdict']['odds']=2.4;self.update(changed)
         data=report(self.repo)
         self.assertEqual((data['metrics']['decisions'],data['metrics']['matches'],data['metrics']['won']),(2,1,2))
+        self.assertAlmostEqual(data['metrics']['average_odds'],2.2)
         self.assertEqual({row['id'] for row in data['matches']},{first['id'],changed['id']})
         self.assertNotIn(same['id'],{row['id'] for row in data['matches']})
 
@@ -86,24 +87,20 @@ class PublicResultsTests(unittest.TestCase):
             for query in ('offset=-1','limit=1000','sport=not_supported'):
                 self.assertEqual(client.get('/api/results?'+query).status_code,422)
 
-    def test_simulation_uses_fixed_initial_capital_and_prices_not_original_risk_sizes(self):
-        win=self.save(score='2:0')
+    def test_average_odds_includes_losses_and_pending_bets_and_is_independent_of_page_or_stake(self):
+        self.save(score='2:0')
         other=self.save(score='2:0');other['context']['neural_input']['quote']['odds']['home']=2.4
         other['context']['neural_verdict']['odds']=2.4;other['context']['neural_verdict']['stake_percent']=.5;self.update(other)
         self.save(preference='away',score='2:0');self.save(score=None);self.save(decision='skip')
-        data=report(self.repo,limit=1);sim=data['simulation']
-        # Net return of a one-unit stake: +1 +1.4 -1 = +1.4, regardless
-        # of the original .25%/.5% risk sizes or which page is requested.
-        self.assertEqual((sim['initial_bank'],sim['settled_bets'],sim['pending_bets']),(10000,3,1))
-        first,last=sim['scenarios'][0],sim['scenarios'][-1]
-        self.assertEqual((first['stake'],first['profit'],first['final_bank']),(500,700,10700))
-        self.assertAlmostEqual(first['bank_return'],.07)
-        self.assertEqual((last['stake'],last['profit'],last['final_bank']),(1000,1400,11400))
-        self.assertEqual(detail(self.repo,win['id'])['stake_percent'],.25)
+        data=report(self.repo,limit=1);m=data['metrics']
+        self.assertEqual((m['decisions'],m['settled'],m['average_odds_count']),(4,3,4))
+        self.assertAlmostEqual(m['average_odds'],(2+2.4+3.5+2)/4)
+        self.assertEqual(m['average_odds'],report(self.repo,offset=1,limit=1)['metrics']['average_odds'])
+        self.assertNotIn('simulation',data);self.assertFalse(any(key.startswith('paper_') for key in m))
 
-    def test_empty_simulation_is_unknown_and_losing_history_keeps_a_negative_result(self):
+    def test_no_average_is_unknown_but_a_pending_recommendation_already_has_a_price(self):
+        self.assertIsNone(report(self.repo)['metrics']['average_odds'])
         self.save(score=None)
-        self.assertIsNone(report(self.repo)['simulation']['scenarios'][0]['bank_return'])
-        self.save(preference='away',score='2:0')
-        loss=report(self.repo)['simulation']['scenarios'][0]
-        self.assertEqual((loss['profit'],loss['final_bank'],loss['bank_return']),(-500,9500,-.05))
+        m=report(self.repo)['metrics']
+        self.assertEqual((m['average_odds'],m['average_odds_count']),(2,1))
+        self.assertIsNone(m['win_rate'])
