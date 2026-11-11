@@ -57,6 +57,57 @@ class VerdictOutcomesTests(unittest.TestCase):
             archive_result(self.repo,saved['event'],'0:2','one')
             r=self.report();self.assertEqual(r['metrics']['bet_losses'],1);self.assertEqual(r['metrics']['paper_profit'],-.25)
 
+    def set_delivery(self,*,received=None,snapshot=None,cursor=10,sent=10):
+        value={'last_snapshot_at':snapshot or self.now.isoformat(),'source_cursor':cursor,'sent_cursor':sent}
+        with self.repo.connection() as db:
+            db.execute('INSERT OR REPLACE INTO archive_status VALUES (1,?,?)',(json.dumps(value),received or self.now.isoformat()))
+
+    def test_stopped_delivery_is_distinct_from_report_recalculation(self):
+        forecast(self.repo,score=None)
+        old=(self.now-timedelta(hours=18)).isoformat()
+        self.set_delivery(received=old,snapshot=old)
+        r=self.report()
+        self.assertEqual(r['checked_at'],self.now.isoformat())
+        self.assertEqual(r['archive_health']['state'],'disconnected')
+        self.assertEqual(r['archive_health']['last_delivery_at'],old)
+        self.assertEqual(r['matches'][0]['pending_reason'],'archive_delivery_stopped')
+        self.assertEqual(r['metrics']['settled'],0)
+        self.assertIsNone(r['metrics']['accuracy'])
+
+    def test_restored_delivery_and_arriving_result_settle_existing_forecast(self):
+        saved=forecast(self.repo,score=None)
+        self.set_delivery(received=(self.now-timedelta(hours=18)).isoformat())
+        self.assertEqual(self.report()['metrics']['pending'],1)
+        self.set_delivery()
+        r=self.report()
+        self.assertEqual(r['archive_health']['state'],'ready')
+        self.assertEqual(r['matches'][0]['pending_reason'],'result_not_received')
+        with patch('matchlab.qwen._completion',side_effect=AssertionError('model called')):
+            archive_result(self.repo,saved['event'],'2:0','one')
+            r=self.report()
+        self.assertEqual(r['metrics']['bet_wins'],1)
+        self.assertEqual(r['matches'][0]['actual_score'],'2:0')
+        self.assertNotIn('pending_reason',r['matches'][0])
+
+    def test_source_staleness_and_backlog_have_separate_diagnostics(self):
+        forecast(self.repo,score=None)
+        self.set_delivery(snapshot=(self.now-timedelta(minutes=4)).isoformat())
+        r=self.report()
+        self.assertEqual(r['archive_health']['state'],'source_stale')
+        self.assertEqual(r['matches'][0]['pending_reason'],'archive_source_stale')
+        self.set_delivery(cursor=100,sent=90)
+        r=self.report()
+        self.assertEqual(r['archive_health']['state'],'catching_up')
+        self.assertEqual(r['archive_health']['sent_cursor'],90)
+        self.assertEqual(r['metrics']['pending'],1)
+
+    def test_missing_delivery_status_does_not_discard_existing_results(self):
+        forecast(self.repo)
+        r=self.report()
+        self.assertEqual(r['archive_health']['state'],'unknown')
+        self.assertIsNone(r['archive_health']['last_delivery_at'])
+        self.assertEqual(r['metrics']['bet_wins'],1)
+
     def test_earliest_forecast_is_kept_across_users_and_tolerated_clock_updates(self):
         first=forecast(self.repo,preference='away')
         later=deepcopy(first['event']);later['kickoff_at']=(datetime.fromisoformat(later['kickoff_at'])+timedelta(seconds=29)).isoformat()

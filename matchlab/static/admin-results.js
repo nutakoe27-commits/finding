@@ -91,6 +91,7 @@ window.AdminResults = (() => {
         cells[0].append(node('strong','ar-match-name',`${c.event.home} — ${c.event.away}`),node('span','ar-sub',c.event.competition),node('span','ar-sub',when(c.event.kickoff_at)+' МСК'));
         cells[1].append(node('span','',c.preference_label||'Не выбрана'),node('small','ar-sub',c.version));
         cells[2].append(node('strong','ar-score',c.actual_score||'—'));
+        if(c.state==='pending')cells[2].append(node('small','ar-sub',c.pending_reason==='archive_delivery_stopped'?'Нет обновлений архива':c.pending_reason==='archive_source_stale'?'Данные источника устарели':'Итог ещё не получен'));
         cells[3].append(c.preference_hit===null?pill(c.state==='settled'?'Не оценено':'Ожидаем итог'):pill(c.preference_hit?'Совпало':'Не совпало',c.preference_hit?'win':'loss'));
         cells[4].append(pill(c.decision==='bet'?'Ставить':'Пропустить',c.decision==='bet'?'avoid':'neutral'));
         if(c.decision==='bet')cells[4].append(node('small','ar-sub',c.paper_stake==null?'Виртуальный расчёт недоступен':`${fmt(c.paper_stake,3)} ед. · кф. ${fmt(c.odds,3)}`));
@@ -124,7 +125,11 @@ window.AdminResults = (() => {
       const d=await Account.api('/api/admin/verdict-outcomes?'+params,{signal:controller.signal});if(epoch!==serial||!visible())return;
       last=d;offset=d.offset;options($('ar-version'),[['','Все версии'],...d.versions.map(v=>[v,v])],d.version);
       $('ar-report-field').hidden=d.source!=='trials';options($('ar-report'),d.reports.map(r=>[r.id,r.id]),d.report_id);
-      $('ar-diagnostic').hidden=!d.diagnostic_only;$('ar-updated').textContent='Проверено '+when(d.checked_at)+' МСК';
+      $('ar-diagnostic').hidden=!d.diagnostic_only;$('ar-updated').textContent='Отчёт пересчитан '+when(d.checked_at)+' МСК';
+      const health=d.archive_health||{},notice=$('ar-sync-health');root.dataset.archiveState=health.state||'unknown';
+      notice.hidden=health.state==='ready'||!health.state;
+      const delivery=health.last_delivery_at?' Последняя доставка: '+when(health.last_delivery_at)+' МСК.':'';
+      notice.textContent=health.state==='disconnected'?'Архив не обновляется: нет связи со сборщиком.'+delivery+' Новые итоги не поступают; ожидающие матчи пока не оцениваются.':health.state==='source_stale'?'Доставка работает, но источник давно не обновлял данные.'+delivery:health.state==='catching_up'?'Передача накопленных результатов ещё продолжается.'+delivery:'Статус доставки архива ещё не получен. Показаны только сохранённые итоги.';
       metrics(d);chart($('ar-accuracy-chart'),d.daily,'cumulative_accuracy',{percentage:true,hasData:d.metrics.preferences>0});
       chart($('ar-bank-chart'),d.daily,'cumulative_bank',{hasData:d.metrics.priced_bets>0});decisions(d.metrics);matches(d);exclusions(d);
       $('ar-message').textContent=d.diagnostic_only?'Архивный тест · результаты пересверены с текущим архивом Winline.':'Реальные разборы сайта · автоматическое обновление раз в минуту.';
@@ -142,7 +147,7 @@ window.AdminResults = (() => {
   document.addEventListener('accountchange',()=>{stop();last=null;offset=0;
     for(const id of ['ar-metrics','ar-accuracy-chart','ar-bank-chart','ar-decisions','ar-matches','ar-page','ar-exclusions'])$(id).replaceChildren();
     $('ar-accuracy-value').textContent='—';$('ar-bank-value').textContent='—';$('ar-updated').textContent='Ожидаем проверку';
-    $('ar-message').textContent='';$('ar-export').disabled=true;options($('ar-version'),[['','Все версии']],'');$('ar-report').replaceChildren();
+    $('ar-message').textContent='';$('ar-sync-health').hidden=true;$('ar-sync-health').textContent='';delete root.dataset.archiveState;$('ar-export').disabled=true;options($('ar-version'),[['','Все версии']],'');$('ar-report').replaceChildren();
   });
   window.addEventListener('hashchange',()=>{if(!visible())stop();});
   document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();else if(visible())load();});

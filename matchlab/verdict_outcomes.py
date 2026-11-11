@@ -151,6 +151,29 @@ def summarize(cases):
         'paper_roi':profit/staked if staked else None}
 
 
+def archive_health(db,current):
+    """Delivery freshness is separate from the time this report was recomputed."""
+    row=db.execute('SELECT payload,received_at FROM archive_status WHERE id=1').fetchone()
+    latest=db.execute('''SELECT received_at,start_at FROM archive_latest_results
+        WHERE sport_id=1 ORDER BY julianday(received_at) DESC LIMIT 1''').fetchone()
+    value=json.loads(row['payload']) if row else {}
+    delivered=row['received_at'] if row else None
+    snapshot=value.get('last_snapshot_at')
+    def elapsed(at):
+        try:return max(0,(current-instant(at)).total_seconds())
+        except (ValueError,TypeError):return None
+    delivery_age=elapsed(delivered);snapshot_age=elapsed(snapshot)
+    if not row:state='unknown'
+    elif delivery_age is None or delivery_age>=90:state='disconnected'
+    elif snapshot_age is None or snapshot_age>45:state='source_stale'
+    elif value.get('sent_cursor',0)<value.get('source_cursor',0):state='catching_up'
+    else:state='ready'
+    return {'state':state,'last_delivery_at':delivered,'last_snapshot_at':snapshot,
+        'latest_result_received_at':latest['received_at'] if latest else None,
+        'latest_result_kickoff_at':db.execute('SELECT max(start_at) FROM archive_latest_results WHERE sport_id=1').fetchone()[0],
+        'source_cursor':value.get('source_cursor'),'sent_cursor':value.get('sent_cursor')}
+
+
 def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=0,limit=25,report_dir=None,now=None):
     if days not in (7,30,90) or source not in ('site','trials') or state not in ('all','settled','pending','unresolved','bet','skip'):
         raise ValueError('Некорректные фильтры результатов.')
@@ -187,6 +210,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
         from .winline_backtest import results
         try:truth,invalid_results=results(db)
         except ValueError:truth=[];invalid_results={}
+        health=archive_health(db,current)
     by_identity=defaultdict(list)
     for t in truth:by_identity[(norm(t['home']),norm(t['away']),norm(t['competition']))].append(t)
     cases=[]
@@ -198,6 +222,8 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
             'decision':v['decision'],'state':'pending','actual_score':None,'actual_outcome':None,
             'preference_hit':None,'bet_won':None,'decision_result':'pending','paper_stake':None,'paper_profit':None,
             'reason':clean_reason(v),'odds':v.get('odds') if v['decision']=='bet' else None}
+        if not matches:
+            c['pending_reason']='archive_delivery_stopped' if health['state']=='disconnected' else 'archive_source_stale' if health['state']=='source_stale' else 'result_not_received'
         from .token_analytics import usage_summary
         c['token_usage']=usage_summary(row['generation'].get('token_usage'),model_calls=row['generation'].get('model_calls'))
         if len(matches)>1:c.update(state='unresolved',decision_result='ambiguous_result')
@@ -223,6 +249,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
     filtered=[c for c in reversed(cases) if state=='all' or c['state']==state or c['decision']==state]
     return {'format':'matchlab.verdict-outcomes.v1','checked_at':current.isoformat(),'timezone':'Europe/Moscow','days':days,
         'source':source,'diagnostic_only':source=='trials','selection':'first_valid_prematch_forecast_per_fixture_in_selected_version',
+        'archive_health':health,
         'version':version,'versions':versions,'reports':inventory,'report_id':selected_report,
         'metrics':summarize(cases),'daily':daily,'excluded':dict(excluded),'excluded_archive_results':invalid_results,
         'matches':filtered[offset:offset+limit],'total':len(filtered),'offset':offset,'limit':limit,

@@ -20,8 +20,8 @@
   <script src="/static/featured-events.js?v=20261111-ux3" defer></script>
   <script src="/static/product.js?v=20261111-ux3" defer></script>
   <script src="/static/app.js?v=20261111-ux3" defer></script>
-  <link rel="stylesheet" href="/static/admin-results.css?v=20261110-results1" />
-  <script src="/static/admin-results.js?v=20261110-results1" defer></script>
+  <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync1" />
+  <script src="/static/admin-results.js?v=20261111-sync1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
   <script src="/static/admin.js?v=20261111-product2" defer></script>
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
@@ -402,6 +402,7 @@
           <div class="ar-hero"><div><p class="eyebrow">ОТ ПРОГНОЗА К РЕЗУЛЬТАТУ</p><h2>Как сыграли решения ИИ</h2><p>Проверяем выбор команды и решение о ставке по завершённым матчам.</p></div><div class="ar-sync"><span class="ar-live-dot" aria-hidden="true"></span><span id="ar-updated">Ожидаем проверку</span></div></div>
           <div class="ar-filters"><label>Матчи за период<select id="ar-days"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select></label><label>Источник<select id="ar-source"><option value="site">Разборы сайта</option><option value="trials">Архивные тесты</option></select></label><label>Версия ИИ<select id="ar-version"><option value="">Все версии</option></select></label><label id="ar-report-field" hidden>Сохранённый прогон<select id="ar-report"></select></label><button id="ar-export" class="text-button" type="button" disabled>Отчёт JSON ↓</button></div>
           <p id="ar-message" class="account-message" role="status"></p>
+          <p id="ar-sync-health" class="notice ar-sync-health" role="status" hidden></p>
           <p id="ar-diagnostic" class="notice" hidden>Ретроспективный тест на сохранённом входе. Эти решения получены после событий и не входят в статистику реальных предматчевых разборов сайта.</p>
           <div id="ar-metrics" class="ar-metrics"></div>
           <div class="ar-chart-grid">

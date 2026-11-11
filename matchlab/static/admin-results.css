@@ -73,3 +73,6 @@ html[data-theme="light"] #admin-results,html[data-theme="light"] #admin-tokens {
 .tk-daily-bars { height:210px;display:flex;gap:3px;align-items:end;border-bottom:1px solid var(--line);margin:15px 0 10px; }.tk-day { height:190px;min-width:0;flex:1;display:flex;flex-direction:column;justify-content:end;padding:0;border:0;background:none;border-radius:3px 3px 0 0;overflow:hidden; }.tk-day:hover { opacity:.7; }.tk-input { background:var(--lime); }.tk-output { background:var(--blue); }.tk-day span { display:block;min-height:0;flex-shrink:0; }
 .tk-legend { display:flex;gap:15px;flex-wrap:wrap;font-size:11px;line-height:1.7; }.tk-legend-input { color:var(--lime); }.tk-legend-output { color:var(--blue); }.tk-count { font-variant-numeric:tabular-nums;white-space:nowrap; }
 @media(prefers-reduced-motion:reduce) { #admin-tokens { animation:none; } }
+
+#admin-results:not([data-archive-state="ready"]) .ar-live-dot { background:var(--amber);box-shadow:0 0 0 4px color-mix(in srgb,var(--amber) 12%,transparent); }
+.ar-sync-health { margin:0 0 22px;line-height:1.8;font-size:13px; }
