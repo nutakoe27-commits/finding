@@ -40,7 +40,7 @@ window.FeaturedEvents=(()=>{
         for(const o of outcomes){const tile=node('div');tile.append(node('span','',o.name),node('b','',o.state==='open'&&Number.isFinite(o.odds)?o.odds.toFixed(2):'—'));odds.append(tile);}
       }else odds.append(node('span','small muted','Коэффициенты — на странице матча'));
       const bottom=node('div','featured-bottom'),ai=node('button','featured-ai','Разбор ИИ');ai.type='button';ai.dataset.featured='ai-'+e.source_event_id;
-      const unsupported=p.neural&&(e.phase!=='prematch'||e.sport!=='football');
+      const unsupported=p.neural&&(e.phase!=='prematch'||!p.supported?.(e));
       if(unsupported)ai.textContent='Открыть матч';
       ai.addEventListener('click',()=>{if(unsupported)location.hash=p.route(e);else p.onAI(e);});bottom.append(node('span','featured-freshness',e.is_stale?'Данные требуют обновления':e.phase==='live'?'Матч идёт':'До начала матча'),ai);
       card.append(top,main,timing,odds,bottom);return card;

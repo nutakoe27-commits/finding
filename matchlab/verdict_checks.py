@@ -121,7 +121,7 @@ def semantic_issues(wording,field,packet,ids,preference):
                     actual_relation=actual,claimed_relation=expected,values={subject:a,other:b},
                     source_fact_ids=[pair[s]['id'] for s in ('home','away')])
         large=re.search(r'крупн\w*\s+(?:поражен\w*|проигр\w*)',clause,re.I)
-        if large and not negated_claim(clause,large.start(),large.end()):
+        if packet['event'].get('sport')=='football' and large and not negated_claim(clause,large.start(),large.end()):
             # A nearby victory's score must not be attributed to this defeat.
             score=re.match(r'\s*(?:со\s+сч[её]том\s*)?[«"(]?\s*(\d{1,2})\s*[:：]\s*(\d{1,2})(?!\d)',clause[large.end():],re.I)
             named=mentioned_sides(clause[:large.start()],patterns)
@@ -140,6 +140,10 @@ def semantic_issues(wording,field,packet,ids,preference):
                 break
     if field=='reason' and preference and re.search(r'(?:не\s+позволяет|нельзя|невозможно)\s+выбрать\s+сторону(?=\s*(?:[.!?;]|$))',wording,re.I):
         issue('chosen_preference_is_not_absence_of_preference',preference=preference)
+    if packet.get('policy',{}).get('draw_possible') is False and re.search(r'риск\w*\s+ничь|возможн\w*\s+ничь|ничья\s+возможна',wording,re.I):
+        issue('draw_not_in_selected_market')
+    if packet['event'].get('sport') in ('tennis','basketball','table_tennis','volleyball') and re.search(r'(?<!\w)(?:гол(?:а|ов|ы|ами)?|шайб\w*)(?!\w)',wording,re.I):
+        issue('score_unit_does_not_match_sport')
     if field=='market_context':
         for clause in clauses:
             cause=re.search(r'(?:коэффициент\w*|лини[яию]).{0,80}\b(?:учитыва\w*|обусловлен\w*|объясняется)',clause,re.I)

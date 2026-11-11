@@ -55,9 +55,9 @@ class VerdictRecoveryTests(unittest.TestCase):
         self.assertEqual(v['engine'],'data_guard');self.assertIn('Претендент: Никто.',render(v))
 
     def test_live_finished_and_other_sports_have_specific_skip_reasons(self):
-        for change,reason in [('live','live_not_supported'),('finished','finished_event'),('hockey','unsupported_sport')]:
+        for change,reason in [('live','live_not_supported'),('finished','finished_event'),('boxing','unsupported_sport')]:
             p=self.packet()
-            if change=='hockey':p['event']['sport']=change
+            if change=='boxing':p['event']['sport']=change
             else:p['event']['phase']=change
             with self.subTest(change=change),patch('matchlab.qwen._completion',side_effect=AssertionError('called model')):v,g=generate(self.settings,p)
             self.assertEqual(g['reason'],reason);self.assertEqual(g['model_calls'],0);self.assertIsNone(v['preference'])

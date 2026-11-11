@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from .bookmakers import instant
 from .chances import norm
+from .verdict_sports import PROFILES,capabilities
 
 MSK=ZoneInfo('Europe/Moscow')
 REPORT_NAME=re.compile(r'neural-verdict[\w.-]{0,160}\.json',re.ASCII)
@@ -94,7 +95,9 @@ def prepare_record(record,current):
     try:
         kickoff=instant(e['kickoff_at']);at=instant(record['forecast_at']);input_at=instant(record['input_at'])
         if not all(isinstance(e.get(k),str) and e[k].strip() for k in ('home','away','competition')):return None,'invalid_record'
-        if e.get('sport')!='football':return None,'other_sport'
+        sport=e.get('sport');profile=PROFILES.get(sport)
+        if not profile:return None,'other_sport'
+        if sport!='football' and v.get('scope')!=profile.scope:return None,'unsupported_settlement_scope'
         if e.get('phase')!='prematch' or at>=kickoff:return None,'not_prematch'
         if input_at>at or at>current:return None,'invalid_time'
         q=record.get('quote')
@@ -111,9 +114,9 @@ def prepare_record(record,current):
         preference=v.get('preference')
         if preference not in ('home','away',None):return None,'invalid_record'
         if v['decision']=='bet' and (preference is None or v.get('selection')!=preference):return None,'invalid_record'
-        identity=(norm(e['home']),norm(e['away']),norm(e['competition']),kickoff)
-        if identity[0]==identity[1]:return None,'invalid_record'
-        return {**record,'event':{k:e.get(k) for k in ('source_event_id','home','away','competition','kickoff_at')},
+        identity=(sport,norm(e['home']),norm(e['away']),norm(e['competition']),kickoff)
+        if identity[1]==identity[2]:return None,'invalid_record'
+        return {**record,'event':{k:e.get(k) for k in ('source_event_id','sport','home','away','competition','kickoff_at')},
             'at':at,'kickoff':kickoff,'identity':identity,'version':str(v.get('version') or 'legacy')[:80]},None
     except (KeyError,ValueError,TypeError,OverflowError):return None,'invalid_record'
 
@@ -155,7 +158,7 @@ def archive_health(db,current):
     """Delivery freshness is separate from the time this report was recomputed."""
     row=db.execute('SELECT payload,received_at FROM archive_status WHERE id=1').fetchone()
     latest=db.execute('''SELECT received_at,start_at FROM archive_latest_results
-        WHERE sport_id=1 ORDER BY julianday(received_at) DESC LIMIT 1''').fetchone()
+        ORDER BY julianday(received_at) DESC LIMIT 1''').fetchone()
     value=json.loads(row['payload']) if row else {}
     delivered=row['received_at'] if row else None
     snapshot=value.get('last_snapshot_at')
@@ -170,13 +173,14 @@ def archive_health(db,current):
     else:state='ready'
     return {'state':state,'last_delivery_at':delivered,'last_snapshot_at':snapshot,
         'latest_result_received_at':latest['received_at'] if latest else None,
-        'latest_result_kickoff_at':db.execute('SELECT max(start_at) FROM archive_latest_results WHERE sport_id=1').fetchone()[0],
+        'latest_result_kickoff_at':db.execute('SELECT max(start_at) FROM archive_latest_results').fetchone()[0],
         'source_cursor':value.get('source_cursor'),'sent_cursor':value.get('sent_cursor')}
 
 
-def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=0,limit=25,report_dir=None,now=None):
+def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='',offset=0,limit=25,report_dir=None,now=None):
     if days not in (7,30,90) or source not in ('site','trials') or state not in ('all','settled','pending','unresolved','bet','skip'):
         raise ValueError('Некорректные фильтры результатов.')
+    if sport and sport not in PROFILES:raise ValueError('Неподдерживаемый вид спорта.')
     if not isinstance(version,str) or len(version)>80 or type(offset) is not int or not 0<=offset<=100000 or type(limit) is not int or not 1<=limit<=100:
         raise ValueError('Некорректная страница результатов.')
     current=now or datetime.now(timezone.utc);today=current.astimezone(MSK).date()
@@ -194,6 +198,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
                 # Count exclusions only for fixtures in this visible period.
                 date=instant(raw['event']['kickoff_at']).astimezone(MSK).date()
                 if not dates[0]<=date<=today:continue
+                if sport and raw['event'].get('sport')!=sport:continue
                 row,why=prepare_record(raw,current)
                 if why:excluded[why]+=1
                 else:prepared.append(row)
@@ -203,22 +208,29 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
         by_fixture=defaultdict(list)
         for row in sorted(prepared,key=lambda r:(r['at'],r['id'])):
             if version and row['version']!=version:continue
-            if any(abs((old['kickoff']-row['kickoff']).total_seconds())<=120 for old in by_fixture[row['identity'][:3]]):
+            if any(abs((old['kickoff']-row['kickoff']).total_seconds())<=120 for old in by_fixture[row['identity'][:4]]):
                 excluded['duplicate_forecast']+=1;continue
             cohort[row['identity']]=row
-            by_fixture[row['identity'][:3]].append(row)
+            by_fixture[row['identity'][:4]].append(row)
         from .winline_backtest import results
         try:truth,invalid_results=results(db)
         except ValueError:truth=[];invalid_results={}
+        truth=[{**t,'sport':'football'} for t in truth]
+        from .multisport_evidence import archive_results
+        for kind in {r['event']['sport'] for r in cohort.values()}-{'football'}:
+            extra,rejected=archive_results(db,kind,include_unresolved=True)
+            truth.extend(extra)
+            invalid_results.update({kind+':'+k:v for k,v in rejected.items()})
         health=archive_health(db,current)
     by_identity=defaultdict(list)
-    for t in truth:by_identity[(norm(t['home']),norm(t['away']),norm(t['competition']))].append(t)
+    for t in truth:by_identity[(t['sport'],norm(t['home']),norm(t['away']),norm(t['competition']))].append(t)
     cases=[]
     for row in cohort.values():
         v=row['verdict'];e=row['event'];preference=v.get('preference')
-        matches=[r for r in by_identity[row['identity'][:3]] if abs((r['at']-row['kickoff']).total_seconds())<=120]
+        matches=[r for r in by_identity[row['identity'][:4]] if abs((r['at']-row['kickoff']).total_seconds())<=120]
         c={'id':row['id'],'event':e,'forecast_at':row['at'].isoformat(),'recorded_at':row.get('recorded_at'),
-            'version':row['version'],'preference':preference,'preference_label':e.get(preference) if preference else None,
+            'version':row['version'],'sport_label':PROFILES[e['sport']].label,'market_label':PROFILES[e['sport']].market_label,
+            'preference':preference,'preference_label':e.get(preference) if preference else None,
             'decision':v['decision'],'state':'pending','actual_score':None,'actual_outcome':None,
             'preference_hit':None,'bet_won':None,'decision_result':'pending','paper_stake':None,'paper_profit':None,
             'reason':clean_reason(v),'odds':v.get('odds') if v['decision']=='bet' else None}
@@ -228,7 +240,10 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
         c['token_usage']=usage_summary(row['generation'].get('token_usage'),model_calls=row['generation'].get('model_calls'))
         if len(matches)>1:c.update(state='unresolved',decision_result='ambiguous_result')
         elif len(matches)==1:
-            result=matches[0];h,a=result['goals'];actual='home' if h>a else 'away' if a>h else 'draw'
+            result=matches[0]
+            if result['goals'] is None:
+                c.update(state='unresolved',decision_result='unsupported_result_scope');cases.append(c);continue
+            h,a=result['goals'];actual='home' if h>a else 'away' if a>h else 'draw'
             if row['at']>=result['at']:
                 c.update(state='unresolved',decision_result='forecast_after_actual_kickoff');cases.append(c);continue
             c.update(state='settled',actual_score=f'{h}:{a}',actual_outcome=actual,
@@ -248,7 +263,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',offset=
             'cumulative_bank':bank})
     filtered=[c for c in reversed(cases) if state=='all' or c['state']==state or c['decision']==state]
     return {'format':'matchlab.verdict-outcomes.v1','checked_at':current.isoformat(),'timezone':'Europe/Moscow','days':days,
-        'source':source,'diagnostic_only':source=='trials','selection':'first_valid_prematch_forecast_per_fixture_in_selected_version',
+        'source':source,'sport':sport,'sports':capabilities(),'diagnostic_only':source=='trials','selection':'first_valid_prematch_forecast_per_fixture_in_selected_version',
         'archive_health':health,
         'version':version,'versions':versions,'reports':inventory,'report_id':selected_report,
         'metrics':summarize(cases),'daily':daily,'excluded':dict(excluded),'excluded_archive_results':invalid_results,

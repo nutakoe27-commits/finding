@@ -149,7 +149,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         archive_state=archive.overview(repo)
-        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured,"analysis_mode":settings.event_analysis_mode},
+        from .verdict_sports import capabilities
+        return {"data": repo.status(), "qwen": {"configured": settings.qwen_configured}, "ai": {"configured": settings.qwen_configured,"analysis_mode":settings.event_analysis_mode,"verdict_sports":capabilities()},
                 "bookmakers": repo.bookmaker_status(),
                 "archive":archive_state, "live_fixtures": archive_state["available"] and not archive_state["source_stale"], "live_odds": archive_state["available"] and not archive_state["source_stale"]}
 
@@ -536,13 +537,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def event_analysis_inputs(event_id,request,stream):
         from .statistics import analysis_statistics
+        from .verdict_sports import supported
         if not event_id.isdigit() or len(event_id) > 20:
             raise HTTPException(422, "Некорректный ID события.")
         document = archive.document(repo,event_id) if stream else repo.event_markets(event_id)
         if not document:
             raise HTTPException(404, "Матч ещё не собран.")
         unsupported=settings.event_analysis_mode=='neural-verdict' and (document.get('phase')!='prematch' or
-            document.get('sport')!='football' or (document.get('kickoff_at') and instant(document['kickoff_at'])<=datetime.now(timezone.utc)))
+            not supported(document) or (document.get('kickoff_at') and instant(document['kickoff_at'])<=datetime.now(timezone.utc)))
         if not settings.qwen_configured and not unsupported:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         if ((stream and request.content_version and request.content_version!=document.get("content_version")) or
@@ -609,7 +611,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 text=qwen.explain_event(generation_settings or settings,context)
                 ready=(context.get('ai_generation') or {}).get('state')=='ready'
                 payload={'id':uuid4().hex,'generated_at':utc_now(),'event':context['event'],'observed_at':document['observed_at'],
-                    'market_name':'Вердикт по победе команды','text':text,'context':context,
+                    'market_name':context['neural_input']['policy'].get('market_label') or 'Вердикт по победителю','text':text,'context':context,
                     'analysis_type':'neural_verdict' if ready else 'limited_summary'}
                 repo.save_event_analysis(payload,key,user_id=user['id'])
                 http_request.state.limited_summary=not ready

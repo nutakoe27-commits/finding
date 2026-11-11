@@ -56,7 +56,7 @@ async def exercise(base,repo):
                     await expect(page.locator('#explain-button')).to_have_text('Получить вердикт ИИ')
                     await page.locator('#explain-button').click()
                     await expect(page.locator('#explanation')).to_be_visible(timeout=30000)
-                    await expect(page.locator('#explanation .verdict-choice')).to_have_text('Рассмотреть победу команды «Спартак»')
+                    await expect(page.locator('#explanation .verdict-choice')).to_have_text('Рассмотреть победу «Спартак»')
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак')
                     assert await page.locator('#explanation .report-facts li').count()==2
                     assert await page.locator('#explanation .verdict-counterargument').is_visible()
