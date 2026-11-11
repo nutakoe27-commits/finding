@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from pathlib import Path
 import os
 from urllib.parse import urlsplit
@@ -33,6 +33,9 @@ class Settings:
     qwen_market_limit: int = 8
     event_analysis_mode: str = 'independent'
     verdict_max_stake_pct: float = .5
+    billing_enabled: bool = False
+    yookassa_shop_id: str = ''
+    yookassa_secret_key: str = field(default='',repr=False)
 
     @property
     def database(self) -> Path:
@@ -90,6 +93,11 @@ class Settings:
         public_origin=parsed.scheme+'://'+origin_host+(f':{origin_port}' if origin_port and origin_port!=default_port else '')
         daily_limit=int(os.getenv('AI_DAILY_LIMIT','0'))
         if not 0<=daily_limit<=100000:raise ValueError('AI_DAILY_LIMIT должен быть от 0 до 100000.')
+        billing=os.getenv('BILLING_ENABLED','false').strip().lower()
+        if billing not in ('true','false'):raise ValueError('BILLING_ENABLED: true или false.')
+        shop=os.getenv('YOOKASSA_SHOP_ID','').strip();secret=os.getenv('YOOKASSA_SECRET_KEY','').strip()
+        if billing=='true' and (not shop.isdigit() or not secret.startswith('test_')):
+            raise ValueError('Для тестовых платежей нужны Shop ID и тестовый ключ ЮKassa.')
         return cls(
             data_dir=Path(os.getenv("MATCHLAB_DATA_DIR", str(ROOT / ".local"))),
             qwen_base_url=os.getenv("QWEN_BASE_URL", "").rstrip("/"),
@@ -111,4 +119,5 @@ class Settings:
             qwen_job_timeout=job_timeout,
             qwen_market_limit=market_limit,
             event_analysis_mode=analysis_mode,verdict_max_stake_pct=stake_limit,
+            billing_enabled=billing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
         )

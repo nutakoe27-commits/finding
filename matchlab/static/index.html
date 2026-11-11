@@ -15,14 +15,15 @@
   <link rel="stylesheet" href="/static/style.css?v=20261110-verdict3" />
   <script src="/static/metrika.js?v=20261109-metrika1" defer></script>
   <script src="/static/privacy.js?v=20261109-metrika1" defer></script>
-  <script src="/static/account.js?v=20261111-ux3" defer></script>
+  <script src="/static/account.js?v=20261111-payments1" defer></script>
   <link rel="stylesheet" href="/static/featured-events.css?v=20261111-source2" />
   <script src="/static/featured-events.js?v=20261111-sports1" defer></script>
   <script src="/static/product.js?v=20261111-public1" defer></script>
   <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
-  <script src="/static/today-picks.js?v=20261111-today4" defer></script>
-  <script src="/static/public-results.js?v=20261111-odds1" defer></script>
-  <script src="/static/app.js?v=20261111-public1" defer></script>
+  <script src="/static/today-picks.js?v=20261111-payments1" defer></script>
+  <script src="/static/credits.js?v=20261111-payments1" defer></script>
+  <script src="/static/public-results.js?v=20261111-payments1" defer></script>
+  <script src="/static/app.js?v=20261111-payments1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
   <script src="/static/admin-results.js?v=20261111-system-results1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
@@ -31,6 +32,7 @@
   <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
   <link rel="stylesheet" href="/static/public-results.css?v=20261111-odds1" />
   <link rel="stylesheet" href="/static/today-picks.css?v=20261111-today4" />
+  <link rel="stylesheet" href="/static/credits.css?v=20261111-payments1" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -50,7 +52,7 @@
     </div>
   </aside>
   <main id="main-content" tabindex="-1">
-    <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span><a id="admin-link" href="#admin" hidden>Управление</a><button id="account-button" class="account-button" type="button">Войти</button></div></header>
+    <header class="topbar"><span id="breadcrumb">Обзор / Футбол</span><div class="topbar-actions"><button id="guide-toggle" class="guide-toggle" type="button" aria-controls="quick-guide" aria-expanded="false"><span aria-hidden="true">?</span> Как это работает</button><span class="timezone-label">Время матчей · МСК</span><a id="admin-link" href="#admin" hidden>Управление</a><button id="credits-open" class="credits-header" type="button" hidden>Купить разборы</button><button id="account-button" class="account-button" type="button">Войти</button></div></header>
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
       <section id="results-widget" class="results-widget" aria-labelledby="results-widget-title">
@@ -407,6 +409,7 @@
       <div id="account-content" hidden>
         <div class="account-summary panel"><div><span class="eyebrow">АККАУНТ</span><h2 id="account-name"></h2><p id="account-usage" class="muted"></p></div><button id="account-logout" class="secondary-button" type="button">Выйти</button></div>
         <p id="account-message" class="account-message" role="status"></p>
+        <article id="account-wallet" class="panel ym-hide-content" hidden><div class="account-credit-header"><div><span class="eyebrow">ДОСТУП К ОТВЕТАМ ИИ</span><h2 id="account-credit-balance">0 разборов</h2></div><button id="account-credit-buy" class="primary-button" type="button">Купить разборы</button></div><p class="small muted">1 разбор открывает один сохранённый ответ. Повторное открытие — бесплатно. Подготовка ответа баланс не расходует. Купленные разборы без срока действия.</p><p class="credit-test-badge">Тестовый магазин · реальные деньги не списываются</p><p id="account-credit-adjustment" class="account-message"></p><h3>Открытые разборы</h3><div id="account-open-analyses"></div><button id="account-open-more" class="text-button" type="button" hidden>Показать ещё</button><h3>Покупки</h3><div id="account-credit-orders"></div></article>
         <div class="account-grid">
           <article class="panel"><span class="eyebrow">БОНУСЫ</span><h2 id="account-bonus">Бонусные разборы</h2><p id="account-bonus-note" class="small muted"></p><form id="promo-redeem-form"><label for="promo-code">Промокод</label><div class="inline-form"><input id="promo-code" maxlength="40" minlength="4" required placeholder="Введите код" autocomplete="off"/><button class="secondary-button" type="submit">Активировать</button></div></form></article>
           <article class="panel"><span class="eyebrow">НА СВЯЗИ</span><h2>Уведомления</h2><p id="push-note" class="muted"></p><label class="push-consent"><input id="push-ad-consent" type="checkbox" /><span>Согласен(а) получать на этом устройстве информационные и рекламные push-уведомления. <a href="/static/legal/advertising-consent.html" target="_blank" rel="noopener">Условия согласия</a></span></label><div class="button-row"><button id="push-enable" class="secondary-button" type="button">Включить на этом устройстве</button><button id="push-disable" class="text-button" type="button" hidden>Отозвать согласие</button></div></article>
@@ -470,9 +473,17 @@
         <div data-admin-panel="audit" hidden><article class="panel"><h2>Журнал действий</h2><p class="muted">Изменения пользователей, промокодов, ссылок и отправки уведомлений.</p><div id="admin-audit" class="admin-table-wrap"></div><div class="pagination"><button id="admin-audit-prev" class="secondary-button" type="button">← Назад</button><button id="admin-audit-next" class="secondary-button" type="button">Дальше →</button></div></article></div>
       </div>
     </section>
-    <footer class="page-footer"><div class="footer-intro"><span class="footer-brand">prognozich <span>ai</span></span><p>Спортивные данные и разборы с ИИ. Прогнозы могут ошибаться и не гарантируют результат.</p><span class="footer-age">18+</span></div><nav class="footer-links" aria-label="Документы и контакты"><div><strong>Документы</strong><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/privacy.html">Политика конфиденциальности</a><a href="/static/legal/consent.html">Согласие на обработку данных</a><a href="/static/legal/cookies.html">Файлы cookie</a><a href="/static/legal/advertising-consent.html">Согласие на push</a><button type="button" id="privacy-settings">Настройки cookie</button></div><div><strong>Контакты</strong><a href="mailto:m@krichigin.ru">m@krichigin.ru</a><span>ИП Кричигин Михаил Олегович</span><span>ИНН 510302739790</span><span>ОГРНИП 325774600131414</span></div></nav><p class="footer-disclaimer">Сервис не принимает ставки. Ссылки на Winline могут быть партнёрскими; переход ведёт на сторонний сайт.</p></footer>
+    <footer class="page-footer"><div class="footer-intro"><span class="footer-brand">prognozich <span>ai</span></span><p>Спортивные данные и разборы с ИИ. Прогнозы могут ошибаться и не гарантируют результат.</p><span class="footer-age">18+</span></div><nav class="footer-links" aria-label="Документы и контакты"><div><strong>Документы</strong><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/test-purchase.html">Тестовая покупка разборов</a><a href="/static/legal/privacy.html">Политика конфиденциальности</a><a href="/static/legal/consent.html">Согласие на обработку данных</a><a href="/static/legal/cookies.html">Файлы cookie</a><a href="/static/legal/advertising-consent.html">Согласие на push</a><button type="button" id="privacy-settings">Настройки cookie</button></div><div><strong>Контакты</strong><a href="mailto:m@krichigin.ru">m@krichigin.ru</a><span>ИП Кричигин Михаил Олегович</span><span>ИНН 510302739790</span><span>ОГРНИП 325774600131414</span></div></nav><p class="footer-disclaimer">Сервис не принимает ставки. Ссылки на Winline могут быть партнёрскими; переход ведёт на сторонний сайт.</p></footer>
   </main>
 
+  <dialog id="credits-dialog" class="credits-dialog ym-hide-content" aria-labelledby="credits-title">
+    <div class="credits-dialog-head"><span class="credit-test-badge">Тестовая оплата · ЮKassa</span><button id="credits-close" class="credits-close" type="button" aria-label="Закрыть покупку">×</button></div>
+    <h2 id="credits-title">Разборы для ваших решений</h2><p class="small muted">Один разбор открывает один сохранённый ответ ИИ. Выбор, аргументы и обоснование остаются доступны в аккаунте.</p>
+    <p class="credits-current">Ваш баланс: <strong id="credits-balance">0</strong></p>
+    <div id="credits-packages-area"><div id="credits-packages" class="credit-packages" role="group" aria-label="Пакеты разборов"></div><label class="credit-consent"><input id="credits-consent" type="checkbox" /><span>Принимаю <a href="/static/legal/test-purchase.html" target="_blank" rel="noopener">условия тестового приобретения разборов</a>. Понимаю, что в тестовом магазине реальные деньги не списываются.</span></label><button id="credits-pay" class="primary-button credits-pay" type="button">Перейти к тестовой оплате</button></div>
+    <section id="credits-order" class="credits-order" hidden><h3 id="credits-order-title"></h3><p id="credits-order-description" class="small muted"></p><div class="button-row"><a id="credits-continue" class="primary-button" href="#" hidden>Продолжить оплату</a><button id="credits-check" class="secondary-button" type="button">Проверить оплату</button><button id="credits-order-open" class="primary-button" type="button" hidden>Открыть прогноз за 1 разбор</button><button id="credits-new-purchase" class="text-button" type="button" hidden>Выбрать другой пакет</button></div></section>
+    <p id="credits-message" class="account-message" role="status"></p><p class="small muted">Оплату подтверждает сервер ЮKassa. Само возвращение на сайт не начисляет разборы. Данные карты вводятся только на странице платёжного сервиса.</p>
+  </dialog>
   <dialog id="ai-dialog" class="ai-dialog" aria-labelledby="ai-dialog-title">
     <header class="ai-dialog-header"><div class="ai-dialog-title"><span class="ai-symbol" aria-hidden="true"><span data-ux-icon="spark"></span></span><div><p class="eyebrow">ВАШ АНАЛИТИК</p><h2 id="ai-dialog-title">Разбор ИИ</h2></div></div><button id="ai-dialog-close" type="button" aria-label="Закрыть разбор">×</button></header>
     <section id="ai-desk" class="ai-desk" aria-label="Разбор спортивного события с ИИ">

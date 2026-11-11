@@ -3,6 +3,9 @@
 .crawler-venv/
 .local/
 .env
+.env.before-yookassa-*
+.env.yookassa-new
+matchlab-before-billing-*.sqlite3
 data/evaluations/neural-verdict*.json
 data/evaluations/neural-verdict*.lock
 __pycache__/

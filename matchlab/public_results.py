@@ -2,7 +2,7 @@
 import json
 import re
 
-from fastapi import HTTPException
+from fastapi import HTTPException,Request
 
 from .verdict_outcomes import run
 
@@ -55,12 +55,37 @@ def answer_blocks(repo,analysis_id):
                  'Сохранённый ответ ИИ до начала матча. Текст не переписан с учётом результата.'}
 
 
-def detail(repo,analysis_id):
+def detail(repo,analysis_id,*,settings=None,user=None):
     if not re.fullmatch(r'[a-f0-9]{32}',analysis_id):raise HTTPException(404,'Прогноз не найден.')
     rows=report(repo,analysis_id=analysis_id,limit=1)['matches']
-    if rows:return {**rows[0],**answer_blocks(repo,analysis_id)}
+    if rows:
+        row=rows[0]
+        from .billing import active,locked
+        if settings and active(repo,settings) and row['state']!='settled':
+            gate=locked(repo,settings,repo.event_analysis(analysis_id=analysis_id),user)
+            if gate:return gate
+        return {**row,**answer_blocks(repo,analysis_id)}
+    if settings:
+        from .billing import active,entitled,ready
+        if active(repo,settings) and entitled(repo,user,analysis_id):
+            with repo.connection() as db:stored=db.execute('SELECT user_id,payload FROM event_analyses WHERE id=?',(analysis_id,)).fetchone()
+            if stored and stored['user_id'] in (user['id'],'__system_featured__'):
+                payload=json.loads(stored['payload']);v=payload.get('context',{}).get('neural_verdict') or {};e=payload.get('event') or {}
+                if ready(payload):
+                    from .verdict_sports import PROFILES
+                    profile=PROFILES.get(e.get('sport'))
+                    return {'id':analysis_id,'event':{k:e.get(k) for k in ('home','away','competition','kickoff_at','sport')},
+                        'forecast_at':payload['generated_at'],'selection_label':e.get(v.get('preference')) or 'Никто',
+                        'market_label':profile.market_label if profile else 'Матч','sport_label':profile.label if profile else 'Спорт',
+                        'decision':v['decision'],'odds':v.get('odds'),'stake_percent':v.get('stake_percent'),
+                        'state':'archived','purchased_archive':True,'actual_score':None,**answer_blocks(repo,analysis_id)}
     from .today_picks import detail as today_detail
-    return today_detail(repo,analysis_id)
+    row=today_detail(repo,analysis_id)
+    from .billing import active,locked
+    if settings and active(repo,settings):
+        gate=locked(repo,settings,repo.event_analysis(analysis_id=analysis_id),user)
+        if gate:return gate
+    return row
 
 
 def install(app,repo):
@@ -74,6 +99,9 @@ def install(app,repo):
         response.headers['Cache-Control']='no-store'
         try:
             data=collection(repo,min_odds=min_odds,max_odds=max_odds)
+            from .billing import active
+            if active(repo,app.state.settings):
+                return {**data,'picks':[{k:item[k] for k in ('id','sport_label','forecast_at','odds')} for item in data['picks']]}
             return {**data,'picks':[preview(item) for item in data['picks']]}
         except ValueError as error:raise HTTPException(422,str(error)) from error
 
@@ -88,12 +116,16 @@ def install(app,repo):
                 old=cache.get(key)
                 if old and time.monotonic()-old[0]<20:return old[1]
                 value=report(repo,sport=sport,offset=offset,limit=limit)
+                from .billing import active
+                if active(repo,app.state.settings):
+                    value={**value,'matches':[{**row,'selection_label':'Прогноз закрыт'} if row['state']!='settled' else row for row in value['matches']]}
                 if len(cache)>=32:cache.clear()
                 cache[key]=(time.monotonic(),value)
                 return value
         except ValueError as error:raise HTTPException(422,str(error)) from error
 
     @app.get('/api/results/{analysis_id}')
-    def result(analysis_id:str,response:Response):
-        response.headers['Cache-Control']='public, max-age=20'
-        return detail(repo,analysis_id)
+    def result(analysis_id:str,response:Response,request:Request):
+        from . import accounts
+        response.headers['Cache-Control']='private, no-store'
+        return detail(repo,analysis_id,settings=app.state.settings,user=accounts.current_user(request,False))

@@ -74,6 +74,7 @@ window.Account = (() => {
       byId("account-usage").textContent=`Разборов сегодня: ${usage.today}${usage.daily_limit ? " из " + usage.daily_limit : ""}`;
       byId("account-bonus").textContent=`Бонусных разборов: ${usage.bonus_analyses}`;
       byId("account-bonus-note").textContent=usage.daily_limit ? "Бонусы используются после дневного лимита." : "Сейчас разборы доступны без дневного лимита. Бонусы сохраняются на аккаунте.";
+      if(window.Credits?.enabled){byId('account-usage').textContent=`Запросов к ИИ сегодня: ${usage.today}${usage.daily_limit?' из '+usage.daily_limit:''}`;byId('account-bonus-note').textContent='Бонусы входят в баланс разборов и используются при разблокировке ответа.';await Credits.refresh();}
       const supported="serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
       byId("push-enable").disabled=!push.enabled || !supported;
       byId("push-note").textContent=!push.enabled ? "Уведомления скоро появятся — сервис готовит подключение." : !window.isSecureContext ? "Уведомления доступны через защищённое подключение HTTPS." : !supported ? "Этот браузер пока не поддерживает уведомления. На iPhone добавьте сайт на главный экран и откройте его оттуда." : usage.push_devices ? `Подключённых устройств: ${usage.push_devices}. Разрешение на этом устройстве можно изменить в браузере.` : "Получайте новости сервиса и подборки матчей. Подписка добровольная, отключить можно в любой момент.";

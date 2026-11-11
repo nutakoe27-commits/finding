@@ -7,7 +7,7 @@ window.PublicResults=(()=>{
   const when=value=>new Date(value).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   let route='',epoch=0,timer=null,offset=0;
   async function get(path){const r=await fetch(path,{credentials:'same-origin'});if(!r.ok)throw new Error('Не удалось загрузить результаты. Попробуйте ещё раз.');return r.json();}
-  function outcome(row){return row.state==='settled'?(row.bet_won?['Выигрыш','win']:['Проигрыш','loss']):row.today_pick?[row.started?'Время начала уже наступило':'До начала матча','pending']:row.state==='unresolved'?['Итог не подтверждён','pending']:['Ожидаем итог','pending'];}
+  function outcome(row){return row.state==='settled'?(row.bet_won?['Выигрыш','win']:['Проигрыш','loss']):row.purchased_archive?['Сохранённый разбор','pending']:row.today_pick?[row.started?'Время начала уже наступило':'До начала матча','pending']:row.state==='unresolved'?['Итог не подтверждён','pending']:['Ожидаем итог','pending'];}
   function metric(label,value,description,cls=''){
     const box=node('div','pr-metric '+cls);box.append(node('span','pr-label',label),node('strong','',value),node('span','pr-caption',description));return box;
   }
@@ -62,6 +62,11 @@ window.PublicResults=(()=>{
     $('public-result-back').href='#results';$('public-result-back').textContent='← Ко всем результатам';
     try{
       const row=await get('/api/results/'+id);if(current!==epoch||route!=='#result/'+id)return;
+      if(row.locked){
+        $('public-result-title').textContent='Прогноз ИИ';$('public-result-meta').textContent='Сохранённый ответ · доступ по разблокировке';
+        $('public-result-back').href='#matches';$('public-result-back').textContent='← К матчам';
+        Credits.renderLocked(box,row,()=>detail(id));return;
+      }
       $('public-result-title').textContent=`${row.event.home} — ${row.event.away}`;
       $('public-result-meta').textContent=`${row.sport_label} · ${row.event.competition} · ${when(row.event.kickoff_at)} МСК`;
       if(row.today_pick){$('public-result-back').href='#matches';$('public-result-back').textContent='← К подборке прогнозов';}
@@ -86,5 +91,6 @@ window.PublicResults=(()=>{
   $('pr-sport').addEventListener('change',()=>list(0));$('pr-refresh').addEventListener('click',()=>list());
   $('pr-prev').addEventListener('click',()=>list(Math.max(0,offset-20)));$('pr-next').addEventListener('click',()=>list(offset+20));
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)activate(route);});
+  document.addEventListener('accountchange',()=>{if(route.startsWith('#result/'))detail(route.slice(8));});
   return {activate};
 })();

@@ -11,7 +11,8 @@ window.TodayPicks=(()=>{
   let active=false,controller=null,timer=null,epoch=0,data=null,shown=6;
   function card(pick){
     const box=node('article','tp-card tp-bet');box.setAttribute('role','listitem');
-    const head=node('div','tp-card-head'),kickoff=node('span','tp-kickoff tp-kickoff-blurred',day(pick.event.kickoff_at)+', '+time(pick.event.kickoff_at)+' МСК');
+    const at=pick.event?.kickoff_at;
+    const head=node('div','tp-card-head'),kickoff=node('span','tp-kickoff tp-kickoff-blurred',at?day(at)+', '+time(at)+' МСК':'Время начала');
     kickoff.setAttribute('aria-hidden','true');head.append(node('span','tp-sport',pick.sport_label),kickoff);
     const competition=node('p','tp-competition tp-competition-blurred','Название турнира');competition.setAttribute('aria-hidden','true');
     const match=node('h3','tp-match'),names=node('span','tp-match-blurred','Участник 1 — Участник 2');names.setAttribute('aria-hidden','true');
@@ -23,7 +24,7 @@ window.TodayPicks=(()=>{
     box.append(head,competition,match,preview,line,footer);return box;
   }
   function render(){
-    const picks=data.picks.filter(pick=>new Date(pick.event.kickoff_at).getTime()>Date.now());
+    const picks=data.picks.filter(pick=>!pick.event?.kickoff_at||new Date(pick.event.kickoff_at).getTime()>Date.now());
     const cards=$('tp-cards'),focused=document.activeElement?.closest('#tp-cards .tp-open')?.getAttribute('href');
     cards.replaceChildren(...picks.slice(0,shown).map(card));
     if(focused)[...cards.querySelectorAll('.tp-open')].find(link=>link.getAttribute('href')===focused)?.focus({preventScroll:true});

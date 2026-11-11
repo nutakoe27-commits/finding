@@ -102,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         repo.initialize()
+        billing.initialize(repo,settings)
         jobs.start()
         automation.start()
         try:yield
@@ -109,12 +110,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings
-    from . import accounts, growth, push
+    from . import accounts, growth, push, billing
     accounts.install(app,repo,settings)
     growth.install(app,repo,settings)
     push.install(app,repo,settings)
     from . import public_results
     public_results.install(app,repo)
+    billing.install(app,repo,settings)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     models = OrderedDict()
@@ -531,11 +533,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/bookmakers/events/{event_id}/explain")
     def explain_event(event_id: str, request: EventExplainRequest,http_request:Request):
-        return explain_event_impl(event_id,request,False,http_request)
+        return billing.protect(repo,settings,explain_event_impl(event_id,request,False,http_request),http_request.state.user)
 
     @app.post('/api/archive/events/{event_id}/explain')
     def explain_stream_event(event_id:str,request:EventExplainRequest,http_request:Request):
-        return explain_event_impl(event_id,request,True,http_request)
+        return billing.protect(repo,settings,explain_event_impl(event_id,request,True,http_request),http_request.state.user)
 
     @app.get('/api/bookmakers/featured-events')
     def featured_events(sport:str='',phase:str='',limit:int=10):
@@ -713,14 +715,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/analyses")
     def analyses(request:Request):
-        return {"analyses": repo.recent_event_analyses(user_id=request.state.user['id'])}
+        user=request.state.user;rows=repo.recent_event_analyses(user_id=user['id'])
+        if billing.active(repo,settings):
+            rows=[billing.protect(repo,settings,repo.event_analysis(analysis_id=row['id'],user_id=user['id']),user) for row in rows]
+            rows=[{k:v for k,v in row.items() if k!='context'} for row in rows]
+        return {"analyses":rows}
 
     @app.get("/api/analyses/{analysis_id}")
     def analysis_detail(analysis_id: str,request:Request):
         result = repo.event_analysis(analysis_id=analysis_id,user_id=request.state.user['id'])
         if not result:
             raise HTTPException(404, "Разбор не найден.")
-        return result
+        return billing.protect(repo,settings,result,request.state.user)
 
     @app.get("/api/backtest")
     def backtest():

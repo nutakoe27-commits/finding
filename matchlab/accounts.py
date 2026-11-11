@@ -319,6 +319,7 @@ def create_user(repo, username, password, role="user", agreements=False):
 
 
 def start_usage(repo, user, kind, target, settings, db=None):
+    from .billing import active
     usage_id = uuid4().hex
     bonus = 0
     with (repo.connection() if db is None else nullcontext(db)) as db:
@@ -349,6 +350,8 @@ def start_usage(repo, user, kind, target, settings, db=None):
                 ),
             ).fetchone()[0]
             if count >= settings.ai_daily_limit:
+                if active(repo,settings):
+                    raise HTTPException(429,'Дневной лимит запросов ИИ исчерпан. Баланс разборов не списан.')
                 result = db.execute(
                     "UPDATE users SET bonus_analyses=bonus_analyses-1 WHERE id=? AND bonus_analyses>0",
                     (user["id"],),
@@ -395,6 +398,9 @@ def install(app, repo, settings):
             path = request.url.path
             if (AI_ROUTE.fullmatch(path) or AI_JOB_ROUTE.fullmatch(path)) and request.method == "POST":
                 user = current_user(request)
+                from .billing import active
+                if active(repo,settings) and path.rstrip('/')=='/api/explain' and user['role']!='admin':
+                    raise HTTPException(403,'Выберите матч для ИИ-разбора.')
                 mutation(request)
                 if not agreements_current(repo,user['id']):
                     raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})

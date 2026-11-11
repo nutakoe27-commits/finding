@@ -133,6 +133,8 @@ class Repository:
             db.executescript(AUTOMATION_SCHEMA)
             from .growth import SCHEMA as GROWTH_SCHEMA
             db.executescript(GROWTH_SCHEMA)
+            from .billing import SCHEMA as BILLING_SCHEMA
+            db.executescript(BILLING_SCHEMA)
             analytics_columns={row['name'] for row in db.execute('PRAGMA table_info(analytics_consents)')}
             if 'webvisor' not in analytics_columns:db.execute('ALTER TABLE analytics_consents ADD COLUMN webvisor INTEGER NOT NULL DEFAULT 0')
             columns={row['name'] for row in db.execute('PRAGMA table_info(event_analyses)')}

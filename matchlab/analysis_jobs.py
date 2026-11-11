@@ -97,7 +97,10 @@ class AnalysisJobs:
         result=self.public(row)
         if row['analysis_id']:
             payload=self.repo.event_analysis(analysis_id=row['analysis_id'],user_id=user_id)
-            if payload:result['result']={**payload,'cached':bool(row['cached'])}
+            if payload:
+                from .billing import protect
+                with self.repo.connection() as db:user=db.execute('SELECT id,role FROM users WHERE id=?',(user_id,)).fetchone()
+                result['result']=protect(self.repo,self.settings,{**payload,'cached':bool(row['cached'])},dict(user) if user else {'id':user_id})
         return result
 
     def claim(self,lane='human'):

@@ -539,6 +539,16 @@ function renderAnalysis(target, text, assessment=null,generation=null,verdict=nu
   }
   flush(); target.replaceChildren(...nodes);
 }
+function renderPrivateAnswer(result){
+  if(result.locked){
+    Credits.renderLocked($('explanation'),result,async()=>{
+      const owner=Account.user?.id,opened=await api('/api/analyses/'+result.id);
+      if(Account.user?.id!==owner||state.aiAnalysis?.id!==result.id)return;
+      state.aiAnalysis=opened;renderPrivateAnswer(opened);renderAIAnalysisMeta();
+    });
+  }else renderAnalysis($('explanation'),result.text,result.context?.probability_assessment,result.context?.ai_generation,result.context?.neural_verdict);
+  $('explanation').hidden=false;$('ai-result-toolbar').hidden=!!result.locked;
+}
 function analysisPreview(text) {
   return analysisDisplayText(text).replace(/^\s*#{1,6}\s+/gm, "").replace(/^\s*[-*•]\s+/gm, "• ").replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g, (_,a,b,c) => a || b || c);
 }
@@ -893,6 +903,7 @@ function renderAISelection() {
 }
 function renderAIAnalysisMeta() {
   const analysis = state.aiAnalysis;
+  if(analysis?.locked){$('ai-analysis-meta').textContent=`Разбор от ${moscowTime(analysis.generated_at)} МСК. Полный ответ доступен после разблокировки.`;$('ai-analysis-meta').hidden=false;return;}
   if (!analysis?.context) return;
   const context = analysis.context;
   const market = context.markets.find(item => item.key === context.selection.market_key);
@@ -1169,9 +1180,9 @@ async function requestAI(present=true) {
     const result=document ? await waitForAnalysisJob(submitted,current) : submitted;
     if(!result) return;
     if (Account.user?.id !== accountId || request !== state.explainRequest || eventId !== state.eventId || (!document && forecastId !== state.forecast?.id)) return;
-    renderAnalysis($("explanation"),result.text,result.context?.probability_assessment,result.context?.ai_generation,result.context?.neural_verdict); $("explanation").hidden = false; $("ai-result-toolbar").hidden=false;
+    renderPrivateAnswer(result);
     window.ProductAnalytics?.goal(['limited_summary','statistical_report','partial_model'].includes(result.analysis_type) ? 'ai_summary_result' : 'ai_model_result');
-    if (result.context) {
+    if (result.context || result.locked) {
       result.preparation_notice=preparationNotice;
       state.aiAnalysis = result; renderAIAnalysisMeta();
       if(!AnalysisDialog.isOpen)toast('Разбор готов. Откройте его кнопкой «Посмотреть разбор».');
@@ -1213,9 +1224,9 @@ async function loadHistory() {
     showError("history-error", ""); $("history-empty").hidden = result.analyses.length > 0;
     $("history-list").replaceChildren(...result.analyses.map(analysis => {
       const card = el("article", "panel history-card"), info = el("div");
-      info.append(el("h2", "", eventTitle(analysis.event)), el("p", "small muted", `${analysis.event.sport_label || "Футбол"} · ${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
+      info.append(el("h2", "", analysis.locked?'Закрытый разбор ИИ':eventTitle(analysis.event)), el("p", "small muted", analysis.locked?`Ответ от ${moscowTime(analysis.generated_at)} МСК`:`${analysis.event.sport_label || "Футбол"} · ${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
       const preview=analysisPreview(analysis.text);
-      const excerpt = el("p", "history-excerpt", preview.length > 200 ? preview.slice(0,200) + "…" : preview); info.append(excerpt);
+      const excerpt = el("p", "history-excerpt", analysis.locked?(analysis.text||'Полный ответ можно разблокировать за 1 разбор.'):(preview.length > 200 ? preview.slice(0,200) + "…" : preview)); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
     ProductUX.filterHistory();
@@ -1229,6 +1240,14 @@ async function loadSavedAnalysis(id) {
   try {
     const analysis = await api(`/api/analyses/${encodeURIComponent(id)}`);
     if (request !== state.marketDetailRequest || state.route !== `#analysis/${id}`) return;
+    if(analysis.locked){
+      $('manual-heading').hidden=false;$('manual-heading').querySelector('h1').textContent='Сохранённый разбор';
+      $('manual-heading').querySelector('.subtitle').textContent=`Разбор от ${moscowTime(analysis.generated_at)} МСК`;
+      $('saved-analysis').hidden=false;$('saved-analysis-title').textContent='Полный ответ ИИ';
+      $('saved-analysis-coverage').hidden=true;$('saved-analysis-open').hidden=true;$('saved-analysis-sources').replaceChildren();
+      Credits.renderLocked($('saved-analysis-text'),analysis,()=>loadSavedAnalysis(id));return;
+    }
+    $('saved-analysis-coverage').hidden=false;$('saved-analysis-open').hidden=false;
     const context = analysis.context;
     $("manual-heading").hidden = false;
     $("manual-heading").querySelector(".eyebrow").textContent = "СОХРАНЁННЫЙ РАЗБОР";
