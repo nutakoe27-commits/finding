@@ -1,4 +1,4 @@
-"""Owner-scoped, durable event analyses; one model job at a time per database."""
+"""Durable analyses: one human lane and one independent system lane per database."""
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -16,11 +16,12 @@ CREATE TABLE IF NOT EXISTS ai_analysis_jobs (
  event_id TEXT NOT NULL,source TEXT NOT NULL,state TEXT NOT NULL,
  created_at TEXT NOT NULL,started_at TEXT,finished_at TEXT,deadline TEXT,
  usage_id TEXT NOT NULL,snapshot BLOB,analysis_id TEXT,cached INTEGER NOT NULL DEFAULT 0,
- error TEXT,lease TEXT);
+ error TEXT,lease TEXT,lane TEXT NOT NULL DEFAULT 'human');
 CREATE INDEX IF NOT EXISTS analysis_jobs_owner ON ai_analysis_jobs(user_id,created_at);
 CREATE INDEX IF NOT EXISTS analysis_jobs_queue ON ai_analysis_jobs(state,created_at);
 '''
 LOG=logging.getLogger('uvicorn.error')
+SYSTEM_OWNER='__system_featured__'
 
 
 def stamp():return datetime.now(timezone.utc).isoformat()
@@ -29,17 +30,18 @@ def stamp():return datetime.now(timezone.utc).isoformat()
 class AnalysisJobs:
     def __init__(self,repo,settings,execute):
         self.repo=repo;self.settings=settings;self.execute=execute
-        self.stopping=Event();self.wake=Event();self.thread=None
+        self.stopping=Event();self.wake=Event();self.thread=None;self.threads=[]
 
     def start(self):
         self.stopping.clear()
         if self.thread and self.thread.is_alive():return
-        self.thread=Thread(target=self.run,name='event-analysis-jobs',daemon=True)
-        self.thread.start()
+        self.threads=[Thread(target=self.run,args=(lane,),name='event-analysis-'+lane,daemon=True) for lane in ('human','system')]
+        self.thread=self.threads[0]
+        for thread in self.threads:thread.start()
 
     def stop(self):
         self.stopping.set();self.wake.set()
-        if self.thread:self.thread.join(timeout=1)
+        for thread in self.threads:thread.join(timeout=1)
 
     def enqueue(self,user,event_id,source,key,snapshot):
         raw=json.dumps(snapshot,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()
@@ -50,7 +52,7 @@ class AnalysisJobs:
             if active:
                 if active['request_key']==key:return self.public(active)
                 raise HTTPException(409,'Для вашего аккаунта уже готовится разбор. Дождитесь результата в истории.')
-            if db.execute("SELECT count(*) FROM ai_analysis_jobs WHERE state IN ('queued','running')").fetchone()[0]>=8:
+            if db.execute("SELECT count(*) FROM ai_analysis_jobs WHERE lane='human' AND state IN ('queued','running')").fetchone()[0]>=8:
                 raise HTTPException(429,'Очередь разборов заполнена. Попробуйте позже.')
             usage=accounts.start_usage(self.repo,user,'event',f'/api/{source}/events/{event_id}/explain',self.settings,db=db)
             job_id=uuid4().hex
@@ -58,6 +60,24 @@ class AnalysisJobs:
                        "VALUES (?,?,?,?,?,'queued',?,?,?)",(job_id,user['id'],key,event_id,source,stamp(),usage,zlib.compress(raw)))
             row=db.execute('SELECT * FROM ai_analysis_jobs WHERE id=?',(job_id,)).fetchone()
         LOG.info('Analysis job queued: job=%s event=%s',job_id,event_id)
+        self.wake.set()
+        return self.public(row)
+
+    def enqueue_system(self,event_id,key,snapshot):
+        raw=json.dumps(snapshot,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()
+        if len(raw)>8*1024*1024:raise ValueError('Данные матча слишком велики.')
+        with self.repo.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
+            old=db.execute("SELECT * FROM ai_analysis_jobs WHERE source='archive' AND event_id=? AND lane='system'",(event_id,)).fetchone()
+            if old:return self.public(old)
+            if db.execute("SELECT 1 FROM ai_analysis_jobs WHERE lane='system' AND state IN ('queued','running')").fetchone():return None
+            job_id=uuid4().hex;usage_id=uuid4().hex;now=stamp()
+            db.execute("INSERT INTO ai_usage(id,user_id,at,kind,target,status) VALUES (?,?,?,'event',?,'pending')",
+                (usage_id,SYSTEM_OWNER,now,'system-featured:'+event_id))
+            db.execute("""INSERT INTO ai_analysis_jobs(id,user_id,request_key,event_id,source,state,created_at,usage_id,snapshot,lane)
+                VALUES (?,?,?,?,'archive','queued',?,?,?,'system')""",(job_id,SYSTEM_OWNER,key,event_id,now,usage_id,zlib.compress(raw)))
+            db.execute("UPDATE featured_analysis_events SET state='queued',analysis_job_id=?,updated_at=?,last_error=NULL WHERE event_id=?",(job_id,now,event_id))
+            row=db.execute('SELECT * FROM ai_analysis_jobs WHERE id=?',(job_id,)).fetchone()
         self.wake.set()
         return self.public(row)
 
@@ -80,7 +100,8 @@ class AnalysisJobs:
             if payload:result['result']={**payload,'cached':bool(row['cached'])}
         return result
 
-    def claim(self):
+    def claim(self,lane='human'):
+        if lane not in ('human','system'):raise ValueError('Неизвестная очередь.')
         now=stamp()
         with self.repo.connection() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -88,16 +109,20 @@ class AnalysisJobs:
                                "(state='queued' AND created_at<?)",(now,(datetime.now(timezone.utc)-timedelta(minutes=30)).isoformat())).fetchall()
             for row in expired:
                 self.finish(row,error='Ожидание разбора истекло. Предыдущая попытка не списана.',db=db)
-            if db.execute("SELECT 1 FROM ai_analysis_jobs WHERE state='running' LIMIT 1").fetchone():return None
-            row=db.execute("SELECT * FROM ai_analysis_jobs WHERE state='queued' ORDER BY created_at,id LIMIT 1").fetchone()
+            if lane=='system':
+                from .featured_automation import enabled
+                if not enabled(self.repo,db=db):return None
+            if db.execute("SELECT 1 FROM ai_analysis_jobs WHERE state='running' AND lane=? LIMIT 1",(lane,)).fetchone():return None
+            row=db.execute("SELECT * FROM ai_analysis_jobs WHERE state='queued' AND lane=? ORDER BY created_at,id LIMIT 1",(lane,)).fetchone()
             if not row:return None
             user=db.execute('SELECT enabled FROM users WHERE id=?',(row['user_id'],)).fetchone()
-            if not user or not user['enabled'] or not accounts.agreements_current(self.repo,row['user_id']):
+            if lane=='human' and (not user or not user['enabled'] or not accounts.agreements_current(self.repo,row['user_id'])):
                 self.finish(row,error='Для разбора требуется действующий аккаунт и согласия.',db=db)
                 return None
             deadline=(datetime.now(timezone.utc)+timedelta(seconds=self.settings.qwen_job_timeout+90)).isoformat()
             db.execute("UPDATE ai_analysis_jobs SET state='running',started_at=?,deadline=?,lease=? WHERE id=?",
                        (now,deadline,uuid4().hex,row['id']))
+            if lane=='system':db.execute("UPDATE featured_analysis_events SET state='running',updated_at=? WHERE analysis_job_id=?",(now,row['id']))
             return dict(db.execute('SELECT * FROM ai_analysis_jobs WHERE id=?',(row['id'],)).fetchone())
 
     def finish(self,job,result=None,error=None,db=None,token_usage=None):
@@ -120,10 +145,13 @@ class AnalysisJobs:
         db.execute('UPDATE ai_analysis_jobs SET state=?,finished_at=?,analysis_id=?,cached=?,error=?,snapshot=NULL WHERE id=?',
                    ('failed' if error else 'completed',stamp(),result.get('id') if result else None,
                     int(bool(result and result.get('cached'))),error,row['id']))
+        if row['lane']=='system':
+            db.execute('UPDATE featured_analysis_events SET state=?,analysis_id=?,last_error=?,updated_at=? WHERE analysis_job_id=?',
+                ('failed' if error else 'completed',result.get('id') if result else None,error,stamp(),row['id']))
         LOG.info('Analysis job finished: job=%s state=%s',row['id'],'failed' if error else 'completed')
 
-    def run_one(self):
-        job=self.claim()
+    def run_one(self,lane='human'):
+        job=self.claim(lane)
         if not job:return False
         LOG.info('Analysis job started: job=%s event=%s',job['id'],job['event_id'])
         from .token_usage import capture_usage
@@ -140,10 +168,10 @@ class AnalysisJobs:
             self.finish(job,error='Не удалось завершить разбор. Попытка не списана.',token_usage=capture.summary() if capture else None)
         return True
 
-    def run(self):
+    def run(self,lane='human'):
         while not self.stopping.is_set():
             try:
-                if self.run_one():continue
+                if self.run_one(lane):continue
             except Exception as error:
                 LOG.warning('Analysis queue unavailable: category=%s',type(error).__name__)
             self.wake.wait(1);self.wake.clear()

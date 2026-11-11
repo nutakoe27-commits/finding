@@ -18,15 +18,17 @@
   <script src="/static/account.js?v=20261111-ux3" defer></script>
   <link rel="stylesheet" href="/static/featured-events.css?v=20261111-source2" />
   <script src="/static/featured-events.js?v=20261111-sports1" defer></script>
-  <script src="/static/product.js?v=20261111-ux3" defer></script>
+  <script src="/static/product.js?v=20261111-public1" defer></script>
   <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
-  <script src="/static/app.js?v=20261111-popup1" defer></script>
+  <script src="/static/public-results.js?v=20261111-public1" defer></script>
+  <script src="/static/app.js?v=20261111-public1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
   <script src="/static/admin-results.js?v=20261111-sports1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
-  <script src="/static/admin.js?v=20261111-product2" defer></script>
+  <script src="/static/admin.js?v=20261111-public1" defer></script>
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
   <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
+  <link rel="stylesheet" href="/static/public-results.css?v=20261111-public1" />
 </head>
 <body class="ym-hide-content">
   <a class="skip-link" href="#main-content">К содержимому</a>
@@ -35,6 +37,7 @@
     <div class="workspace-label">СПОРТИВНАЯ АНАЛИТИКА</div>
     <nav aria-label="Основные разделы">
       <a href="#matches" class="nav-link active"><span data-ux-icon="matches" aria-hidden="true"></span> Матчи <span class="nav-count" id="nav-matches">—</span></a>
+      <a href="#results" class="nav-link"><span data-ux-icon="chart" aria-hidden="true"></span><span>Результаты</span></a>
       <a href="#archive" class="nav-link" data-admin-only><span aria-hidden="true">◷</span> Архив</a>
       <a href="#favorites" class="nav-link"><span data-ux-icon="favorite" aria-hidden="true"></span> Избранное <span class="nav-count" id="nav-favorites">0</span></a>
       <a href="#history" class="nav-link" aria-label="История разборов"><span data-ux-icon="history" aria-hidden="true"></span><span class="nav-history-long" aria-hidden="true">История разборов</span><span class="nav-history-short" aria-hidden="true">История</span></a>
@@ -49,6 +52,10 @@
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
       <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Факты о встрече, аргументы и понятное решение — в одном разборе.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span aria-hidden="true">↻</span> Обновить</button></div>
+      <section id="results-widget" class="results-widget" aria-labelledby="results-widget-title">
+        <div class="pr-heading"><div><p class="eyebrow">ОТ РЕШЕНИЯ К ИТОГУ</p><h2 id="results-widget-title">Результаты ИИ за 30 дней</h2></div><a href="#results">Посмотреть прошлые прогнозы →</a></div>
+        <div id="results-widget-metrics" class="pr-metrics" aria-live="polite"></div><p id="results-widget-note">Загружаем подтверждённые результаты…</p>
+      </section>
       <div class="discovery-search"><div class="search-field"><label class="sr-only" for="match-search">Найдите команду или турнир</label><span data-ux-icon="search" aria-hidden="true"></span><span class="sr-only">Поиск участника или турнира</span><input id="match-search" type="search" placeholder="Найдите команду или турнир" autocomplete="off" maxlength="200" /><button id="match-search-clear" type="button" aria-label="Очистить поиск" hidden><span data-ux-icon="close"></span></button></div><p>Найдите встречу или выберите её в главных событиях</p></div>
       <section id="quick-guide" class="quick-guide" aria-labelledby="guide-title" hidden>
         <div class="guide-heading"><div><span class="guide-kicker">ПЕРВЫЙ РАЗ ЗДЕСЬ?</span><h2 id="guide-title">От матча к понятному разбору</h2></div><button id="guide-close" class="guide-close" type="button" aria-label="Скрыть подсказку">×</button></div>
@@ -69,6 +76,18 @@
       <div id="market-list-empty" class="empty-state panel" hidden><span class="empty-symbol" aria-hidden="true">◎</span><h2 id="catalog-empty-title">Матчи пока не найдены</h2><p id="catalog-empty-text">Попробуйте другой турнир или сбросьте фильтры.</p><button id="reset-filters" class="secondary-button" type="button">Сбросить фильтры</button></div>
       <div class="pagination"><button id="market-prev" class="secondary-button" type="button" disabled>← Назад</button><span id="catalog-page" class="muted small"></span><button id="market-next" class="secondary-button" type="button" disabled>Дальше →</button></div>
       <p class="catalog-footnote">Время матчей — по Москве. Коэффициенты могут меняться.</p>
+    </section>
+    <section id="view-results" data-view hidden>
+      <div class="page-heading"><div><p class="eyebrow">ОТКРЫТАЯ ИСТОРИЯ РЕШЕНИЙ</p><h1>Результаты ИИ<span class="lime">.</span></h1><p class="subtitle">Последние 30 дней. Только предматчевые рекомендации «Ставить» и их фактические итоги.</p></div><button id="pr-refresh" class="secondary-button" type="button">Обновить</button></div>
+      <div id="pr-metrics" class="pr-metrics" aria-live="polite"></div>
+      <section class="pr-chart-panel"><h2>Выигрыши и проигрыши по дням</h2><div id="pr-chart" class="pr-chart" role="list" aria-label="Подтверждённые решения по датам матчей"></div><div class="pr-legend"><span>Выигрыши</span><span>Проигрыши</span></div></section>
+      <div class="pr-tools"><label><span class="sr-only">Вид спорта</span><select id="pr-sport"><option value="">Все виды спорта</option></select></label><p id="pr-status" role="status"></p></div>
+      <div id="pr-list" class="pr-list"></div><div class="pr-pagination"><span id="pr-page" class="small muted"></span><div class="button-row"><button id="pr-prev" class="secondary-button" type="button">← Назад</button><button id="pr-next" class="secondary-button" type="button">Дальше →</button></div></div>
+      <details class="pr-method"><summary>Как считаем результаты</summary><div id="pr-methodology"></div></details>
+    </section>
+    <section id="view-result" data-view hidden>
+      <a class="back-link" href="#results">← Ко всем результатам</a><div class="page-heading"><div><p class="eyebrow">СОХРАНЁННЫЙ ПРЕДМАТЧЕВЫЙ ОТВЕТ</p><h1 id="public-result-title">Рекомендация ИИ</h1><p id="public-result-meta" class="subtitle"></p></div></div>
+      <article id="public-result-content" class="pr-answer"></article>
     </section>
     <section id="view-analysis" data-view hidden>
       <a id="match-back" class="back-link" href="#matches">← К матчам</a>
@@ -382,7 +401,7 @@
           <article class="panel"><span class="eyebrow">БОНУСЫ</span><h2 id="account-bonus">Бонусные разборы</h2><p id="account-bonus-note" class="small muted"></p><form id="promo-redeem-form"><label for="promo-code">Промокод</label><div class="inline-form"><input id="promo-code" maxlength="40" minlength="4" required placeholder="Введите код" autocomplete="off"/><button class="secondary-button" type="submit">Активировать</button></div></form></article>
           <article class="panel"><span class="eyebrow">НА СВЯЗИ</span><h2>Уведомления</h2><p id="push-note" class="muted"></p><label class="push-consent"><input id="push-ad-consent" type="checkbox" /><span>Согласен(а) получать на этом устройстве информационные и рекламные push-уведомления. <a href="/static/legal/advertising-consent.html" target="_blank" rel="noopener">Условия согласия</a></span></label><div class="button-row"><button id="push-enable" class="secondary-button" type="button">Включить на этом устройстве</button><button id="push-disable" class="text-button" type="button" hidden>Отозвать согласие</button></div></article>
           <article class="panel"><span class="eyebrow">БЕЗОПАСНОСТЬ</span><h2>Изменить пароль</h2><form id="account-password-form"><label for="account-old-password">Текущий пароль</label><input id="account-old-password" type="password" autocomplete="current-password" maxlength="128" required/><label for="account-new-password">Новый пароль</label><input id="account-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required/><p class="small muted">Не менее 12 символов. Используйте уникальный пароль.</p><button type="submit" class="secondary-button">Сохранить пароль</button></form></article>
-          <article class="panel"><span class="eyebrow">ЛИЧНАЯ ИСТОРИЯ</span><h2>Ваши ИИ-разборы</h2><p class="muted">Сохранённые разборы и заметки доступны только вам. Вернитесь к выбранному матчу в любой момент.</p><a href="#history" class="text-link">Открыть историю →</a></article>
+          <article class="panel"><span class="eyebrow">ЛИЧНАЯ ИСТОРИЯ</span><h2>Ваши ИИ-разборы</h2><p class="muted">В аккаунте сохранены ваши разборы и заметки. Обезличенные рекомендации «Ставить» и их итоги доступны в открытом разделе «Результаты»; личные заметки остаются закрытыми.</p><a href="#history" class="text-link">Открыть историю →</a></article>
         </div>
       </div>
     </section>
@@ -391,7 +410,7 @@
       <div id="admin-denied" class="panel" hidden><h2>Нужен аккаунт администратора</h2><p class="muted">Управление сервисом доступно только назначенным администраторам.</p></div>
       <div id="admin-content" hidden>
         <div class="admin-security-line"><span class="status-dot green"></span><span>Действия сохраняются в журнале</span><button id="admin-confirm-access" type="button" class="text-button">Подтвердить пароль</button></div>
-        <div class="admin-tool-links"><a class="secondary-button" href="#archive">Архив матчей ↗</a><a class="secondary-button" href="#status">Состояние сервиса ↗</a><a class="secondary-button" href="#calculator">Ручной расчёт ↗</a></div><nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
+        <div class="admin-tool-links"><a class="secondary-button" href="#archive">Архив матчей ↗</a><a class="secondary-button" href="#status">Состояние сервиса ↗</a><a class="secondary-button" href="#calculator">Ручной расчёт ↗</a></div><nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="automation" type="button">Системный анализ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
         <p id="admin-message" class="account-message" role="status"></p>
         <div data-admin-panel="overview">
           <div class="admin-period"><label for="admin-period">Период</label><select id="admin-period"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select><button id="admin-export" class="text-button" type="button">Скачать отчёт CSV ↓</button></div>
@@ -401,7 +420,7 @@
           <article class="panel"><h2>Последние запросы ИИ</h2><div id="admin-ai-list" class="admin-table-wrap"></div></article>
         </div>
         <div data-admin-panel="results" id="admin-results" hidden>
-          <div class="ar-hero"><div><p class="eyebrow">ОТ ПРОГНОЗА К РЕЗУЛЬТАТУ</p><h2>Как сыграли решения ИИ</h2><p>Проверяем выбор победителя и решение о ставке по завершённым матчам.</p></div><div class="ar-sync"><span class="ar-live-dot" aria-hidden="true"></span><span id="ar-updated">Ожидаем проверку</span></div></div>
+          <div class="ar-hero"><div><p class="eyebrow">ОТ ПРОГНОЗА К РЕЗУЛЬТАТУ</p><h2>Как сыграли решения ИИ</h2><p>Диагностика первого предматчевого разбора каждого матча. <a href="#results" class="text-link">Основная статистика рекомендаций «Ставить» ↗</a></p></div><div class="ar-sync"><span class="ar-live-dot" aria-hidden="true"></span><span id="ar-updated">Ожидаем проверку</span></div></div>
           <div class="ar-filters"><label>Матчи за период<select id="ar-days"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select></label><label>Источник<select id="ar-source"><option value="site">Разборы сайта</option><option value="trials">Архивные тесты</option></select></label><label>Вид спорта<select id="ar-sport"><option value="">Все виды спорта</option></select></label><label>Версия ИИ<select id="ar-version"><option value="">Все версии</option></select></label><label id="ar-report-field" hidden>Сохранённый прогон<select id="ar-report"></select></label><button id="ar-export" class="text-button" type="button" disabled>Отчёт JSON ↓</button></div>
           <p id="ar-message" class="account-message" role="status"></p>
           <p id="ar-sync-health" class="notice ar-sync-health" role="status" hidden></p>
@@ -432,6 +451,10 @@
           <article class="panel"><h3>Кампании и доставка</h3><div id="admin-campaigns" class="admin-table-wrap"></div></article>
         </div>
         <div data-admin-panel="promos" hidden><div class="admin-section-heading"><h2>Промокоды</h2><span class="small muted">Активации и бонусные разборы</span></div><article class="panel"><form id="admin-promo-form" class="admin-promo-grid"><label>Код<input id="admin-promo-code" pattern="[A-Za-z0-9_-]{4,40}" maxlength="40" required placeholder="WELCOME"/></label><label>Название кампании<input id="admin-promo-title" maxlength="100" required placeholder="Ранний доступ"/></label><label>Бонусных разборов<input id="admin-promo-bonus" type="number" min="1" max="1000" value="5" required/></label><label>Лимит активаций<input id="admin-promo-limit" type="number" min="1" max="100000" value="100" required/></label><label>Начало<input id="admin-promo-start" type="datetime-local" required/></label><label>Окончание<input id="admin-promo-end" type="datetime-local" required/></label><p class="small muted">Промокод создаётся черновиком. Один аккаунт может активировать его один раз. Бонусы сохраняются и используются при включённом дневном лимите.</p><button type="submit" class="primary-button">Создать черновик</button></form></article><article class="panel"><h3>Все промокоды</h3><div id="admin-promos" class="admin-table-wrap"></div></article></div>
+        <div data-admin-panel="automation" hidden><article class="panel"><p class="eyebrow">ГЛАВНЫЕ СОБЫТИЯ WINLINE</p><h2>Автоматический разбор</h2><p class="muted">Берём события из карусели Winline, получаем статистику и сохраняем один предматчевый вердикт на событие. После завершения проверяем итог.</p>
+          <form id="auto-analysis-form"><label class="auto-setting"><input id="auto-analysis-enabled" type="checkbox"><span>Автоматически анализировать главные события</span></label><div class="auto-lanes"><span>1 поток — системные разборы</span><span>1 поток — запросы пользователей</span></div><button type="submit" class="primary-button">Сохранить настройку</button></form>
+          <p id="auto-analysis-status" class="account-message" role="status"></p><p class="small muted">Выключение останавливает новые системные разборы. Уже запущенный ответ сохраняется. Системные запросы не расходуют пользовательские лимиты.</p>
+        </article><article class="panel"><h3>Последние системные события</h3><div id="auto-analysis-events" class="admin-table-wrap"></div></article></div>
         <div data-admin-panel="links" hidden><article class="panel"><span class="eyebrow">ПАРТНЁРСКИЕ ПЕРЕХОДЫ</span><h2>Ссылки Winline</h2><p class="muted">Все кнопки перехода к событию используют одно правило. Пока шаблон пуст, открывается прямая ссылка на матч.</p><form id="admin-link-form"><label for="admin-link-template">Шаблон реферальной ссылки</label><input id="admin-link-template" maxlength="2000" placeholder="https://partner.example/click?url={url}&event={event_id}"/><p class="small muted"><code>{url}</code> — закодированная ссылка на событие, <code>{event_id}</code> — номер события. Шаблон должен содержать {url} или {event_id}, чтобы переход вёл на выбранный матч. Используйте HTTPS-ссылку, выданную вашей партнёрской программой.</p><button class="primary-button" type="submit">Сохранить правило</button></form></article></div>
         <div data-admin-panel="audit" hidden><article class="panel"><h2>Журнал действий</h2><p class="muted">Изменения пользователей, промокодов, ссылок и отправки уведомлений.</p><div id="admin-audit" class="admin-table-wrap"></div><div class="pagination"><button id="admin-audit-prev" class="secondary-button" type="button">← Назад</button><button id="admin-audit-next" class="secondary-button" type="button">Дальше →</button></div></article></div>
       </div>
@@ -461,7 +484,7 @@
       <p id="ai-hint" class="ai-hint">Разбор по данным матча. Без оформления ставки.</p>
       </div>
     </section>
-    <footer class="ai-dialog-footer"><p>Решение ИИ — мнение по доступным данным. Выигрыш не гарантирован.</p><button id="ai-dialog-dismiss" type="button" class="secondary-button">Закрыть</button></footer>
+    <footer class="ai-dialog-footer"><p>Выигрыш не гарантирован. Рекомендации «Ставить» попадают в обезличенную историю результатов. Личные заметки закрыты.</p><button id="ai-dialog-dismiss" type="button" class="secondary-button">Закрыть</button></footer>
   </dialog>
   <p id="ux-status" class="sr-only" role="status"></p>
   <div id="toast" class="toast" role="status" hidden></div>

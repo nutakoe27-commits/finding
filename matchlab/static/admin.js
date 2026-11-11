@@ -104,6 +104,13 @@ window.Admin = (() => {
     })));
   }
   async function loadLinks(){const data=await api("/api/admin/links");if(tab==="links")$("admin-link-template").value=data.template;}
+  async function loadAutomation(){
+    const data=await api('/api/admin/featured-automation');if(tab!=='automation')return;
+    $('auto-analysis-enabled').checked=data.enabled;
+    const states={preparing:'Получаем статистику',queued:'В очереди ИИ',running:'ИИ готовит ответ',completed:'Ответ сохранён',skipped:'Пропущено',failed:'Ошибка'};
+    $('auto-analysis-status').textContent=(data.configured?(data.enabled?'Автоматический анализ включён.':'Автоматический анализ выключен.'):'Для запуска подключите ИИ в режиме вердикта.')+` Сохранено: ${data.counts.completed||0}; готовится: ${(data.counts.preparing||0)+(data.counts.queued||0)+(data.counts.running||0)}; пропущено: ${data.counts.skipped||0}.`;
+    $('auto-analysis-events').replaceChildren(table(['Матч','Состояние','Обновление','Комментарий'],data.events.map(e=>[`${e.home} — ${e.away}`,states[e.state]||e.state,when(e.updated_at),e.last_error||'—'])));
+  }
   async function loadAudit(){
     const data=await api("/api/admin/audit?offset="+auditOffset);if(tab!=="audit")return;
     $("admin-audit").replaceChildren(table(["Время","Кто","Действие","Объект"],data.events.map(i=>[when(i.at),i.username||"Системная команда",actions[i.action]||i.action,(i.target||"—").slice(0,32)])));
@@ -130,7 +137,7 @@ window.Admin = (() => {
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
   async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
@@ -158,6 +165,9 @@ window.Admin = (() => {
     sensitive(async()=>{await api(`/api/admin/push/${preview.id}/send`,{method:"POST",body:JSON.stringify({confirm_audience:preview.audience})});pushPreview=null;message("Кампания поставлена в очередь. Статусы доставки обновляются при нажатии «Обновить».");await loadPush();}).catch(e=>message(e.message,true));
   });
   $("admin-link-form").addEventListener("submit",event=>{event.preventDefault();sensitive(async()=>{await api("/api/admin/links",{method:"PUT",body:JSON.stringify({template:$("admin-link-template").value})});message("Правило ссылок сохранено.");}).catch(e=>message(e.message,true));});
+  $('auto-analysis-form').addEventListener('submit',event=>{event.preventDefault();sensitive(async()=>{
+    await api('/api/admin/featured-automation',{method:'PUT',body:JSON.stringify({enabled:$('auto-analysis-enabled').checked})});message('Настройка системного анализа сохранена.');await loadAutomation();
+  }).catch(e=>message(e.message,true));});
   $("admin-export").addEventListener("click",()=>{
     if(!lastOverview)return;const d=lastOverview,rows=[["Период, дней",d.days],["Пользователи",d.users],["Регистрации",d.new_users],["Посетители",d.visitors],["Успешные ИИ-запросы",d.ai.success],["Ошибки ИИ",d.ai.failed],["Переходы Winline",d.events.outbound_click||0],["Активации промокодов",d.promo_activations]];
     const blob=new Blob(["\ufeffПоказатель;Значение\n"+rows.map(r=>r.join(";")).join("\n")],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob),a=node("a");a.href=url;a.download="prognozich-analytics.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);

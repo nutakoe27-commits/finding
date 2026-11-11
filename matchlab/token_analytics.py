@@ -44,7 +44,7 @@ def run(repo,*,days=30,kind='all',offset=0,limit=25,now=None):
     current=now or datetime.now(timezone.utc);today=current.astimezone(MSK).date()
     dates=[today-timedelta(days=i) for i in range(days-1,-1,-1)];rows=[]
     with repo.connection() as db:
-        raw=db.execute('''SELECT a.id,a.at,a.kind,a.status,a.latency_ms,a.details,u.username
+        raw=db.execute('''SELECT a.id,a.at,a.kind,a.status,a.latency_ms,a.details,coalesce(u.username,CASE WHEN a.user_id='__system_featured__' THEN 'Системный анализ' END) username
             FROM ai_usage a LEFT JOIN users u ON u.id=a.user_id
             WHERE julianday(a.at)>=julianday(?) ORDER BY julianday(a.at) DESC,a.id DESC''',
             (datetime.combine(dates[0],datetime.min.time(),MSK).isoformat(),))

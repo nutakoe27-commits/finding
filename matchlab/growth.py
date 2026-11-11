@@ -253,7 +253,7 @@ def overview(repo, days):
             ),
         }
         result['recent_ai']=[]
-        for row in db.execute('SELECT a.*,u.username FROM ai_usage a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.at DESC LIMIT 12').fetchall():
+        for row in db.execute("SELECT a.*,coalesce(u.username,CASE WHEN a.user_id='__system_featured__' THEN 'Системный анализ' END) username FROM ai_usage a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.at DESC LIMIT 12").fetchall():
             result['recent_ai'].append({key:row[key] for key in ('at','username','kind','status','latency_ms')} | {'generation':usage_details(db,row)})
     result["archive"] = archive.overview(repo)
     return result
@@ -453,6 +453,24 @@ def install(app, repo, settings):
             return run(repo,days=days,source=source,version=version,report_id=report_id,state=state,sport=sport,
                 offset=offset,limit=limit,report_dir=ROOT/'data'/'evaluations')
         except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+
+    @app.get('/api/admin/featured-automation')
+    def featured_automation_status(request:Request):
+        accounts.admin_user(request)
+        from .featured_automation import status
+        return {**status(repo),'configured':settings.qwen_configured and settings.event_analysis_mode=='neural-verdict'}
+
+    @app.put('/api/admin/featured-automation')
+    async def set_featured_automation(request:Request):
+        actor=accounts.admin_user(request,True);accounts.mutation(request)
+        value=await accounts.body(request)
+        if set(value)!={'enabled'} or type(value['enabled']) is not bool:raise HTTPException(422,'Укажите enabled: true или false.')
+        with repo.connection() as db:
+            db.execute('INSERT OR REPLACE INTO site_settings VALUES (?,?,?)',('featured_auto_enabled','1' if value['enabled'] else '0',accounts.now()))
+            accounts.audit(db,actor['id'],'featured_automation.updated','system',{'enabled':value['enabled']})
+        request.app.state.featured_automation.wake.set();request.app.state.analysis_jobs.wake.set()
+        from .featured_automation import status
+        return {**status(repo),'configured':settings.qwen_configured and settings.event_analysis_mode=='neural-verdict'}
 
     @app.get('/api/admin/ai-token-usage')
     def ai_token_usage(request:Request,days:int=30,kind:str='all',offset:int=0,limit:int=25):

@@ -1285,11 +1285,12 @@ async function route() {
     if (!isAdmin()) { hash = "#matches"; history.replaceState(null,"",hash); }
   }
   syncRoleUI();
-  const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/);
-  if (!["#matches","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved) { hash = "#matches"; history.replaceState(null,"",hash); }
+  const match = hash.match(/^#(?:match|stream)\/(\d{1,20})$/), saved = hash.match(/^#analysis\/([a-f0-9]{32})$/),publicSaved=hash.match(/^#result\/([a-f0-9]{32})$/);
+  if (!["#matches","#results","#favorites","#history","#archive","#status","#calculator","#account","#admin"].includes(hash) && !match && !saved && !publicSaved) { hash = "#matches"; history.replaceState(null,"",hash); }
   if(previous!==hash)ProductUX.capture(previous,state);
   document.title=({"#matches":"Матчи","#favorites":"Избранное","#history":"Мои разборы","#account":"Личный кабинет","#admin":"Управление"}[hash]||"Матч")+" · prognozich ai";
   state.route = hash; document.getElementById('view-matches').classList.toggle('ym-show-content',hash === '#matches'); Account.track("page_view",hash); window.ProductAnalytics?.hit(hash); state.marketRequest++; state.marketDetailRequest++; state.historyRequest++;
+  PublicResults.activate(hash);
   $("league-nav").hidden=!["#matches","#favorites"].includes(hash) && !match;
   if(previous!==hash && AnalysisDialog.isOpen && !(match&&match[1]===state.aiDialogEvent))AnalysisDialog.close();
   document.body.classList.add('without-ai-desk');
@@ -1323,6 +1324,8 @@ async function route() {
     showView("view-archive"); $("breadcrumb").textContent="Данные / Архив матчей"; state.archiveOffset=0; loadArchive();
   } else if (hash === "#history") {
     showView("view-history"); $("breadcrumb").textContent = "История / Разборы ИИ"; loadHistory();
+  } else if(hash==='#results'||publicSaved) {
+    showView(publicSaved?'view-result':'view-results');$('breadcrumb').textContent=publicSaved?'Результаты / Ответ ИИ':'Результаты за 30 дней';document.title='Результаты ИИ · prognozich ai';
   } else if (hash === "#status") {
     showView("view-status"); $("breadcrumb").textContent = "Состояние сервиса";
     loadStatus(); loadBacktest().catch(error => showError("backtest-empty",error.message));

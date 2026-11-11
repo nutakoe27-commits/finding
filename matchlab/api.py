@@ -103,8 +103,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app):
         repo.initialize()
         jobs.start()
+        automation.start()
         try:yield
-        finally:jobs.stop()
+        finally:automation.stop();jobs.stop()
 
     app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings
@@ -112,11 +113,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     accounts.install(app,repo,settings)
     growth.install(app,repo,settings)
     push.install(app,repo,settings)
+    from . import public_results
+    public_results.install(app,repo)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     models = OrderedDict()
     model_lock = RLock()
     analysis_lock = RLock()
+    system_analysis_lock = RLock()
 
     def model_for(before: date) -> tuple[GoalModel, str]:
         rows, revision = repo.snapshot(before)
@@ -360,6 +364,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not accounts.agreements_current(repo,user['id']):
             raise HTTPException(403,'Для ИИ-разбора ознакомьтесь с документами и подтвердите согласия.',headers={'X-Legal-Required':'1'})
         accounts.limited(repo,'statistics-request:'+user['id'],12,60)
+        return queue_match_statistics(event_id,stream)
+
+    def queue_match_statistics(event_id: str,stream: bool):
         if not event_id.isdigit() or len(event_id)>20: raise HTTPException(422,'Некорректный ID события.')
         if not settings.bookmaker_ingest_token: raise HTTPException(503,'Получение статистики ещё не настроено.')
         document=archive.document(repo,event_id) if stream else repo.event_markets(event_id)
@@ -590,7 +597,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             http_request.state.limited_summary = cached.get('analysis_type') in ('limited_summary','statistical_report','partial_model')
             http_request.state.ai_details=generation_details(cached,True)
             return {**cached, "cached": True}
-        if not analysis_lock.acquire(blocking=False):
+        lane=getattr(http_request.state,'analysis_lane','human')
+        lane_lock=system_analysis_lock if lane=='system' else analysis_lock
+        if not lane_lock.acquire(blocking=False):
             raise HTTPException(409, "ИИ уже готовит разбор. Дождитесь его завершения и повторите запрос.")
         try:
             statistics = None
@@ -603,6 +612,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             context['web_research'] = {'state':'disabled','sources':[]}
+            context['analysis_origin']='system' if lane=='system' else 'human'
             if settings.event_analysis_mode=='neural-verdict':
                 from .neural_verdict import build_packet,document_quote
                 as_of=instant(context['request_time']['at'])
@@ -652,13 +662,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             http_request.state.ai_details=generation_details(payload)
             return {**payload, "cached": False}
         finally:
-            analysis_lock.release()
+            lane_lock.release()
 
     def execute_job(job,snapshot):
         request=EventExplainRequest.model_validate(snapshot['request'])
-        worker_request=SimpleNamespace(state=SimpleNamespace(user={'id':job['user_id']}))
-        # Share the legacy endpoint's lock; no second model job runs alongside it.
-        with analysis_lock:
+        lane=job.get('lane','human')
+        worker_request=SimpleNamespace(state=SimpleNamespace(user={'id':job['user_id']},analysis_lane=lane))
+        with (system_analysis_lock if lane=='system' else analysis_lock):
             remaining=max(1,min(settings.qwen_job_timeout,(instant(job['deadline'])-datetime.now(timezone.utc)).total_seconds()-60))
             opts=replace(settings,qwen_timeout=max(1,remaining-30),qwen_analysis_timeout=remaining)
             return explain_event_impl(job['event_id'],request,job['source']=='archive',worker_request,snapshot['inputs'],opts)
@@ -666,6 +676,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .analysis_jobs import AnalysisJobs
     jobs=AnalysisJobs(repo,settings,execute_job)
     app.state.analysis_jobs=jobs
+    from .featured_automation import FeaturedAutomation
+    def prepare_featured(event_id,statistics_job_id):
+        from .analysis_jobs import SYSTEM_OWNER
+        request=EventExplainRequest(statistics_job_id=statistics_job_id)
+        inputs=event_analysis_inputs(event_id,request,True)
+        return {'request':request.model_dump(),'inputs':inputs},event_analysis_key({'id':SYSTEM_OWNER},request,inputs)
+    automation=FeaturedAutomation(repo,settings,jobs,prepare_featured,lambda event_id:queue_match_statistics(event_id,True))
+    app.state.featured_automation=automation
 
     def enqueue_analysis(event_id,request,stream,http_request):
         inputs=event_analysis_inputs(event_id,request,stream)
@@ -722,7 +740,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if saved is None:
             raise HTTPException(404, "Прогноз не найден.")
         try:
-            text = qwen.explain(settings, public_prediction(saved), request.notes)
+            if not analysis_lock.acquire(blocking=False):raise HTTPException(409,'Пользовательский поток занят. Дождитесь завершения разбора.')
+            try:text = qwen.explain(settings, public_prediction(saved), request.notes)
+            finally:analysis_lock.release()
         except ValueError as exc:
             raise HTTPException(502, public_ai_error(exc)) from exc
         return {"forecast_id": saved["id"], "text": text, "notes_verified": False}

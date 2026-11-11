@@ -41,15 +41,15 @@ def site_records(db):
         '$.context.neural_verdict','$.context.ai_generation',
         '$.context.neural_input.as_of','$.context.neural_input.quote',
         '$.context.team_statistics.observed_at','$.context.team_statistics.match_phase',
-        '$.context.neural_input.policy.force_skip') fields
+        '$.context.neural_input.policy.force_skip','$.context.analysis_origin') fields
         FROM event_analyses WHERE json_valid(payload)
         AND json_type(payload,'$.context.neural_verdict')='object'
         ORDER BY julianday(generated_at),id'''):
         try:
-            e,context_event,public_event,v,g,as_of,q,stats_at,phase,forced=json.loads(row['fields'])
+            e,context_event,public_event,v,g,as_of,q,stats_at,phase,forced,origin=json.loads(row['fields'])
             yield {'id':row['id'],'event':e or context_event or public_event,'verdict':v,'generation':g or {},
                 'forecast_at':row['generated_at'],'input_at':as_of,'quote':q,'statistics_at':stats_at,
-                'statistics_phase':phase,'force_skip':forced,'recorded_at':row['generated_at']}
+                'statistics_phase':phase,'force_skip':forced,'recorded_at':row['generated_at'],'origin':'system' if origin=='system' else 'human'}
         except (TypeError,ValueError):continue
 
 
@@ -177,10 +177,12 @@ def archive_health(db,current):
         'source_cursor':value.get('source_cursor'),'sent_cursor':value.get('sent_cursor')}
 
 
-def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='',offset=0,limit=25,report_dir=None,now=None):
+def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='',offset=0,limit=25,report_dir=None,now=None,
+        selection='first_fixture',analysis_id=''):
     if days not in (7,30,90) or source not in ('site','trials') or state not in ('all','settled','pending','unresolved','bet','skip'):
         raise ValueError('Некорректные фильтры результатов.')
     if sport and sport not in PROFILES:raise ValueError('Неподдерживаемый вид спорта.')
+    if selection not in ('first_fixture','distinct_bets'):raise ValueError('Неизвестное правило учёта.')
     if not isinstance(version,str) or len(version)>80 or type(offset) is not int or not 0<=offset<=100000 or type(limit) is not int or not 1<=limit<=100:
         raise ValueError('Некорректная страница результатов.')
     current=now or datetime.now(timezone.utc);today=current.astimezone(MSK).date()
@@ -198,6 +200,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
                 # Count exclusions only for fixtures in this visible period.
                 date=instant(raw['event']['kickoff_at']).astimezone(MSK).date()
                 if not dates[0]<=date<=today:continue
+                if selection=='distinct_bets' and instant(raw['event']['kickoff_at'])>current:continue
                 if sport and raw['event'].get('sport')!=sport:continue
                 row,why=prepare_record(raw,current)
                 if why:excluded[why]+=1
@@ -208,16 +211,27 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
         by_fixture=defaultdict(list)
         for row in sorted(prepared,key=lambda r:(r['at'],r['id'])):
             if version and row['version']!=version:continue
-            if any(abs((old['kickoff']-row['kickoff']).total_seconds())<=120 for old in by_fixture[row['identity'][:4]]):
+            previous=[old for old in by_fixture[row['identity'][:4]] if abs((old['kickoff']-row['kickoff']).total_seconds())<=120]
+            cohort_key=row['identity']
+            if selection=='distinct_bets':
+                if row['verdict']['decision']!='bet':excluded['not_bet']+=1;continue
+                from .verdict_sports import prices_valid
+                if not prices_valid((row.get('quote') or {}).get('odds'),row['event']['sport']) or paper_result(row,True)[2]:
+                    excluded['unconfirmed_prematch_price']+=1;continue
+                base=previous[0]['identity'] if previous else row['identity']
+                cohort_key=(base,row['verdict']['selection'],tuple(sorted(row['quote']['odds'].items())))
+                if cohort_key in cohort:excluded['duplicate_forecast']+=1;continue
+            elif previous:
                 excluded['duplicate_forecast']+=1;continue
-            cohort[row['identity']]=row
+            cohort[cohort_key]=row
             by_fixture[row['identity'][:4]].append(row)
         from .winline_backtest import results
         try:truth,invalid_results=results(db)
         except ValueError:truth=[];invalid_results={}
         truth=[{**t,'sport':'football'} for t in truth]
+        if selection=='distinct_bets':truth=[];invalid_results={}
         from .multisport_evidence import archive_results
-        for kind in {r['event']['sport'] for r in cohort.values()}-{'football'}:
+        for kind in {r['event']['sport'] for r in cohort.values()}-({'football'} if selection=='first_fixture' else set()):
             extra,rejected=archive_results(db,kind,include_unresolved=True)
             truth.extend(extra)
             invalid_results.update({kind+':'+k:v for k,v in rejected.items()})
@@ -229,9 +243,9 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
         v=row['verdict'];e=row['event'];preference=v.get('preference')
         matches=[r for r in by_identity[row['identity'][:4]] if abs((r['at']-row['kickoff']).total_seconds())<=120]
         c={'id':row['id'],'event':e,'forecast_at':row['at'].isoformat(),'recorded_at':row.get('recorded_at'),
-            'version':row['version'],'sport_label':PROFILES[e['sport']].label,'market_label':PROFILES[e['sport']].market_label,
+            'version':row['version'],'origin':row.get('origin','human'),'sport_label':PROFILES[e['sport']].label,'market_label':PROFILES[e['sport']].market_label,
             'preference':preference,'preference_label':e.get(preference) if preference else None,
-            'decision':v['decision'],'state':'pending','actual_score':None,'actual_outcome':None,
+            'decision':v['decision'],'stake_percent':v.get('stake_percent'),'state':'pending','actual_score':None,'actual_outcome':None,
             'preference_hit':None,'bet_won':None,'decision_result':'pending','paper_stake':None,'paper_profit':None,
             'reason':clean_reason(v),'odds':v.get('odds') if v['decision']=='bet' else None}
         if not matches:
@@ -254,16 +268,18 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
                 c.update(paper_stake=stake,paper_profit=profit,price_limitation=error)
             else:c['decision_result']='no_preference' if preference is None else 'missed_win' if preference==actual else 'avoided_loss'
         cases.append(c)
-    cases.sort(key=lambda c:(instant(c['event']['kickoff_at']),c['id']))
+    cases.sort(key=lambda c:(instant(c['event']['kickoff_at']),c['forecast_at'] if selection=='distinct_bets' else '',c['id']))
     daily=[];cumulative=[];bank=100
     for date in dates:
         group=[c for c in cases if instant(c['event']['kickoff_at']).astimezone(MSK).date()==date]
         cumulative.extend(group);m=summarize(group);cm=summarize(cumulative);bank+=m['paper_profit']
         daily.append({'day':str(date),**m,'cumulative_accuracy':cm['accuracy'],'cumulative_preferences':cm['preferences'],
             'cumulative_bank':bank})
-    filtered=[c for c in reversed(cases) if state=='all' or c['state']==state or c['decision']==state]
+    filtered=[c for c in reversed(cases) if (not analysis_id or c['id']==analysis_id) and (state=='all' or c['state']==state or c['decision']==state)]
     return {'format':'matchlab.verdict-outcomes.v1','checked_at':current.isoformat(),'timezone':'Europe/Moscow','days':days,
-        'source':source,'sport':sport,'sports':capabilities(),'diagnostic_only':source=='trials','selection':'first_valid_prematch_forecast_per_fixture_in_selected_version',
+        'source':source,'sport':sport,'sports':capabilities(),'diagnostic_only':source=='trials',
+        'selection':'distinct_bet_per_fixture_selection_and_line' if selection=='distinct_bets' else 'first_valid_prematch_forecast_per_fixture_in_selected_version',
+        'unique_fixtures':len({(c['event']['sport'],c['event']['source_event_id']) for c in cases}),
         'archive_health':health,
         'version':version,'versions':versions,'reports':inventory,'report_id':selected_report,
         'metrics':summarize(cases),'daily':daily,'excluded':dict(excluded),'excluded_archive_results':invalid_results,

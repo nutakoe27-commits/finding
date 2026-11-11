@@ -125,6 +125,12 @@ class Repository:
             db.executescript(ACCOUNT_SCHEMA)
             from .analysis_jobs import SCHEMA as ANALYSIS_JOB_SCHEMA
             db.executescript(ANALYSIS_JOB_SCHEMA)
+            job_columns={row['name'] for row in db.execute('PRAGMA table_info(ai_analysis_jobs)')}
+            if 'lane' not in job_columns:db.execute("ALTER TABLE ai_analysis_jobs ADD COLUMN lane TEXT NOT NULL DEFAULT 'human'")
+            db.execute('CREATE INDEX IF NOT EXISTS analysis_jobs_lane ON ai_analysis_jobs(lane,state,created_at)')
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS system_event_once ON ai_analysis_jobs(source,event_id) WHERE lane='system'")
+            from .featured_automation import SCHEMA as AUTOMATION_SCHEMA
+            db.executescript(AUTOMATION_SCHEMA)
             from .growth import SCHEMA as GROWTH_SCHEMA
             db.executescript(GROWTH_SCHEMA)
             analytics_columns={row['name'] for row in db.execute('PRAGMA table_info(analytics_consents)')}
