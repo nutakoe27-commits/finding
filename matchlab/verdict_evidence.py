@@ -49,7 +49,7 @@ def standing_rows(section):
 def collect(repo,event,statistics,as_of,add):
     from .chances import football_sample,norm
     from .match_history import normalize
-    from .season_evidence import season_views
+    from .season_evidence import season_views,collect_source_season
     context={'event':event,'team_statistics':statistics or {}}
     warnings=[];views=season_views(context)
     if (statistics or {}).get('sections_truncated') or (statistics or {}).get('truncated_sections') or ((statistics or {}).get('structured_feed') or {}).get('truncated'):
@@ -70,7 +70,9 @@ def collect(repo,event,statistics,as_of,add):
                 metadata['venue_vs_overall']=directions
             add('statistics',literal,side=side,scope=venue,**metadata)
     rows=football_sample(repo,event,as_of) if repo is not None and event.get('sport')=='football' else []
-    feed=normalize(context,as_of,rows,broad=True);all_rows={}
+    feed=normalize(context,as_of,rows,broad=True,allow_reported=True);all_rows={}
+    from .widget_results import REPORTED_WARNING
+    if any(r.get('evidence_status')=='source_full_time' for r in feed['rows']):warnings.append(REPORTED_WARNING)
     for row in rows+feed['rows']:
         if row['at']>=as_of:continue
         key=(row['home'],row['away'],row['at'],tuple(row['goals']))
@@ -98,7 +100,9 @@ def collect(repo,event,statistics,as_of,add):
             literal=(label+', '+str(event.get(side))+'.\nПорядок дат: сначала новые встречи. '
                 'Все исходы указаны для этой команды и только для показанной истории.\n'
                 'Последние известные исходы: '+latest+'.\n'+'\n'.join(lines))
-            add('history',literal,side=side,scope=scope,history_order='newest_first',outcomes=outcomes,matches=matches)
+            reported=sum(r.get('evidence_status')=='source_full_time' for r in kept)
+            if reported:literal=REPORTED_WARNING+'\n'+literal
+            add('history',literal,side=side,scope=scope,history_order='newest_first',outcomes=outcomes,matches=matches,source_reported_results=reported)
     names=aliases(event,statistics)
     for section in (statistics or {}).get('sections',[]):
         title=str(section.get('title') or '')
@@ -120,4 +124,5 @@ def collect(repo,event,statistics,as_of,add):
                 f"игр {row['games']}, побед {row['wins']}, ничьих {row['draws']}, поражений {row['losses']}, "
                 f"забито {row['for']}, пропущено {row['against']}, разница {row['difference']}, очков {row['points']}.")
             add('statistics',literal,side=side,scope='standings',binding='exact_or_anchored_name')
+    warnings.extend(collect_source_season(event,statistics,add,typed_views=views))
     return list(dict.fromkeys(warnings))

@@ -1,6 +1,7 @@
 """Persistent background analyses, ownership, quotas and snapshot isolation."""
 from dataclasses import replace
 from datetime import datetime,timedelta,timezone
+import json
 from pathlib import Path
 from threading import Event,Thread
 import tempfile
@@ -72,6 +73,15 @@ class AnalysisJobTests(unittest.TestCase):
             usage=db.execute('SELECT status,details FROM ai_usage').fetchone()
             self.assertEqual(usage['status'],'success');self.assertIn('"model_calls": 1',usage['details'])
             self.assertIsNone(db.execute('SELECT snapshot FROM ai_analysis_jobs').fetchone()[0])
+
+    def test_input_blockers_are_preserved_for_admin_job_diagnostics(self):
+        job=self.submit();claimed=self.jobs.claim()
+        blockers=['Нет пригодных данных для сравнения об участниках: Соперник.']
+        self.jobs.finish(claimed,result={'id':'a'*32,'analysis_type':'limited_summary','context':{
+            'ai_generation':{'state':'skipped','reason':'insufficient_data','model_calls':0,'input_blockers':blockers}}})
+        with self.repo.connection() as db:details=json.loads(db.execute('SELECT details FROM ai_usage').fetchone()[0])
+        self.assertEqual(details['input_blockers'],blockers)
+        self.assertEqual(details['model_calls'],0)
 
     def test_saved_snapshot_is_used_even_after_line_and_teams_change(self):
         job=self.submit(notes='Личная заметка')

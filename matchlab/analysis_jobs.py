@@ -140,6 +140,7 @@ class AnalysisJobs:
         if result:
             gen=result.get('context',{}).get('ai_generation') or {}
             details={key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')}
+            if gen.get('input_blockers'):details['input_blockers']=gen['input_blockers']
             details.update(analysis_id=result['id'],cache_hit=bool(result.get('cached')))
             if result.get('cached'):details['model_calls']=0
             status='limited' if result.get('analysis_type') in ('limited_summary','statistical_report','partial_model') else 'success'

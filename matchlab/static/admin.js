@@ -23,6 +23,7 @@ window.Admin = (() => {
     const value=gen.cache_hit ? 'ai_cached' : gen.state==='ready' ? 'ai_ready' : gen.state==='partial' ? 'ai_partial' : gen.state==='skipped' ? 'ai_skipped' : gen.reason==='context_limit' ? 'ai_context_limit' : 'ai_error';
     const box=node('div','admin-ai-result');box.append(badge(value));
     if(gen.reason)box.append(node('small','muted',aiReasons[gen.reason]||'Причина не установлена'));
+    if(Array.isArray(gen.input_blockers))for(const line of gen.input_blockers.slice(0,4))box.append(node('small','muted',String(line)));
     return box;
   }
   function confirmPassword(){

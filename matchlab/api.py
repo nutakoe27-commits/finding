@@ -91,6 +91,7 @@ def generation_details(payload,cached=False):
     result={key:gen.get(key) for key in ('state','reason','model_calls','parts_total','parts_completed','markets_total','markets_completed')}
     result.update(analysis_id=payload['id'],cache_hit=cached)
     if gen.get('token_usage'):result['token_usage']=gen['token_usage']
+    if gen.get('input_blockers'):result['input_blockers']=gen['input_blockers']
     if cached:result['model_calls']=0
     return result
 

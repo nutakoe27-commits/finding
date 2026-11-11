@@ -13,7 +13,7 @@ from .bookmakers import instant
 from .token_usage import capture_usage,track_generation
 from .verdict_sports import PROFILES,ANALYSIS_FOCUS,supported,market_matches,prices_valid
 
-VERSION='neural-verdict-v7'
+VERSION='neural-verdict-v8'
 MAX_ATTEMPTS=3
 LOG=logging.getLogger('uvicorn.error')
 RISK_NOTE='Можно потерять всю сумму ставки. Пропуск матча допустим; вердикт не гарантирует выигрыш.'
@@ -114,7 +114,9 @@ def system_prompt(packet):
              'В выбранном рынке ничья не предусмотрена. Не используй draw_risk или риск ничьей для пропуска.\n')+
             SYSTEM[SYSTEM.index('Встречный довод должен'):])
     for key,values in groups.items():prompt=prompt.replace('__'+key+'__',encoded(values))
-    return prompt+'\nДоступные ID этого входа: '+encoded(catalog)+'. Используй только существующие ID; не придумывай ссылки. Пример показывает структуру, а не вердикт.'
+    return (prompt+'\nДоступные ID этого входа: '+encoded(catalog)+'. Используй только существующие ID; не придумывай ссылки. Пример показывает структуру, а не вердикт. '
+        'source_reported_results означает итоговые счета источника без отдельного финального статуса; не называй их независимо подтверждённой историей. '
+        'measurement=unknown означает неизвестный режим сезонного показателя: не называй его средним за матч или суммой за сезон.')
 
 
 def encoded(value):return json.dumps(value,ensure_ascii=False,separators=(',',':'),allow_nan=False)
@@ -224,14 +226,16 @@ def build_packet(repo,event,statistics,as_of,quote=None,notes=''):
     if event.get('phase')!='prematch' or not event.get('kickoff_at') or instant(event['kickoff_at'])<=as_of:
         limitations.append('Предматчевый выбор недоступен: встреча уже началась или время не подтверждено.')
     if not supported(event):limitations.append('Для этого вида спорта или формата события ИИ-разбор пока не поддерживается.')
-    if not all(any(f['kind'] in ('statistics','history') and f.get('side')==s for f in facts) for s in ('home','away')):
-        limitations.append('Недостаточно подтверждённых фактов для сравнения обоих участников.')
+    missing=[s for s in ('home','away') if not any(f['kind'] in ('statistics','history') and f.get('side')==s for f in facts)]
+    if missing:
+        limitations.append('Нет пригодных данных для сравнения об участниках: '+', '.join(str(event.get(s) or s) for s in missing)+'.')
     force_skip=bool(limitations)
+    blockers=list(limitations)
     limitations.extend(warnings)
     if truncated:limitations.append('Часть исходных данных сокращена; полнота ограничена.')
     for line in limitations:add('limitation',line)
     return {'format':VERSION,'event':scope,'as_of':as_of.isoformat(),'quote':quote,
-            'options':options,'facts':facts,'limitations':limitations,
+            'options':options,'facts':facts,'limitations':limitations,'blockers':blockers,
             'policy':{'scope':profile.scope if profile else None,'market_label':profile.market_label if profile else None,
                       'score_unit':profile.unit if profile else None,'draw_possible':profile.draw if profile else False,
                       'force_skip':force_skip,'no_probability_estimates':True},
@@ -417,6 +421,7 @@ def generate(settings,packet,complete=None,*,historical=False,capture_rejected=F
         reason=('live_not_supported' if phase=='live' else 'finished_event' if phase=='finished' else
             'unsupported_sport' if not supported(event) else 'unconfirmed_phase' if phase!='prematch' else
             'fixture_started' if event.get('kickoff_at') and instant(event['kickoff_at'])<=instant(packet['as_of']) else 'insufficient_data')
+        LOG.info('Qwen verdict skipped: event=%s reason=%s blockers=%s',event.get('source_event_id'),reason,encoded(packet.get('blockers') or packet.get('limitations') or []))
     engine='qwen' if answer else 'data_guard' if not attempts else 'model_error'
     if answer is None:
         explanations={'live_not_supported':'Матч уже идёт. Текущий режим ИИ предназначен для предматчевого разбора; лайв-прогноз пока недоступен.',
@@ -447,6 +452,7 @@ def generate(settings,packet,complete=None,*,historical=False,capture_rejected=F
              'odds':option['odds'] if option else None,'risk_note':RISK_NOTE,'data_forced_skip':packet['policy']['force_skip'],
              'limitations':packet['limitations']}
     generation={'state':'ready' if engine=='qwen' else 'skipped' if engine=='data_guard' else 'unavailable','reason':None if engine=='qwen' else reason,
+                'input_blockers':packet.get('blockers',[]) if engine=='data_guard' else [],
                 'model_calls':len(attempts),'parts_total':1,'parts_completed':int(engine=='qwen'),
                 'markets_total':1 if packet['quote'] else 0,'markets_completed':int(engine=='qwen' and bool(packet['quote'])),
                 'attempts':attempts,'regenerations':max(0,len(attempts)-1),'max_attempts':MAX_ATTEMPTS,

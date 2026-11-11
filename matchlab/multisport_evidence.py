@@ -2,7 +2,6 @@
 from collections import Counter
 from datetime import datetime, timezone
 import json
-import re
 
 from .bookmakers import instant
 from .verdict_sports import PROFILES, key, result_score
@@ -77,11 +76,10 @@ def provider_results(event, statistics, cutoff):
                     continue
                 if row.get('_sid') is not None and identifier(row['_sid']) != str(p.archive_id):
                     continue
-                state = row.get('status')
-                if isinstance(state, dict):
-                    state = state.get('_id', state.get('id', state.get('name')))
+                from .widget_results import finality
+                evidence_status=finality(row,event['sport'])
                 positions = [s for s in ('home', 'away') if same_team(teams.get(s), targets.get(side))]
-                if key(state) not in ('100', 'finished', 'ended', 'closed', 'ft') or len(positions) != 1:
+                if not evidence_status or len(positions) != 1:
                     excluded += 1; continue
                 if any(row.get(k) for k in ('postponed', 'cancelled', 'canceled', 'retired', 'walkover', 'disqualified')):
                     excluded += 1; continue
@@ -105,17 +103,9 @@ def provider_results(event, statistics, cutoff):
                     competition = competition.get('name')
                 if not competition and any(identifier(row.get(k)) and identifier(row.get(k)) == identifier(anchor.get(k)) for k in ('_utid', '_tid')):
                     competition = event['competition']
-                records.append({**names, 'competition': competition, 'at': at, 'goals': (h, a), 'sport': event['sport']})
+                records.append({**names, 'competition': competition, 'at': at, 'goals': (h, a), 'sport': event['sport'],
+                                'evidence_status':evidence_status})
     return records, excluded
-
-
-SEASON_LABELS = {
-    'hockey': ('Забитые шайбы', 'Пропущенные шайбы', 'Забитые мячи', 'Голов пропущено'),
-    'basketball': ('Набранные очки', 'Забитые очки', 'Пропущенные очки'),
-    'tennis': ('1-я подача выиграна', '2-я подача выиграна', 'Двойные Ошибки', 'Выигранные геймы', 'Эйсы'),
-    'table_tennis': ('Выигранные партии', 'Проигранные партии'),
-    'volleyball': ('Выигранные сеты', 'Проигранные сеты', 'Эйсы', 'Ошибки подачи'),
-}
 
 
 def collect(repo, event, statistics, as_of, add):
@@ -126,6 +116,8 @@ def collect(repo, event, statistics, as_of, add):
         with repo.connection() as db:
             rows, _ = archive_results(db, event['sport'], as_of, [event.get('home'), event.get('away')])
     provider, excluded = provider_results(event, statistics, cutoff)
+    from .widget_results import REPORTED_WARNING
+    if any(r.get('evidence_status')=='source_full_time' for r in provider):warnings.append(REPORTED_WARNING)
     if excluded:
         warnings.append('Часть истории виджета не использована: завершение или условия результата не подтверждены.')
     unique = {}
@@ -155,23 +147,13 @@ def collect(repo, event, statistics, as_of, add):
                 matches.append({'date': str(row['at'].date()), 'score': f'{h}:{a}', 'difference': gf-ga, 'outcome': outcome})
                 lines.append(f"{row['at'].date()}: {row['home']} — {row['away']} {h}:{a}; для участника {words[outcome]}.")
             label = 'Текущий турнир' if same else 'Другие турниры или турнир не подтверждён'
-            add('history', f"{label}, {event[side]}. Единица счёта: {p.unit}. Условия: {p.market_label}. От новых встреч к старым.\n" + '\n'.join(lines),
+            reported=sum(r.get('evidence_status')=='source_full_time' for r in kept)
+            provenance=(' '+REPORTED_WARNING) if reported else ''
+            add('history', f"{label}, {event[side]}. Единица счёта: {p.unit}. Условия: {p.market_label}. От новых встреч к старым." +provenance+'\n' + '\n'.join(lines),
                 side=side, scope='same_competition' if same else 'other_competitions', history_order='newest_first',
-                score_unit=p.unit, matches=matches, outcomes=[m['outcome'] for m in matches])
-    for section in (statistics or {}).get('sections', []):
-        if not key(section.get('title')).startswith('статистика сезона') or section.get('truncated'):
-            continue
-        wording = section.get('text') or ''
-        filters = ', '.join(map(str, section.get('filters') or [])) or 'фильтры не подтверждены'
-        for label in SEASON_LABELS.get(event['sport'], ()):
-            pattern = r'(?<![\d.,])(\d+(?:[.,]\d+)?)\s*(%?)\s+' + re.escape(label) + r'\s+(\d+(?:[.,]\d+)?)\s*(%?)(?![\d.,])'
-            pairs = re.findall(pattern, wording, re.I)
-            if len(pairs) != 1 or pairs[0][1] != pairs[0][3]:
-                continue
-            h, unit, a, _ = pairs[0]
-            for side, value in (('home', h), ('away', a)):
-                add('statistics', f"Статистика сезона ({filters}), {event[side]}: {label} — {value}{unit}. Это показатель источника, не вероятность победы.",
-                    side=side, scope='source_season_view', metric=label, score_unit=p.unit)
+                score_unit=p.unit, matches=matches, outcomes=[m['outcome'] for m in matches],source_reported_results=reported)
+    from .season_evidence import collect_source_season
+    warnings.extend(collect_source_season(event,statistics,add))
     if (statistics or {}).get('sections_truncated') or ((statistics or {}).get('structured_feed') or {}).get('truncated'):
         warnings.append('Источник передал сокращённую статистику; полнота ограничена.')
     warnings.append('История может быть неполной; покрытие, составы и состояние участников подтверждены не для всех встреч.')

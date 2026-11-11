@@ -27,11 +27,16 @@ def row_time(row):
     except (TypeError,ValueError,OverflowError,OSError):return None
 
 
-def normalize(context,cutoff,archive_rows=(),broad=False):
+def normalize(context,cutoff,archive_rows=(),broad=False,allow_reported=False):
     from .chances import norm
     feed=(context.get('team_statistics') or {}).get('structured_feed') or {}
     anchor=feed.get('match') or {};targets=anchor.get('teams') or {};event=context['event']
     result={'rows':[],'samples':{'home':[],'away':[]},'counts':{}}
+    if allow_reported:
+        expected=identifier((context.get('team_statistics') or {}).get('statistics_id'))
+        team_ids=[identifier((targets.get(s) or {}).get('_id')) for s in ('home','away')]
+        if (not expected or identifier(feed.get('statistics_id'))!=expected or identifier(anchor.get('_id'))!=expected or
+            not all(team_ids) or team_ids[0]==team_ids[1]):return result
     unique={}
     for side in ('home','away'):
         counts=Counter();seen=set();target=targets.get(side) or {}
@@ -83,6 +88,11 @@ def normalize(context,cutoff,archive_rows=(),broad=False):
                 if state in (None,''):
                     corroborated=len(candidates)==1
                     final=corroborated
+                reported=False
+                if not final and allow_reported:
+                    from .widget_results import reported_full_time
+                    reported=reported_full_time(row,'football') is not None
+                    final=reported
                 if not final:counts['unconfirmed_final_status']+=1;continue
                 if len(candidates)==1:at=candidates[0]['at']
                 key=(at,names['home'],names['away'],h,a)
@@ -90,10 +100,12 @@ def normalize(context,cutoff,archive_rows=(),broad=False):
                 seen.add(key);counts['accepted']+=1
                 if not same_comp:counts['other_competition_used']+=1
                 if corroborated:counts['archive_confirmed']+=1
+                if reported:counts['source_full_time']+=1
                 gf,ga=(h,a) if positions[0]=='home' else (a,h)
                 result['samples'][side].append({'at':at,'gf':gf,'ga':ga,'scope_weight':1 if same_comp else .5})
                 if all(names.values()) and names['home']!=names['away']:
-                    unique[key]={'home':names['home'],'away':names['away'],'goals':(h,a),'at':at,'same_competition':same_comp,'scope_weight':1 if same_comp else .5}
+                    unique[key]={'home':names['home'],'away':names['away'],'goals':(h,a),'at':at,'same_competition':same_comp,'scope_weight':1 if same_comp else .5,
+                                 'evidence_status':'source_full_time' if reported else 'archive_confirmed' if corroborated else 'explicit_status'}
         result['counts'][side]=dict(counts)
     result['rows']=list(unique.values())
     return result
