@@ -34,6 +34,7 @@ class Settings:
     event_analysis_mode: str = 'independent'
     verdict_max_stake_pct: float = .5
     billing_enabled: bool = False
+    billing_public_testing: bool = False
     yookassa_shop_id: str = ''
     yookassa_secret_key: str = field(default='',repr=False)
 
@@ -95,6 +96,8 @@ class Settings:
         if not 0<=daily_limit<=100000:raise ValueError('AI_DAILY_LIMIT должен быть от 0 до 100000.')
         billing=os.getenv('BILLING_ENABLED','false').strip().lower()
         if billing not in ('true','false'):raise ValueError('BILLING_ENABLED: true или false.')
+        public_testing=os.getenv('BILLING_PUBLIC_TESTING','false').strip().lower()
+        if public_testing not in ('true','false'):raise ValueError('BILLING_PUBLIC_TESTING: true или false.')
         shop=os.getenv('YOOKASSA_SHOP_ID','').strip();secret=os.getenv('YOOKASSA_SECRET_KEY','').strip()
         if billing=='true' and (not shop.isdigit() or not secret.startswith('test_')):
             raise ValueError('Для тестовых платежей нужны Shop ID и тестовый ключ ЮKassa.')
@@ -119,5 +122,5 @@ class Settings:
             qwen_job_timeout=job_timeout,
             qwen_market_limit=market_limit,
             event_analysis_mode=analysis_mode,verdict_max_stake_pct=stake_limit,
-            billing_enabled=billing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
+            billing_enabled=billing=='true',billing_public_testing=public_testing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
         )

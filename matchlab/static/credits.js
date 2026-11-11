@@ -9,16 +9,28 @@ window.Credits=(()=>{
   const key=()=>owner?'matchlab:test-payment:'+owner:null;
   function remember(){try{if(key())order?sessionStorage.setItem(key(),JSON.stringify({id:order.id,analysis_id:order.analysis_id})):sessionStorage.removeItem(key());}catch{}}
   function header(){
-    $('credits-open').hidden=!config?.enabled;
-    $('credits-open').textContent=Account.user?`Разборы: ${balance}`:'Купить разборы';
+    const testing=!!config?.test_checkout_allowed,preview=config?.sales_state==='prelaunch';
+    $('credits-open').hidden=!config?.enabled&&!preview;
+    $('credits-open').textContent=Account.user&&config?.enabled?`Разборы: ${balance}`:testing?'Купить разборы':'Тарифы';
     $('account-wallet').hidden=!config?.enabled||!Account.user;
     $('credits-balance').textContent=String(balance);$('account-credit-balance').textContent=units(balance);
+    $('credits-mode').textContent=testing?'Проверка интеграции · тестовый магазин':'Пакеты разборов';
+    $('credits-launch-note').hidden=testing;
+    $('credits-consent-row').hidden=!testing;
+    $('credits-offer-link').href=config?.offer_url||'/static/legal/offer.html';
+    $('credits-offer-link').textContent=testing?'условия проверки оплаты':'публичную оферту';
+    $('credits-consent-comment').textContent=testing?'Реальные деньги в тестовом магазине не списываются.':'';
+    $('credits-pay').disabled=!config?.checkout_enabled;
+    $('credits-pay').textContent=testing?'Перейти к тестовой оплате':'Приём оплаты ещё не открыт';
+    $('account-credit-buy').textContent=testing?'Купить разборы':'Тарифы и условия';
+    $('account-payment-mode').hidden=!testing;
+    $('account-payment-mode').textContent=testing?'Проверка интеграции · тестовый магазин, реальные деньги не списываются.':'';
     if(config?.enabled){$('account-bonus-note').textContent='Бонусные разборы входят в доступный баланс. За подготовку ответа баланс не списывается.';}
   }
   function showOrder(value){
     order=value;remember();$('credits-order').hidden=false;$('credits-packages-area').hidden=true;
     $('credits-order-title').textContent=stateNames[value.state]||'Проверяем оплату';
-    $('credits-order-description').textContent=`${units(value.credits||0)} · ${rub(value.amount_kopecks||0)} · тестовая покупка`;
+    $('credits-order-description').textContent=`${units(value.credits||0)} · ${rub(value.amount_kopecks||0)}${value.test_mode?' · Проверочная операция без списания денег':''}`;
     $('credits-check').hidden=['succeeded','canceled','refunded','failed'].includes(value.state);
     $('credits-continue').hidden=!value.confirmation_url||!['pending','creating','checking'].includes(value.state);
     $('credits-continue').href=value.confirmation_url||'#';
@@ -39,7 +51,7 @@ window.Credits=(()=>{
       const list=$('account-credit-orders');list.replaceChildren();
       for(const value of data.orders){
         const row=node('div','credit-order-row'),text=node('div');
-        text.append(node('strong','',`${units(value.credits)} · ${rub(value.amount_kopecks)}`),node('span','small muted',`${stateNames[value.state]||'Проверяем'} · ${new Date(value.created_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}${value.refunded_kopecks?' · Возврат '+rub(value.refunded_kopecks):''}`));
+        text.append(node('strong','',`${units(value.credits)} · ${rub(value.amount_kopecks)}`),node('span','small muted',`${stateNames[value.state]||'Проверяем'} · ${new Date(value.created_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}${value.test_mode?' · Проверочная операция без списания денег':''}${value.refunded_kopecks?' · Возврат '+rub(value.refunded_kopecks):''}`));
         row.append(text);
         if(['creating','pending'].includes(value.state)){
           const button=node('button','text-button','Проверить');button.type='button';button.addEventListener('click',()=>{if(!dialog.open)dialog.showModal();showOrder(value);poll();});row.append(button);
@@ -47,6 +59,9 @@ window.Credits=(()=>{
         list.append(row);
       }
       if(!data.orders.length)list.append(node('p','small muted','Покупок пока нет. Разборы появятся после подтверждения оплаты.'));
+      if(!config.test_checkout_allowed&&data.orders.some(value=>value.test_mode)){
+        $('account-payment-mode').hidden=false;$('account-payment-mode').textContent='В истории есть проверочные операции без списания денег. Они не являются покупками по коммерческой оферте.';
+      }
       $('account-credit-adjustment').textContent=data.adjustment_due?'Баланс скорректирован после возврата. Вопросы: m@krichigin.ru.':'';
       await loadOpened(true);
     }catch(error){if(serial===epoch)$('credits-message').textContent=error.message;}
@@ -67,15 +82,17 @@ window.Credits=(()=>{
     }));
   }
   async function open(identifier=null){
-    await ready;if(!config?.enabled)return;
-    if(!await Account.ensure(()=>open(identifier)))return;
+    await ready;await Account.ready;if(!config)return;
+    if(config.test_checkout_allowed&&!await Account.ensure(()=>open(identifier)))return;
+    const serial=epoch;
     intent=identifier;await refresh();
+    if(serial!==epoch)return;
     if(!dialog.open)dialog.showModal();
     $('credits-message').textContent='';$('credits-consent').checked=false;
     if(order&&['creating','pending','checking'].includes(order.state)){showOrder(order);poll();return;}
     order=null;requestKey=null;$('credits-order').hidden=true;$('credits-packages-area').hidden=false;packages();
     $('credits-pay').disabled=!config.checkout_enabled;
-    if(!config.checkout_enabled)$('credits-message').textContent='Оплата временно недоступна. Уже купленные разборы можно использовать.';
+    if(!config.checkout_enabled)$('credits-message').textContent='Приём оплаты ещё не открыт. Здесь можно ознакомиться с тарифами и условиями. Доступные единицы на балансе можно использовать.';
   }
   async function poll(){
     if(checking||!order||!Account.user)return;clearTimeout(pollTimer);const serial=epoch,id=order.id;checking=true;
@@ -88,6 +105,7 @@ window.Credits=(()=>{
     finally{checking=false;}
   }
   $('credits-pay').addEventListener('click',async()=>{
+    if(!config?.checkout_enabled){$('credits-message').textContent='Приём оплаты ещё не открыт.';return;}
     if(!$('credits-consent').checked){$('credits-message').textContent='Подтвердите условия тестовой покупки.';return;}
     const button=$('credits-pay');button.disabled=true;const serial=epoch;
     const selected=dialog.querySelector('input[name="credit-package"]:checked');
@@ -122,9 +140,10 @@ window.Credits=(()=>{
     root.append(skeleton,node('p','',payload.decision==='skip'?'Претендент на победу по мнению ИИ и обоснование пропуска доступны в полном разборе.':'Откройте полный ответ: выбор ИИ, аргументы и обоснование решения.'));
     const message=node('p','account-message');message.setAttribute('role','status');
     if(payload.unlock.available){
-      const button=node('button','primary-button','Разблокировать за 1 разбор');button.type='button';
-      button.addEventListener('click',async()=>{button.disabled=true;message.textContent='';try{await spend(payload.id,callback);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
-      root.append(button,node('p','small muted','Повторное открытие этого ответа — бесплатно. При нулевом балансе можно купить пакет разборов.'));
+      const preview=!config?.checkout_enabled&&!(payload.unlock.balance>=1);
+      const button=node('button','primary-button',preview?'Посмотреть тарифы':'Разблокировать за 1 разбор');button.type='button';
+      button.addEventListener('click',async()=>{button.disabled=true;message.textContent='';try{if(preview)await open(payload.id);else await spend(payload.id,callback);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
+      root.append(button,node('p','small muted','Повторное открытие этого ответа — бесплатно. '+(config?.checkout_enabled?'При нулевом балансе можно купить пакет разборов.':'Приём новых оплат ещё не открыт; тарифы и условия доступны для ознакомления.')));
     }else root.append(node('p','notice','Подтверждённого разбора ИИ пока нет. Разборы не списаны; платная разблокировка недоступна.'));
     root.append(message);target.replaceChildren(root);
   }
@@ -134,12 +153,17 @@ window.Credits=(()=>{
   $('credits-order-open').addEventListener('click',async()=>{const b=$('credits-order-open');b.disabled=true;try{await spend(order.analysis_id);}catch(e){$('credits-message').textContent=e.message;}finally{b.disabled=false;}});
   $('credits-new-purchase').addEventListener('click',()=>{order=null;remember();open();});
   $('account-open-more').addEventListener('click',async()=>{const b=$('account-open-more');b.disabled=true;try{await loadOpened();}catch(e){$('account-message').textContent=e.message;}finally{b.disabled=false;}});
-  const ready=Account.api('/api/billing/config').then(value=>{config=value;header();return value;}).catch(()=>{config={enabled:false};header();});
+  async function loadConfig(){
+    const serial=epoch;
+    try{const value=await Account.api('/api/billing/config');if(serial===epoch){config=value;header();}return value;}
+    catch{if(serial===epoch){config={enabled:false};header();}}
+  }
+  const ready=loadConfig();
   document.addEventListener('accountchange',async()=>{
     epoch++;clearTimeout(pollTimer);checking=false;order=null;owner=Account.user?.id||null;balance=0;
     openedOffset=0;$('account-open-analyses').replaceChildren();$('account-credit-orders').replaceChildren();$('account-open-more').hidden=true;
     $('credits-message').textContent='';$('credits-order-title').textContent='';$('credits-order-description').textContent='';
-    if(dialog.open)dialog.close();header();await refresh();
+    if(dialog.open)dialog.close();header();await loadConfig();await refresh();
     if(!owner||!config?.enabled)return;
     try{
       const saved=JSON.parse(sessionStorage.getItem(key())||'null');

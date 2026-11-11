@@ -74,7 +74,7 @@ def shell(head,body):
         '<a class="seo-skip" href="#content">К содержимому</a><header class="seo-header seo-shell"><a class="seo-brand" href="/">prognozich <b>ai</b></a>'
         '<nav aria-label="Основная навигация"><a href="/matches/">Матчи и прогнозы</a><a href="/#results">Результаты ИИ</a><span class="seo-age">18+</span></nav></header>'
         '<main id="content" class="seo-shell">'+body+'</main><footer class="seo-footer seo-shell"><p>Спортивная аналитика. Сервис не принимает ставки. Прогноз ИИ может ошибаться.</p>'
-        '<nav aria-label="Документы"><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/privacy.html">Конфиденциальность</a><a href="mailto:m@krichigin.ru">Контакты</a></nav></footer></body></html>')
+        '<nav aria-label="Документы"><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/privacy.html">Конфиденциальность</a><a href="/static/legal/pricing.html">Тарифы</a><a href="/static/legal/offer.html">Оферта</a><a href="/static/legal/payment-refund.html">Оплата и возвраты</a><a href="/static/legal/contacts.html">Реквизиты</a></nav></footer></body></html>')
 
 
 def home_html(settings):

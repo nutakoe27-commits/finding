@@ -23,7 +23,7 @@ from matchlab.yookassa import ProviderUnavailable,ProviderMismatch
 class BillingTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
-        self.settings=Settings(Path(temp.name),'http://127.0.0.1:9/v1','fixture',billing_enabled=True,yookassa_shop_id='100500',yookassa_secret_key='test_fixture')
+        self.settings=Settings(Path(temp.name),'http://127.0.0.1:9/v1','fixture',billing_enabled=True,billing_public_testing=True,yookassa_shop_id='100500',yookassa_secret_key='test_fixture')
         self.repo=Repository(self.settings.database);self.repo.initialize()
         self.client=TestClient(create_app(self.settings));self.client.__enter__();self.addCleanup(self.client.__exit__,None,None,None)
         self.user=signed_in(self.client,self.repo);self.payments={};self.creates=[]

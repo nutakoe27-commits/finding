@@ -13,7 +13,7 @@ from matchlab.config import Settings
 from matchlab.storage import Repository
 from outcome_helpers import forecast
 
-settings=Settings(Path(os.environ['MATCHLAB_DATA_DIR']),'','',billing_enabled=True,
+settings=Settings(Path(os.environ['MATCHLAB_DATA_DIR']),'','',billing_enabled=True,billing_public_testing=True,
     yookassa_shop_id='100500',yookassa_secret_key='test_browser',public_origin=os.environ['PUBLIC_ORIGIN'])
 repo=Repository(settings.database);repo.initialize()
 

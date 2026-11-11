@@ -5,12 +5,14 @@ import re
 from uuid import uuid4
 
 from fastapi import HTTPException,Request
+from fastapi.responses import JSONResponse
 
 from . import accounts
 from .yookassa import YooKassa,ProviderUnavailable,ProviderMismatch,kopecks,confirmation_url
 
 MODE='test'
 OFFER_VERSION='2026-11-11.test.v1'
+PUBLIC_OFFER_VERSION='2026-11-11.v1'
 PACKAGES=[{'id':'one','credits':1,'amount_kopecks':49000},
           {'id':'five','credits':5,'amount_kopecks':219000},
           {'id':'ten','credits':10,'amount_kopecks':409000}]
@@ -127,7 +129,7 @@ def unlock(repo,settings,user,identifier):
         if published and published[0]['state']=='settled':
             db.execute('INSERT INTO analysis_unlocks VALUES (?,?,?,?,?)',(user['id'],identifier,MODE,accounts.now(),'public'))
             return {'unlocked':True,'charged':0,'balance':max(0,balance(db,user['id'])),'route':'#result/'+identifier}
-        if balance(db,user['id'])<1:raise HTTPException(402,'Недостаточно разборов. Пополните баланс.')
+        if balance(db,user['id'])<1:raise HTTPException(402,'Недостаточно разборов. Пополните баланс.' if test_checkout_allowed(settings,user) else 'Нет доступных разборов. Приём новых оплат ещё не открыт.')
         bonus=db.execute('SELECT bonus_analyses FROM users WHERE id=?',(user['id'],)).fetchone()[0]>0
         if bonus:db.execute('UPDATE users SET bonus_analyses=bonus_analyses-1 WHERE id=?',(user['id'],))
         db.execute('INSERT INTO analysis_credit_ledger VALUES (?,?,?,?,?,?,?)',
@@ -138,7 +140,11 @@ def unlock(repo,settings,user,identifier):
 
 
 def public_order(row):
-    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}
+    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}|{'test_mode':row['mode']=='test'}
+
+
+def test_checkout_allowed(settings,user):
+    return bool(settings.billing_enabled and (settings.billing_public_testing or user and user.get('role')=='admin'))
 
 
 def apply_payment(repo,settings,value):
@@ -179,6 +185,7 @@ def reconcile(repo,settings,order):
 
 
 def create_order(repo,settings,user,body):
+    if not test_checkout_allowed(settings,user):raise HTTPException(503,'Приём оплаты ещё не открыт. Тарифы и условия опубликованы для ознакомления.')
     if not settings.billing_enabled:raise HTTPException(503,'Тестовая оплата пока не настроена.')
     package=next((p for p in PACKAGES if p['id']==body.get('package_id')),None)
     key=body.get('request_key');analysis_id=body.get('analysis_id')
@@ -242,8 +249,13 @@ def apply_refund(repo,settings,value):
 
 def install(app,repo,settings):
     @app.get('/api/billing/config')
-    def config():
-        return {'enabled':active(repo,settings),'checkout_enabled':settings.billing_enabled,'test_mode':True,'packages':PACKAGES,'offer_version':OFFER_VERSION,'unlock_cost':1}
+    def config(request:Request):
+        allowed=test_checkout_allowed(settings,accounts.current_user(request,False))
+        return JSONResponse({'enabled':active(repo,settings),'checkout_enabled':allowed,'test_checkout_allowed':allowed,
+            'sales_state':'prelaunch','test_mode':True,'packages':PACKAGES,'offer_version':OFFER_VERSION,'unlock_cost':1,
+            'offer_url':'/static/legal/test-purchase.html' if allowed else '/static/legal/offer.html',
+            'public_offer_version':PUBLIC_OFFER_VERSION,'public_offer_url':'/static/legal/offer.html'},
+            headers={'Cache-Control':'private, no-store'})
 
     @app.get('/api/billing/wallet')
     def get_wallet(request:Request):return wallet(repo,accounts.current_user(request)['id'])
