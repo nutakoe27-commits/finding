@@ -388,9 +388,11 @@ def install(app, repo, settings):
                 "SELECT count(*) FROM push_subscriptions s WHERE s.user_id=? AND s.enabled=1 AND EXISTS (SELECT 1 FROM push_ad_consents a WHERE a.subscription_id=s.id AND a.user_id=s.user_id AND a.revoked_at IS NULL)",
                 (user["id"],),
             ).fetchone()[0]
+            from .subscriptions import unlimited
+            unlimited_access=unlimited(db,user['id'],settings.billing_mode)
         return {
             "today": today,
-            "daily_limit": settings.ai_daily_limit,
+            "daily_limit": 0 if unlimited_access else settings.ai_daily_limit,
             "bonus_analyses": user["bonus_analyses"],
             "push_devices": subscriptions,
         }

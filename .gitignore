@@ -21,3 +21,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
+.env.before-subscriptions-*
+.env.subscriptions-new

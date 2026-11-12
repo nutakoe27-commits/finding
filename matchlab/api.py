@@ -101,16 +101,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     repo = Repository(settings.database)
     from .billing_fiscal import Worker as ReceiptWorker
     receipt_worker=ReceiptWorker(repo,settings)
+    from .subscriptions import Worker as SubscriptionWorker
+    subscription_worker=SubscriptionWorker(repo,settings)
 
     @asynccontextmanager
     async def lifespan(app):
         repo.initialize()
         billing.initialize(repo,settings)
         receipt_worker.start()
+        subscription_worker.start()
         jobs.start()
         automation.start()
         try:yield
-        finally:receipt_worker.stop();automation.stop();jobs.stop()
+        finally:subscription_worker.stop();receipt_worker.stop();automation.stop();jobs.stop()
 
     app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings

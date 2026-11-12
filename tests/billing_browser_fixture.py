@@ -7,7 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Request
-from matchlab import accounts,billing
+from matchlab import accounts,billing,subscriptions
 from matchlab.api import create_app
 from matchlab.config import Settings
 from matchlab.storage import Repository
@@ -16,7 +16,9 @@ from outcome_helpers import forecast
 LIVE=os.getenv('LIVE_BILLING_FIXTURE')=='true'
 settings=Settings(Path(os.environ['MATCHLAB_DATA_DIR']),'','',billing_enabled=True,billing_public_testing=not LIVE,
     billing_mode='live' if LIVE else 'test',billing_receipts_enabled=LIVE,
-    yookassa_shop_id='100500',yookassa_secret_key='live_browser' if LIVE else 'test_browser',public_origin=os.environ['PUBLIC_ORIGIN'])
+    yookassa_shop_id='100500',yookassa_secret_key='live_browser' if LIVE else 'test_browser',public_origin=os.environ['PUBLIC_ORIGIN'],
+    billing_recurring_enabled=os.getenv('SUBSCRIPTION_BROWSER_FIXTURE')=='true')
+subscriptions.Worker.start=lambda self:None
 if LIVE:
     from matchlab.billing_fiscal import Worker
     Worker.start=lambda self:None
@@ -41,10 +43,25 @@ class FakeProvider:
         with repo.connection() as db:row=db.execute('SELECT payload FROM browser_payments WHERE id=?',(identifier,)).fetchone()
         if not row:raise RuntimeError('unknown fake payment')
         return json.loads(row[0])
+    def create_subscription(self,order,origin,payment_method_id=None):
+        value=self.create(order,origin)
+        value['metadata']['subscription_id']=order['subscription_id']
+        value['payment_method']={'id':payment_method_id or 'saved-browser-card-001','type':'bank_card','saved':True}
+        with repo.connection() as db:db.execute('UPDATE browser_payments SET payload=? WHERE id=?',(json.dumps(value),value['id']))
+        return value
 
 
 billing.YooKassa=FakeProvider
+subscriptions.YooKassa=FakeProvider
 app=create_app(settings)
+
+
+@app.post('/fixture/subscription-admin')
+def subscription_admin(request:Request):
+    if not settings.billing_recurring_enabled:raise RuntimeError('Subscription fixture only')
+    user=accounts.current_user(request)
+    with repo.connection() as db:db.execute("UPDATE users SET role='admin' WHERE id=?",(user['id'],))
+    return {'ok':True}
 
 
 @app.post('/fixture/seed')

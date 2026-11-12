@@ -487,6 +487,7 @@ function renderNeuralVerdict(target,verdict,generation) {
   const isModel=verdict.engine==='qwen',bet=verdict.decision==='bet' && Number.isFinite(verdict.stake_percent) && verdict.stake_percent>0 && verdict.stake_percent<=.5;
   heading.append(el('h3','','Вердикт'),el('span','report-badge',isModel?(verdict.data_forced_skip?'Пропуск: недостаточно данных':'Экспериментальное мнение ИИ'):'Решение ограничено данными'));
   lead.append(heading);
+  if(window.Credits?.enabled)lead.append(el('p','credit-rule',verdict.decision==='skip'?'Полный ответ «Пропустить» — бесплатно. Разборы не списаны.':'Разбор списывается ТОЛЬКО за открытие решения «Ставить». Повторный просмотр бесплатен.'));
   if(Object.prototype.hasOwnProperty.call(verdict,'preference')) {
     lead.append(el('p','small muted','Претендент'),el('p','verdict-preference',verdict.preference_label || 'Никто'));
     lead.append(el('p','small muted','Предпочтение по победителю отделено от решения о ставке.'),el('h3','','Решение'));
@@ -1233,7 +1234,7 @@ async function loadHistory() {
       const card = el("article", "panel history-card"), info = el("div");
       info.append(el("h2", "", analysis.locked?'Закрытый разбор ИИ':eventTitle(analysis.event)), el("p", "small muted", analysis.locked?`Ответ от ${moscowTime(analysis.generated_at)} МСК`:`${analysis.event.sport_label || "Футбол"} · ${analysis.market_name} · ${moscowTime(analysis.generated_at)} МСК`));
       const preview=analysisPreview(analysis.text);
-      const excerpt = el("p", "history-excerpt", analysis.locked?(analysis.text||'Полный ответ можно разблокировать за 1 разбор.'):(preview.length > 200 ? preview.slice(0,200) + "…" : preview)); info.append(excerpt);
+      const excerpt = el("p", "history-excerpt", analysis.locked?(analysis.text||'Открытие решения «Ставить» — 1 разбор. «Пропустить» — бесплатно.'):(preview.length > 200 ? preview.slice(0,200) + "…" : preview)); info.append(excerpt);
       const open = el("a", "secondary-button", "Открыть разбор"); open.href = `#analysis/${analysis.id}`; card.append(info,open); return card;
     }));
     ProductUX.filterHistory();

@@ -40,7 +40,7 @@ class YooKassa:
             status=error.response.status_code;parameter='-'
             try:
                 candidate=error.response.json().get('parameter','')
-                if isinstance(candidate,str) and re.fullmatch(r'(?:receipt|amount|confirmation|metadata|capture|description|payment_method_data)(?:\.[a-z_0-9]+){0,5}',candidate):parameter=candidate
+                if isinstance(candidate,str) and re.fullmatch(r'(?:receipt|amount|confirmation|metadata|capture|description|payment_method_data|payment_method_id|save_payment_method)(?:\.[a-z_0-9]+){0,5}',candidate):parameter=candidate
             except (ValueError,AttributeError):pass
             LOG.warning('YooKassa unavailable: http_status=%s parameter=%s',status,parameter)
             try:retry=max(5,min(300,int(error.response.headers.get('retry-after','5'))))
@@ -66,6 +66,21 @@ class YooKassa:
     def payment(self,identifier):
         if not re.fullmatch(r'[a-zA-Z0-9-]{10,80}',identifier):raise ProviderMismatch('payment_id')
         return self.request('GET','/payments/'+identifier)
+
+    def create_subscription(self,order,origin,payment_method_id=None):
+        from .billing_fiscal import receipt,subscription_receipt
+        data={'amount':{'value':f"{order['amount_kopecks']//100}.{order['amount_kopecks']%100:02d}",'currency':'RUB'},
+            'capture':True,'description':'prognozich: ежедневная подписка '+order['package_id'],
+            'metadata':{'order_id':order['id'],'user_id':order['user_id'],'subscription_id':order['subscription_id']}}
+        if payment_method_id:
+            data['payment_method_id']=payment_method_id
+        else:
+            data.update(save_payment_method=True,payment_method_data={'type':'bank_card'},
+                confirmation={'type':'redirect','return_url':origin+'/#account'})
+        if self.settings.billing_mode=='live':
+            if not self.settings.billing_receipts_enabled:raise ProviderUnavailable('receipt_configuration',definitive=True)
+            data['receipt']=receipt(self.settings,order) if order['credits'] else subscription_receipt(self.settings,order)
+        return self.request('POST','/payments',key=order['id'],data=data)
 
     def refund(self,identifier):
         if not re.fullmatch(r'[a-zA-Z0-9-]{10,80}',identifier):raise ProviderMismatch('refund_id')

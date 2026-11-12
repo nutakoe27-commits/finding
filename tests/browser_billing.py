@@ -35,6 +35,7 @@ async def exercise(base):
                 await expect(page.locator('#public-result-content')).not_to_contain_text('СЕКРЕТНОЕ')
                 await page.locator('#public-result-content .credit-gate .primary-button').click()
                 await expect(page.locator('#credits-dialog')).to_be_visible()
+                await page.locator('#credits-one-time > summary').click()
                 await expect(page.locator('#credits-packages .credit-package')).to_have_count(3)
                 await expect(page.locator('#credits-packages')).to_contain_text('490 ₽')
                 await expect(page.locator('#credits-packages')).to_contain_text('2\u00a0190 ₽')
@@ -64,10 +65,12 @@ async def exercise(base):
                 await page.reload();await expect(page.locator('#public-result-content')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
                 wallet=await (await context.request.get(base+'/api/billing/wallet')).json();assert wallet['balance']==0
                 await page.goto(base+'/#analysis/'+seeded['skip'])
-                await expect(page.locator('#saved-analysis-text')).to_contain_text('Рекомендуем пропустить матч')
-                await expect(page.locator('#saved-analysis-text')).not_to_contain_text('СЕКРЕТНОЕ')
+                await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
+                await expect(page.locator('#saved-analysis-text')).to_contain_text('«Пропустить» — бесплатно')
+                await page.goto(base+'/#analysis/'+seeded['private'])
                 await page.locator('#saved-analysis-text .credit-gate .primary-button').click()
                 await expect(page.locator('#credits-dialog')).to_be_visible()
+                await page.locator('#credits-one-time > summary').click()
                 await page.locator('input[name="credit-package"][value="five"]').check();await page.locator('#credits-consent').check();await page.locator('#credits-pay').click()
                 await page.wait_for_url('https://yoomoney.ru/**');order_id=parse_qs(urlsplit(page.url).query)['orderId'][0]
                 await context.request.post(base+'/fixture/succeed/'+order_id);await page.locator('#return').click()
@@ -76,14 +79,9 @@ async def exercise(base):
                 await page.locator('#credits-order-open').click()
                 await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
                 await expect(page.locator('#credits-open')).to_have_text('Разборы: 4')
-                await page.goto(base+'/#analysis/'+seeded['private'])
-                await expect(page.locator('#saved-analysis-text')).not_to_contain_text('СЕКРЕТНОЕ')
-                await page.locator('#saved-analysis-text .credit-gate .primary-button').click()
-                await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
-                await expect(page.locator('#credits-open')).to_have_text('Разборы: 3')
-                await page.goto(base+'/#account');await expect(page.locator('#account-credit-balance')).to_have_text('3 разбора')
+                await page.goto(base+'/#account');await expect(page.locator('#account-credit-balance')).to_have_text('4 разбора')
                 await expect(page.locator('#account-credit-orders .credit-order-row')).to_have_count(2)
-                await expect(page.locator('#account-open-analyses .credit-opened')).to_have_count(3)
+                await expect(page.locator('#account-open-analyses .credit-opened')).to_have_count(2)
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),width
                 await page.screenshot(path=f'/workspace/outputs/billing-wallet-{width}.png',full_page=True)
                 await page.evaluate("Account.api('/api/auth/logout',{method:'POST',body:'{}'}).then(()=>Account.refresh())")
@@ -93,7 +91,7 @@ async def exercise(base):
                 assert not errors,errors
                 await context.close()
         finally:await browser.close()
-    print('PASS: local fake YooKassa redirect/return; one/five packs; verified credit; paid system/private/skip; repeat free; wallet/history/logout; 1440/390/320; no real payment/model calls')
+    print('PASS: local fake YooKassa redirect/return; one/five packs; verified credit; paid system/private; skip free; repeat free; wallet/history/logout; 1440/390/320; no real payment/model calls')
 
 
 def main():

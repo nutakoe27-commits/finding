@@ -42,6 +42,14 @@ def receipt(settings,order,*,mode='full_prepayment',quantity=None,description=No
     return value
 
 
+def subscription_receipt(settings,order):
+    value={'customer':{'email':receipt_email(order.get('receipt_email'))},'items':[{
+        'description':'Безлимитный доступ к ИИ-разборам на 24 часа','quantity':'1.00',
+        'amount':money(order['amount_kopecks']),'vat_code':1,'payment_mode':'full_payment','payment_subject':'service'}]}
+    if settings.yookassa_tax_system_code:value['tax_system_code']=settings.yookassa_tax_system_code
+    return value
+
+
 def enqueue(db,order,kind,amount,analysis_id=None):
     identifier=hashlib.sha256((kind+':'+order['id']+':'+str(analysis_id or '')).encode()).hexdigest()[:32]
     stamp=accounts.now()
@@ -54,7 +62,7 @@ def allocate(db,settings,user_id,analysis_id):
     # The caller holds the same write transaction as the debit and unlock.
     orders=db.execute('''SELECT o.*,coalesce(a.used,0) used FROM payment_orders o LEFT JOIN
         (SELECT order_id,count(*) used FROM analysis_credit_allocations GROUP BY order_id) a ON a.order_id=o.id
-        WHERE o.user_id=? AND o.mode='live' AND o.state='succeeded' ORDER BY o.created_at,o.id''',(user_id,)).fetchall()
+        WHERE o.user_id=? AND o.mode='live' AND o.state='succeeded' AND o.credits>0 ORDER BY o.created_at,o.id''',(user_id,)).fetchall()
     for row in orders:
         order=dict(row);unit=order['amount_kopecks']//order['credits']
         refunded=(order['refunded_kopecks']+unit-1)//unit
@@ -80,7 +88,7 @@ def process_one(repo,settings):
     state='pending';error=None;provider_id=job['provider_receipt_id']
     try:
         provider=YooKassa(settings)
-        if job['kind']=='prepayment':
+        if job['kind'] in ('prepayment','subscription'):
             value=provider.payment(order['payment_id'])
             if (value.get('id')!=order['payment_id'] or value.get('test') is not False or (value.get('recipient') or {}).get('account_id')!=settings.yookassa_shop_id or
                 value.get('status')!='succeeded' or value.get('paid') is not True or (value.get('amount') or {}).get('currency')!='RUB' or

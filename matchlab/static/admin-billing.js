@@ -6,6 +6,7 @@ window.AdminBilling=(()=>{
   const num=n=>Number(n||0).toLocaleString('ru-RU');
   const unitRules=new Intl.PluralRules('ru'),units=n=>`${num(n)} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[unitRules.select(n)]}`;
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+  const subName=o=>o.credits===0?'Безлимит / 1 день':units(o.credits)+(o.subscription_id?' / 1 день':'');
   const names={creating:'Создаётся',pending:'Ожидает оплаты',succeeded:'Оплачен',canceled:'Отменён',refunded:'Возвращён',failed:'Ошибка создания'};
   const kinds={payment:'Начисление за оплату',unlock:'Открытие разбора',bonus_unlock:'Открытие за бонус',refund:'Корректировка после возврата'};
   let offset=0,timer,controller,detailController,epoch=0,detailEpoch=0,current=null,detailId=null,detailOffset=0;
@@ -48,13 +49,16 @@ window.AdminBilling=(()=>{
       metric('Заказов',num(m.orders),`Ожидают: ${num(m.pending)} · отменены: ${num(m.canceled)} · ошибки: ${num(m.failed)}`),
       metric('Оплачено заказов',m.payment_rate==null?'—':(m.payment_rate*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%',`Начислено за оплаты: ${num(m.credited_units)} разборов, до возвратов`));
     if(!test){const r=d.receipt_statuses||{};$('ab-metrics').append(metric('Кассовые чеки',num(r.succeeded||0),`Ожидают: ${(r.pending||0)+(r.processing||0)} · требуют проверки: ${r.review||0}`));}
+    $('ab-subscriptions').replaceChildren(table(['Пользователь','Тариф','Списание','Продление','Состояние'],(d.subscriptions||[]).map(s=>[
+      s.username||s.id,s.credits===0?'Безлимит':units(s.credits)+' каждый день',money(s.amount_kopecks)+' / 24 ч',
+      s.auto_renew?when(s.period_end_at)+' МСК':'Отключено',({active:'Действует',creating:'Первая оплата',canceled:'Отменена',past_due:'Оплата не прошла',review:'Требует проверки'})[s.state]||s.state])));
     chart(d.daily);
-    $('ab-packages').replaceChildren(table(['Пакет','Оплачено / заказов','Сумма оплат','Возвраты'],d.packages.map(p=>[units(p.units),`${p.paid} / ${p.orders}`,money(p.gross_kopecks),money(p.refunded_kopecks)])));
+    $('ab-packages').replaceChildren(table(['Пакет','Оплачено / заказов','Сумма оплат','Возвраты'],d.packages.map(p=>[p.id.startsWith('daily_')?(p.units===0?'Безлимит / 1 день':units(p.units)+' / 1 день'):units(p.units),`${p.paid} / ${p.orders}`,money(p.gross_kopecks),money(p.refunded_kopecks)])));
     $('ab-statuses').replaceChildren(...Object.entries(d.statuses).map(([state,count])=>{const e=node('div');e.append(badge(state),node('strong','',num(count)));return e;}));
     $('ab-orders').replaceChildren(table(['Создан · МСК','Покупатель','Пакет','Сумма','Статус','Возвращено','Заказ'],d.orders.map(o=>{
       const who=node('div');who.append(node('strong','',o.username||'Аккаунт недоступен'),node('small','ab-id',o.user_id));
       const open=button('Подробнее →',()=>showDetail(o.id));open.setAttribute('aria-label','Подробности заказа '+o.id);
-      return [when(o.created_at),who,units(o.credits),money(o.amount_kopecks),badge(o.state),money(o.refunded_kopecks),open];
+      return [when(o.created_at),who,subName(o),money(o.amount_kopecks),badge(o.state),money(o.refunded_kopecks),open];
     })));
     $('ab-page').textContent=d.total?`${offset+1}–${Math.min(offset+d.limit,d.total)} из ${num(d.total)}`:'Заказов нет';
     $('ab-prev').disabled=offset===0;$('ab-next').disabled=offset+d.limit>=d.total;
@@ -76,18 +80,19 @@ window.AdminBilling=(()=>{
       const o=d.order,content=$('ab-detail-content');content.replaceChildren();
       content.append(node('p','ab-mode-label',o.mode==='test'?'Проверочная операция · реальные деньги не списывались':'Реальный платёж'),badge(o.state));
       const fields=node('dl','ab-detail-fields');
-      for(const [label,value] of [['Покупатель',o.username||o.user_id],['Пакет',units(o.credits)],['Сумма',money(o.amount_kopecks)],['Возвращено',money(o.refunded_kopecks)],['Создан',when(o.created_at)+' МСК'],['Запись обновлена',when(o.updated_at)+' МСК'],['ID заказа',o.id],['ID платежа ЮKassa',o.payment_id||'Ещё не получен'],['Редакция условий',o.offer_version],['Ошибка',o.error_code||'Не записана'],['ID связанного разбора',o.analysis_id||'Не указан']])fields.append(node('dt','',label),node('dd','',value));
+      for(const [label,value] of [['Покупатель',o.username||o.user_id],['Тариф',subName(o)],['Сумма',money(o.amount_kopecks)],['Возвращено',money(o.refunded_kopecks)],['Создан',when(o.created_at)+' МСК'],['Запись обновлена',when(o.updated_at)+' МСК'],['ID заказа',o.id],['ID платежа ЮKassa',o.payment_id||'Ещё не получен'],['Редакция условий',o.offer_version],['Ошибка',o.error_code||'Не записана'],['ID связанного разбора',o.analysis_id||'Не указан']])fields.append(node('dt','',label),node('dd','',value));
       content.append(fields,node('p','small muted','Время обновления записи не равно времени оплаты. Историческая дата фактической оплаты отдельно не сохранялась.'));
       if(o.mode==='live'){
-        const unit=o.amount_kopecks/o.credits;
-        content.append(node('p','notice',`Неиспользованный остаток пакета: ${units(d.refundable_units)} · ${money(d.refundable_units*unit)}. Возврат оформляется по первоначальному платежу в кабинете ЮKassa.`));
+        const unit=o.credits?o.amount_kopecks/o.credits:0;
+        content.append(node('p','notice',o.credits?`Неиспользованный остаток: ${units(d.refundable_units)} · ${money(d.refundable_units*unit)}. Возврат по исходному платежу в кабинете ЮKassa.`:'Безлимитный доступ на 24 часа. Возврат за неиспользованную часть периода рассматривается отдельно; единицы не начисляются.'));
         const receiptTable=node('div','admin-table-wrap');receiptTable.append(table(['Операция','Состояние','ID чека','Проверка'],(d.receipts||[]).map(r=>[
-          r.kind==='prepayment'?'Предоплата пакета':'Зачёт за разбор',({succeeded:'Зарегистрирован',pending:'Ожидает',processing:'Проверяется',review:'Требует внимания'})[r.state]||r.state,
+          r.kind==='subscription'?'Полный расчёт · безлимит':r.kind==='prepayment'?'Предоплата разборов':'Зачёт за разбор',({succeeded:'Зарегистрирован',pending:'Ожидает',processing:'Проверяется',review:'Требует внимания'})[r.state]||r.state,
           r.provider_receipt_id||'В составе платежа',r.error_code||'—'])));
         content.append(node('h3','','Чеки и зачёт предоплаты'),receiptTable);
         const allocationTable=node('div','admin-table-wrap');allocationTable.append(table(['Разбор','Стоимость','Открыт · МСК'],(d.allocations||[]).map(a=>[a.analysis_id,money(a.unit_kopecks),when(a.at)])));
         content.append(node('h3','','Оплаченные открытия из этого пакета'),allocationTable);
       }
+      if(d.subscription){const s=d.subscription;content.append(node('h3','','Согласие на ежедневные списания'),node('p','',s.consent_text),node('p','small muted',`Принято ${when(s.consent_at)} МСК · ${s.recurring_version} · продление ${s.auto_renew?'включено':'отключено'} · ${s.error_code||'без ошибок'}`));}
       const metrics=node('div','ab-wallet');metrics.append(metric('Баланс аккаунта',num(d.wallet.balance),'Включая бонусы'),metric('Бонусный остаток',num(d.wallet.bonus_units),'Показан отдельно от оплаченных единиц'),metric('Открыто ответов',num(d.wallet.opened_answers),'В выбранном режиме'));content.append(metrics);
       const refundTable=node('div','admin-table-wrap');refundTable.append(table(['Дата · МСК','Сумма','ID возврата'],d.refunds.map(r=>[when(r.at),money(r.amount_kopecks),r.id])));
       content.append(node('h3','','Возвраты по заказу'),refundTable);
@@ -102,7 +107,7 @@ window.AdminBilling=(()=>{
   $('ab-prev').addEventListener('click',()=>{offset=Math.max(0,offset-25);load();});$('ab-next').addEventListener('click',()=>{offset+=25;load();});
   $('ab-detail-close').addEventListener('click',()=>dialog.close());dialog.addEventListener('close',()=>{detailController?.abort();detailEpoch++;});
   $('ab-export').addEventListener('click',()=>{if(!current)return;const url=URL.createObjectURL(new Blob([JSON.stringify(current,null,2)],{type:'application/json'}));const a=node('a');a.href=url;a.download='matchlab-payments-'+current.mode+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
-  document.addEventListener('accountchange',()=>{stop();current=null;offset=0;for(const id of ['ab-metrics','ab-chart','ab-packages','ab-statuses','ab-orders','ab-detail-content'])$(id).replaceChildren();if(dialog.open)dialog.close();$('ab-page').textContent='';$('ab-error').textContent='';});
+  document.addEventListener('accountchange',()=>{stop();current=null;offset=0;for(const id of ['ab-subscriptions','ab-metrics','ab-chart','ab-packages','ab-statuses','ab-orders','ab-detail-content'])$(id).replaceChildren();if(dialog.open)dialog.close();$('ab-page').textContent='';$('ab-error').textContent='';});
   window.addEventListener('hashchange',()=>{if(!active())stop();});document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();else if(active())load();});
   return {load,stop};
 })();

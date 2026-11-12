@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS admin_audit (
  target TEXT,details TEXT NOT NULL);
 """
 HASH_SLOTS = BoundedSemaphore(3)
-LEGAL_VERSION = '2026-11-12.v2'
+LEGAL_VERSION = '2026-11-12.v3'
 LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"
@@ -343,7 +343,8 @@ def start_usage(repo, user, kind, target, settings, db=None):
                     "UPDATE users SET bonus_analyses=bonus_analyses+1 WHERE id=?",
                     (old["user_id"],),
                 )
-        if settings.ai_daily_limit:
+        from .subscriptions import unlimited
+        if settings.ai_daily_limit and not unlimited(db,user['id'],settings.billing_mode):
             count = db.execute(
                 "SELECT count(*) FROM ai_usage WHERE user_id=? AND at>=? AND (status='success' OR (status='pending' AND "
                 "(at>? OR EXISTS(SELECT 1 FROM ai_analysis_jobs j WHERE j.usage_id=ai_usage.id AND j.state IN ('queued','running'))))) AND used_bonus=0",

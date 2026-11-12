@@ -9,7 +9,7 @@ from .bookmakers import instant
 
 STATES=('creating','pending','succeeded','canceled','refunded','failed')
 ORDER_FIELDS=('id','user_id','package_id','credits','amount_kopecks','state','created_at','updated_at',
-              'payment_id','analysis_id','offer_version','refunded_kopecks','error_code','mode','username','receipt_email')
+              'payment_id','analysis_id','offer_version','refunded_kopecks','error_code','mode','username','receipt_email','subscription_id')
 MSK=timezone(timedelta(hours=3))
 
 
@@ -25,6 +25,10 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
         rows=db.execute('''SELECT o.*,u.username FROM payment_orders o LEFT JOIN users u ON u.id=o.user_id
             WHERE o.mode=?'''+(' AND o.created_at>=?' if days else '')+' ORDER BY o.created_at DESC,o.id DESC',
             (mode,cutoff) if days else (mode,)).fetchall()
+        from .subscriptions import public as subscription_public
+        subscription_rows=db.execute('''SELECT s.*,u.username FROM billing_subscriptions s LEFT JOIN users u ON u.id=s.user_id
+            WHERE s.mode=? ORDER BY s.created_at DESC LIMIT 100''',(mode,)).fetchall()
+        subscription_rows=[subscription_public(s)|{'username':s['username'],'consent_at':s['consent_at']} for s in subscription_rows]
     needle=query.strip().casefold()
     rows=[dict(r) for r in rows]
     rows=[r for r in rows if (not state or r['state']==state) and (not needle or any(needle in str(r.get(k) or '').casefold() for k in ('id','username','user_id','payment_id')))]
@@ -55,7 +59,7 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
         'statuses':dict(counts),'receipt_statuses':dict(receipts),'daily':[{'day':k,**v} for k,v in sorted(daily.items())],
         'packages':[{'id':k[0],'units':k[1],**v} for k,v in sorted(packages.items())],
         'orders':[{k:r.get(k) for k in ORDER_FIELDS} for r in rows[offset:offset+limit]],
-        'offset':offset,'limit':limit,'total':len(rows),
+        'offset':offset,'limit':limit,'total':len(rows),'subscriptions':subscription_rows,
         'notice':'Тестовые операции. Реальные деньги не списывались.' if mode=='test' else 'Подтверждённые операции рабочего магазина ЮKassa.',
         'methodology':'Отбор по дате создания заказа. Показан его текущий подтверждённый статус; возвраты относятся к выбранным заказам. Сумма после возвратов не является прибылью. Историческое время фактической оплаты отдельно не записывалось; updated_at — время обновления записи, не дата оплаты.'}
 
@@ -76,7 +80,12 @@ def detail(repo,identifier,offset=0,limit=30):
         opens=db.execute('SELECT count(*) FROM analysis_unlocks WHERE user_id=? AND mode=?',(row['user_id'],row['mode'])).fetchone()[0]
         allocations=[dict(r) for r in db.execute('SELECT analysis_id,unit_kopecks,at FROM analysis_credit_allocations WHERE order_id=? ORDER BY at',(identifier,))]
         receipts=[dict(r) for r in db.execute('SELECT id,kind,state,provider_receipt_id,attempts,error_code,updated_at FROM billing_receipt_jobs WHERE order_id=? ORDER BY created_at,id',(identifier,))]
-    return {'order':{k:row.get(k) for k in ORDER_FIELDS},'refunds':refunds,'ledger':ledger,'ledger_total':total,'offset':offset,'limit':limit,
+        subscription=None
+        if row['subscription_id']:
+            sub=db.execute('''SELECT plan_id,state,auto_renew,period_end_at,consent_at,consent_text,offer_version,recurring_version,
+                canceled_at,error_code FROM billing_subscriptions WHERE id=?''',(row['subscription_id'],)).fetchone()
+            subscription=dict(sub) if sub else None
+    return {'order':{k:row.get(k) for k in ORDER_FIELDS},'refunds':refunds,'ledger':ledger,'ledger_total':total,'offset':offset,'limit':limit,'subscription':subscription,
         'allocations':allocations,'receipts':receipts,
         'refundable_units':max(0,row['credits']-len(allocations)-(row['refunded_kopecks']*row['credits']+row['amount_kopecks']-1)//row['amount_kopecks']) if row['mode']=='live' and row['state']=='succeeded' else 0,
         'wallet':{'ledger_units':paid,'bonus_units':bonus[0] if bonus else 0,'balance':paid+(bonus[0] if bonus else 0),'opened_answers':opens},

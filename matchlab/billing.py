@@ -11,8 +11,8 @@ from . import accounts
 from .yookassa import YooKassa,ProviderUnavailable,ProviderMismatch,kopecks,confirmation_url
 
 MODE='test'
-OFFER_VERSION='2026-11-11.test.v1'
-PUBLIC_OFFER_VERSION='2026-11-12.v1'
+OFFER_VERSION='2026-11-12.test.v2'
+PUBLIC_OFFER_VERSION='2026-11-12.v3'
 PACKAGES=[{'id':'one','credits':1,'amount_kopecks':49000},
           {'id':'five','credits':5,'amount_kopecks':219000},
           {'id':'ten','credits':10,'amount_kopecks':409000}]
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS payment_orders (
  package_id TEXT NOT NULL,credits INTEGER NOT NULL,amount_kopecks INTEGER NOT NULL,
  state TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
  payment_id TEXT UNIQUE,confirmation_url TEXT,analysis_id TEXT,offer_version TEXT NOT NULL,
- refunded_kopecks INTEGER NOT NULL DEFAULT 0,error_code TEXT,receipt_email TEXT,UNIQUE(user_id,request_key));
+ refunded_kopecks INTEGER NOT NULL DEFAULT 0,error_code TEXT,receipt_email TEXT,subscription_id TEXT,UNIQUE(user_id,request_key));
 CREATE INDEX IF NOT EXISTS payment_orders_owner ON payment_orders(user_id,created_at);
 CREATE TABLE IF NOT EXISTS analysis_credit_ledger (
  id TEXT PRIMARY KEY,user_id TEXT NOT NULL,mode TEXT NOT NULL,delta INTEGER NOT NULL,
@@ -40,6 +40,8 @@ CREATE INDEX IF NOT EXISTS credit_allocations_order ON analysis_credit_allocatio
 '''
 from .billing_fiscal import SCHEMA as FISCAL_SCHEMA
 SCHEMA+=FISCAL_SCHEMA
+from .subscriptions import SCHEMA as SUBSCRIPTION_SCHEMA
+SCHEMA+=SUBSCRIPTION_SCHEMA
 
 
 def payment_mode(settings=None):return settings.billing_mode if settings else MODE
@@ -82,9 +84,11 @@ def wallet(repo,user_id,settings=None):
         amount=balance(db,user_id,mode)
         bonus=db.execute('SELECT bonus_analyses FROM users WHERE id=?',(user_id,)).fetchone()
         orders=db.execute('SELECT * FROM payment_orders WHERE user_id=? AND mode=? ORDER BY created_at DESC LIMIT 20',(user_id,mode)).fetchall()
+        from .subscriptions import summary
+        subscription=summary(db,user_id,mode)
     return {'balance':max(0,amount),'bonus_balance':bonus['bonus_analyses'] if bonus else 0,'adjustment_due':max(0,-amount),'test_mode':mode=='test',
         'receipt_email':next((r['receipt_email'] for r in orders if r['receipt_email']),None) if mode=='live' else None,
-        'orders':[public_order(row) for row in orders]}
+        'orders':[public_order(row) for row in orders], 'subscription':subscription}
 
 
 def opened(repo,user_id,offset=0,limit=20,settings=None):
@@ -117,9 +121,14 @@ def locked(repo,settings,payload,user=None):
     if not active(repo,settings) or entitled(repo,user,payload['id'],settings):return None
     context=payload.get('context') or {};v=context.get('neural_verdict') or {}
     skip=v.get('decision')=='skip'
+    # A verified skip never spends a credit and its whole explanation is free.
+    if skip and ready(payload):return None
+    with repo.connection() as db:
+        from .subscriptions import unlimited
+        has_unlimited=bool(user and unlimited(db,user['id'],payment_mode(settings)))
     return {'id':payload['id'],'generated_at':payload.get('generated_at'),'analysis_type':'locked',
         'locked':True,'decision':'skip' if skip else None,'text':'Рекомендуем пропустить матч' if skip else '',
-        'unlock':{'cost':1,'available':ready(payload),'authenticated':bool(user),
+        'unlock':{'cost':0 if has_unlimited else 1,'unlimited':has_unlimited,'available':ready(payload),'authenticated':bool(user),
             'balance':wallet(repo,user['id'],settings)['balance'] if user else 0,'test_mode':payment_mode(settings)=='test'}}
 
 
@@ -141,6 +150,12 @@ def unlock(repo,settings,user,identifier):
         old=db.execute('SELECT 1 FROM analysis_unlocks WHERE user_id=? AND analysis_id=? AND mode=?',(user['id'],identifier,mode)).fetchone()
         route=('#analysis/' if row['user_id']==user['id'] else '#result/')+identifier
         if old or user.get('role')=='admin':return {'unlocked':True,'charged':0,'balance':max(0,balance(db,user['id'],mode)),'route':route}
+        from .subscriptions import unlimited
+        free_skip=(payload.get('context') or {}).get('neural_verdict',{}).get('decision')=='skip'
+        if free_skip or unlimited(db,user['id'],mode):
+            db.execute('INSERT INTO analysis_unlocks VALUES (?,?,?,?,?)',
+                (user['id'],identifier,mode,accounts.now(),'skip' if free_skip else 'subscription'))
+            return {'unlocked':True,'charged':0,'balance':max(0,balance(db,user['id'],mode)),'route':route}
         from .bookmakers import instant
         published=[]
         if instant(payload['event']['kickoff_at'])<=datetime.now(timezone.utc):
@@ -163,7 +178,7 @@ def unlock(repo,settings,user,identifier):
 
 
 def public_order(row):
-    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}|{'test_mode':row['mode']=='test'}
+    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}|{'test_mode':row['mode']=='test','subscription_id':row['subscription_id']}
 
 
 def checkout_allowed(settings,user):
@@ -194,17 +209,24 @@ def apply_payment(repo,settings,value):
         if order['state'] in ('succeeded','refunded') and state!='succeeded':return public_order(order)
         url=confirmation_url(value)
         if state=='succeeded':
-            db.execute('INSERT OR IGNORE INTO analysis_credit_ledger VALUES (?,?,?,?,?,?,?)',
-                (uuid4().hex,order['user_id'],mode,order['credits'],'payment',order['id'],accounts.now()))
-            if mode=='live':
-                from .billing_fiscal import enqueue
-                enqueue(db,dict(order),'prepayment',order['amount_kopecks'])
+            if not order['subscription_id']:
+                db.execute('INSERT OR IGNORE INTO analysis_credit_ledger VALUES (?,?,?,?,?,?,?)',
+                    (uuid4().hex,order['user_id'],mode,order['credits'],'payment',order['id'],accounts.now()))
+                if mode=='live':
+                    from .billing_fiscal import enqueue
+                    enqueue(db,dict(order),'prepayment',order['amount_kopecks'])
+        if order['subscription_id']:
+            from .subscriptions import apply_verified
+            apply_verified(db,settings,order,value,state)
         db.execute('UPDATE payment_orders SET payment_id=?,state=?,confirmation_url=coalesce(?,confirmation_url),updated_at=?,error_code=NULL WHERE id=?',
             (value['id'],'refunded' if order['state']=='refunded' else state,url,accounts.now(),order['id']))
         return public_order(db.execute('SELECT * FROM payment_orders WHERE id=?',(order['id'],)).fetchone())
 
 
 def reconcile(repo,settings,order):
+    if order.get('subscription_id'):
+        from .subscriptions import reconcile as reconcile_subscription
+        return reconcile_subscription(repo,settings,order)
     provider=YooKassa(settings)
     if order['payment_id']:value=provider.payment(order['payment_id'])
     else:
@@ -286,11 +308,16 @@ def apply_refund(repo,settings,value):
         db.execute('INSERT INTO analysis_credit_ledger VALUES (?,?,?,?,?,?,?)',(uuid4().hex,order['user_id'],order['mode'],-units,'refund',value['id'],accounts.now()))
         db.execute('UPDATE payment_orders SET refunded_kopecks=?,state=?,updated_at=? WHERE id=?',
             (total,'refunded' if total==order['amount_kopecks'] else 'succeeded',accounts.now(),order['id']))
+        if order['subscription_id']:
+            from .subscriptions import refund_verified
+            refund_verified(db,order)
 
 
 def install(app,repo,settings):
     from . import billing_analytics
     billing_analytics.install(app,repo,settings)
+    from . import subscriptions
+    subscriptions.install(app,repo,settings)
     @app.get('/api/billing/config')
     def config(request:Request):
         allowed=checkout_allowed(settings,accounts.current_user(request,False));testing=payment_mode(settings)=='test'
@@ -298,7 +325,9 @@ def install(app,repo,settings):
             'sales_state':'prelaunch' if testing else 'open','test_mode':testing,'packages':PACKAGES,'offer_version':offer_version(settings),'unlock_cost':1,
             'receipt_email_required':not testing,
             'offer_url':'/static/legal/test-purchase.html' if allowed and testing else '/static/legal/offer.html',
-            'public_offer_version':PUBLIC_OFFER_VERSION,'public_offer_url':'/static/legal/offer.html'},
+            'public_offer_version':PUBLIC_OFFER_VERSION,'public_offer_url':'/static/legal/offer.html',
+            'subscriptions_enabled':subscriptions.enabled(settings) and allowed,'subscription_plans':subscriptions.plans(),
+            'recurring_version':subscriptions.VERSION,'credit_rule':'bet_only','skip_cost':0},
             headers={'Cache-Control':'private, no-store'})
 
     @app.get('/api/billing/wallet')

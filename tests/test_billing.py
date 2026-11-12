@@ -139,11 +139,12 @@ class BillingTests(unittest.TestCase):
             db.execute("INSERT INTO ai_analysis_jobs(id,user_id,request_key,event_id,source,state,created_at,usage_id,analysis_id) VALUES (?,?,?,?,?,'completed',?,?,?)",('job',self.user,'key','123','archive',accounts.now(),'none',payload['id']))
         response=self.client.get('/api/analysis-jobs/job');self.assertTrue(response.json()['result']['locked']);self.assertNotIn('SECRET_',response.text)
 
-    def test_skip_reveals_only_the_free_phrase_and_unlock_is_optional(self):
+    def test_skip_reveals_the_full_answer_for_free_and_never_debits(self):
         payload=self.save(decision='skip')
         response=self.client.get('/api/analyses/'+payload['id'])
-        self.assertEqual(response.json()['text'],'Рекомендуем пропустить матч');self.assertNotIn('SECRET_',response.text)
-        self.assertNotIn('preference',response.text);self.assertEqual(self.available(),0)
+        self.assertNotIn('locked',response.json());self.assertIn('SECRET_',response.text)
+        self.assertEqual(self.client.post('/api/billing/analyses/'+payload['id']+'/unlock',json={}).json()['charged'],0)
+        self.assertEqual(self.available(),0)
 
     def test_atomic_unlock_costs_one_and_repeated_open_is_free(self):
         payload=self.save();self.grant(2)
@@ -252,7 +253,9 @@ class BillingTests(unittest.TestCase):
         self.repo.import_event_markets(event('123'))
         jobs=self.client.app.state.analysis_jobs;jobs.stop()
         def generated(settings,context):
-            context['ai_generation']={'state':'ready','model_calls':1};context['neural_verdict']={'engine':'qwen','decision':'skip','preference':'home','reason':{'text':'SECRET_REASON'}}
+            context['neural_input']={'event':context['event'],'quote':{'observed_at':accounts.now()},'policy':{'force_skip':False}}
+            context['ai_generation']={'state':'ready','model_calls':1};context['neural_verdict']={'engine':'qwen','decision':'bet','preference':'home',
+                'selection':'home','selection_label':context['event']['home'],'stake_percent':.25,'odds':2.0,'reason':{'text':'SECRET_REASON'}}
             return 'SECRET_DIRECT_RESPONSE'
         with patch('matchlab.qwen.explain_event',side_effect=generated):
             response=self.client.post('/api/bookmakers/events/123/explain',json={})

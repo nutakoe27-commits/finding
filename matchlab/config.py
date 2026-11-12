@@ -44,6 +44,7 @@ class Settings:
     yandex_client_id: str = ''
     yandex_client_secret: str = field(default='',repr=False)
     vkid_client_id: str = ''
+    billing_recurring_enabled: bool = False
 
     @property
     def database(self):
@@ -111,6 +112,8 @@ class Settings:
         shop=os.getenv('YOOKASSA_SHOP_ID','').strip();secret=os.getenv('YOOKASSA_SECRET_KEY','').strip()
         billing_mode=os.getenv('BILLING_MODE','test').strip()
         receipts=os.getenv('BILLING_RECEIPTS_ENABLED','false').strip().lower()
+        recurring=os.getenv('BILLING_RECURRING_ENABLED','false').strip().lower()
+        if recurring not in ('true','false'):raise ValueError('BILLING_RECURRING_ENABLED: true или false.')
         tax_code=int(os.getenv('YOOKASSA_TAX_SYSTEM_CODE','0'))
         if billing_mode not in ('test','live') or receipts not in ('true','false') or tax_code not in (0,2,3):
             raise ValueError('Проверьте BILLING_MODE, BILLING_RECEIPTS_ENABLED и код УСН (0 — настройка кассы, 2 — доходы, 3 — доходы минус расходы).')
@@ -150,4 +153,5 @@ class Settings:
             billing_enabled=billing=='true',billing_public_testing=public_testing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
             billing_mode=billing_mode,billing_receipts_enabled=receipts=='true',yookassa_tax_system_code=tax_code,
             yandex_client_id=yandex_id,yandex_client_secret=yandex_secret,vkid_client_id=vkid_id,
+            billing_recurring_enabled=recurring=='true',
         )
