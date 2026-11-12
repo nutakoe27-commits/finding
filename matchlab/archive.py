@@ -668,6 +668,15 @@ def watches(repo):
 
 def results(repo, search="", sport=None, limit=50, offset=0):
     with repo.connection() as db:
+        if not search:
+            # Pagination must happen in SQL: the UI needs neither every full
+            # payload nor every archived result just to render fifty rows.
+            where=' WHERE sport_id=?' if sport is not None else ''
+            args=[sport] if sport is not None else []
+            fields='result_key,sport_id,sport_label,start_at,member1,member2,score,observed_at'
+            total=db.execute('SELECT count(*) FROM archive_latest_results'+where,args).fetchone()[0]
+            rows=db.execute('SELECT '+fields+' FROM archive_latest_results'+where+' ORDER BY start_at DESC LIMIT ? OFFSET ?',[*args,limit,offset])
+            return {'results':[dict(row) for row in rows],'total':total,'limit':limit,'offset':offset}
         if getattr(db,'dialect',None)=='mysql':
             candidates=db.execute('SELECT * FROM archive_latest_results'+(' WHERE sport_id=?' if sport is not None else '')+' ORDER BY start_at DESC',
                 (sport,) if sport is not None else ())

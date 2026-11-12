@@ -104,3 +104,12 @@ class PublicResultsTests(unittest.TestCase):
         m=report(self.repo)['metrics']
         self.assertEqual((m['average_odds'],m['average_odds_count']),(2,1))
         self.assertIsNone(m['win_rate'])
+
+    def test_cached_api_results_resettle_when_an_archived_score_is_corrected(self):
+        item=self.save(score=None)
+        with TestClient(create_app(Settings(self.root,'',''))) as client:
+            self.assertEqual(client.get('/api/results').json()['metrics']['pending'],1)
+            archive_result(self.repo,item['event'],'2:0','corrected')
+            self.assertEqual(client.get('/api/results').json()['metrics']['won'],1)
+            archive_result(self.repo,item['event'],'0:2','corrected')
+            self.assertEqual(client.get('/api/results').json()['metrics']['lost'],1)

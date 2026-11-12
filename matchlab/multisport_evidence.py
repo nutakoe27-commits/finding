@@ -7,7 +7,7 @@ from .bookmakers import instant
 from .verdict_sports import PROFILES, key, result_score
 
 
-def archive_results(db, sport, as_of=None, participants=None, include_unresolved=False):
+def archive_results(db, sport, as_of=None, participants=None, include_unresolved=False,fixtures=None):
     p = PROFILES[sport]
     mysql=getattr(db,'dialect',None)=='mysql'
     if not mysql:db.create_function('verdict_key', 1, key)
@@ -23,7 +23,11 @@ def archive_results(db, sport, as_of=None, participants=None, include_unresolved
             SELECT result_key,payload FROM ranked WHERE n=1'''
         params += [at, at]
     records = {}; rejected = Counter()
-    if mysql:
+    if fixtures is not None:
+        if as_of is not None:raise ValueError('Fixture lookup is only for current result settlement')
+        from .report_queries import fixture_results
+        selected=[row for row in fixture_results(db,p.archive_id,fixtures) if key(row['sport_label'])==key(p.label)]
+    elif mysql:
         if as_of is None:
             candidates=db.execute('SELECT result_key,payload,start_at,sport_label FROM archive_latest_results WHERE sport_id=?',(p.archive_id,))
         else:

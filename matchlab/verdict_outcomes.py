@@ -155,8 +155,9 @@ def summarize(cases):
 def archive_health(db,current):
     """Delivery freshness is separate from the time this report was recomputed."""
     row=db.execute('SELECT payload,received_at FROM archive_status WHERE id=1').fetchone()
-    latest=db.execute('''SELECT received_at,start_at FROM archive_latest_results
-        ORDER BY julianday(received_at) DESC LIMIT 1''').fetchone()
+    from .report_queries import RECEIVED_COLUMN
+    received_order=RECEIVED_COLUMN if getattr(db,'dialect',None)=='mysql' else 'julianday(received_at)'
+    latest=db.execute('SELECT received_at,start_at FROM archive_latest_results ORDER BY '+received_order+' DESC LIMIT 1').fetchone()
     value=json.loads(row['payload']) if row else {}
     delivered=row['received_at'] if row else None
     snapshot=value.get('last_snapshot_at')
@@ -237,12 +238,12 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
         if selection=='distinct_bets':truth=[];invalid_results={}
         else:
             from .winline_backtest import results
-            try:truth,invalid_results=results(db)
+            try:truth,invalid_results=results(db,fixtures=[r['event'] for r in cohort.values() if r['event']['sport']=='football'])
             except ValueError:truth=[];invalid_results={}
             truth=[{**t,'sport':'football'} for t in truth]
         from .multisport_evidence import archive_results
         for kind in {r['event']['sport'] for r in cohort.values()}-({'football'} if selection=='first_fixture' else set()):
-            extra,rejected=archive_results(db,kind,include_unresolved=True)
+            extra,rejected=archive_results(db,kind,include_unresolved=True,fixtures=[r['event'] for r in cohort.values() if r['event']['sport']==kind])
             truth.extend(extra)
             invalid_results.update({kind+':'+k:v for k,v in rejected.items()})
         health=archive_health(db,current)
@@ -294,6 +295,7 @@ def run(repo,*,days=30,source='site',version='',report_id='',state='all',sport='
         'archive_health':health,
         'version':version,'versions':versions,'reports':inventory,'report_id':selected_report,
         'metrics':summarize(cases),'daily':daily,'excluded':dict(excluded),'excluded_archive_results':invalid_results,
+        'excluded_archive_results_scope':'candidate_fixture_times',
         'matches':filtered[offset:offset+limit],'total':len(filtered),'offset':offset,'limit':limit,
         'limitations':['Пропущенная победа — оценка по известному исходу, а не доказательство ошибки пропуска.',
             'В диагностике учитывается первый допустимый разбор матча каждого типа: системный и по запросу пользователя.',

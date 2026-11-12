@@ -23,12 +23,16 @@ KEYS=('home','draw','away')
 VERSION=INDEPENDENT_MODEL_VERSION
 
 
-def results(db):
+def results(db,fixtures=None):
     tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     table='archive_latest_results' if 'archive_latest_results' in tables else 'results' if 'results' in tables else None
     if table is None:raise ValueError('В базе нет архива результатов Winline.')
     rows=[];rejected=Counter();identities={}
-    for raw in db.execute('SELECT * FROM '+table+' WHERE sport_id=1 ORDER BY start_at'):
+    if fixtures is not None and table=='archive_latest_results':
+        from .report_queries import fixture_results
+        candidates=fixture_results(db,1,fixtures)
+    else:candidates=db.execute('SELECT * FROM '+table+' WHERE sport_id=1 ORDER BY start_at')
+    for raw in candidates:
         row=dict(raw)
         try:
             value=json.loads(row['payload'] if table=='archive_latest_results' else row['raw_json'])

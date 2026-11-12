@@ -110,7 +110,12 @@ def install(app,repo):
         response.headers['Cache-Control']='public, max-age=20'
         try:
             with repo.connection() as db:
-                revision=tuple(db.execute('SELECT count(*),max(generated_at) FROM event_analyses').fetchone())+tuple(db.execute('SELECT max(received_at) FROM archive_latest_results').fetchone())
+                if getattr(db,'dialect',None)=='mysql':
+                    from .report_queries import RECEIVED_COLUMN
+                    latest=db.execute('SELECT received_at FROM archive_latest_results ORDER BY '+RECEIVED_COLUMN+' DESC LIMIT 1').fetchone()
+                    result_revision=(latest[0] if latest else None,)
+                else:result_revision=tuple(db.execute('SELECT max(received_at) FROM archive_latest_results').fetchone())
+                revision=tuple(db.execute('SELECT count(*),max(generated_at) FROM event_analyses').fetchone())+result_revision
             key=(sport,offset,limit,revision)
             with lock:
                 old=cache.get(key)

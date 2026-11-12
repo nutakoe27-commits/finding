@@ -74,7 +74,8 @@ class MySQLMigrationTests(unittest.TestCase):
 
     def test_datetime_and_json_semantics_match_sqlite(self):
         with closing(Connection(self.target)) as db,readonly(self.source) as sqlite:
-            for value in ('2026-11-11T12:30:00.123456+03:00','2026-11-11T09:30:00.123456Z','2026-11-11','2026-11-11T09:30:00+00:00'):
+            for value in ('2026-11-11T12:30:00.123456+03:00','2026-11-11T09:30:00.123456Z','2026-11-11','2026-11-11T09:30:00+00:00',
+                    '2026-11-11T02:30:00.123456-07:00'):
                 expected=sqlite.execute('SELECT julianday(?)',(value,)).fetchone()[0]
                 actual=db.execute('SELECT julianday(?)',(value,)).fetchone()[0]
                 self.assertAlmostEqual(actual,expected,places=8)
@@ -82,7 +83,7 @@ class MySQLMigrationTests(unittest.TestCase):
             params=('{"x":3,"null":null}','{"obj":{}}')
             self.assertEqual(json.loads(db.execute(q,params).fetchone()[0]),json.loads(sqlite.execute(q,params).fetchone()[0]))
             self.assertEqual(db.execute(q,params).fetchone()[1],'object')
-            for value in ('2026-11-11T21:30:00Z','2026-11-11T02:00:00+03:00'):
+            for value in ('2026-11-11T21:30:00Z','2026-11-11T02:00:00+03:00','2026-11-11T23:30:00-07:00'):
                 q="SELECT date(?, '+3 hours')"
                 self.assertEqual(str(db.execute(q,(value,)).fetchone()[0]),sqlite.execute(q,(value,)).fetchone()[0])
             self.assertEqual(tuple(db.execute("SELECT json_extract(?, '$.x')=1,json_extract(?, '$.x')=0",('{"x":true}','{"x":false}')).fetchone()),(1,1))

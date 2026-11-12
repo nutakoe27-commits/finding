@@ -89,7 +89,7 @@ def _transform(node):
         if modifier is not None and modifier.name!='+3 hours':raise ValueError('Unsupported SQLite date modifier')
         return _native("""DATE(TIMESTAMPADD(MINUTE,
             180-CASE WHEN CAST(RIGHT(__ml_value,6) AS CHAR CHARACTER SET utf8mb4) REGEXP '^[+-][0-9]{2}:[0-9]{2}$'
-                THEN (CASE WHEN LEFT(RIGHT(__ml_value,6),1)='-' THEN -1 ELSE 1 END)*(CAST(SUBSTRING(RIGHT(__ml_value,6),2,2) AS UNSIGNED)*60+CAST(RIGHT(__ml_value,2) AS UNSIGNED)) ELSE 0 END,
+                THEN (CASE WHEN LEFT(RIGHT(__ml_value,6),1)='-' THEN -1 ELSE 1 END)*(CAST(SUBSTRING(RIGHT(__ml_value,6),2,2) AS SIGNED)*60+CAST(RIGHT(__ml_value,2) AS SIGNED)) ELSE 0 END,
             COALESCE(STR_TO_DATE(LEFT(REPLACE(__ml_value,'T',' '),19),'%Y-%m-%d %H:%i:%s'),STR_TO_DATE(LEFT(__ml_value,10),'%Y-%m-%d'))))""".replace('180-',('180-' if modifier is not None else '0-')),node.this)
     if isinstance(node,exp.Anonymous) and node.name.upper()=='CASEFOLD':
         return exp.Lower(this=node.expressions[0].copy())
@@ -100,7 +100,7 @@ def _transform(node):
                      STR_TO_DATE(LEFT(__ml_value,10),'%Y-%m-%d')))/1000.0)/86400000.0+2440587.5
             -CASE WHEN CAST(RIGHT(__ml_value,6) AS CHAR CHARACTER SET utf8mb4) REGEXP '^[+-][0-9]{2}:[0-9]{2}$'
               THEN (CASE WHEN LEFT(RIGHT(__ml_value,6),1)='-' THEN -1 ELSE 1 END)
-                *(CAST(SUBSTRING(RIGHT(__ml_value,6),2,2) AS UNSIGNED)*60+CAST(RIGHT(__ml_value,2) AS UNSIGNED))/1440.0 ELSE 0 END)""",node.expressions[0])
+                *(CAST(SUBSTRING(RIGHT(__ml_value,6),2,2) AS SIGNED)*60+CAST(RIGHT(__ml_value,2) AS SIGNED))/1440.0 ELSE 0 END)""",node.expressions[0])
     if isinstance(node,exp.Table) and node.name=='sqlite_master':
         return parse_one("SELECT table_name AS name,'table' AS type FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'",read='mysql').subquery(alias='sqlite_master')
     return node
@@ -341,6 +341,18 @@ def ensure_verdict_projection(connection):
             cursor.execute('ALTER TABLE `event_analyses` ADD COLUMN '+mysql_definition())
         elif 'STORED GENERATED' not in columns[MYSQL_COLUMN]:
             raise ValueError('Report projection must be an automatically stored generated column')
+        from .report_queries import START_COLUMN,RECEIVED_COLUMN,time_definition
+        cursor.execute("SELECT column_name,extra FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='archive_latest_results'")
+        columns=dict(cursor.fetchall())
+        if not columns:return
+        for name,source in ((START_COLUMN,'start_at'),(RECEIVED_COLUMN,'received_at')):
+            if name not in columns:cursor.execute('ALTER TABLE `archive_latest_results` ADD COLUMN '+time_definition(name,source))
+            elif 'STORED GENERATED' not in columns[name]:raise ValueError('Archive time projection must be automatically generated')
+        cursor.execute("SELECT DISTINCT index_name FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='archive_latest_results'")
+        indexes={r[0] for r in cursor.fetchall()}
+        for name,fields in (('ml_result_fixture_time_v1','`sport_id`,`'+START_COLUMN+'`'),('ml_result_delivery_time_v1','`'+RECEIVED_COLUMN+'`'),
+                ('ml_result_sport_date_v1','`sport_id`,`start_at`')):
+            if name not in indexes:cursor.execute('ALTER TABLE `archive_latest_results` ADD INDEX `'+name+'` ('+fields+')')
     finally:cursor.execute('SELECT RELEASE_LOCK(%s)',(lock_name,))
 
 

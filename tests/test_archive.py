@@ -517,6 +517,18 @@ class ArchiveTests(unittest.TestCase):
             1,
         )
 
+    def test_result_page_is_bounded_and_does_not_return_raw_payloads(self):
+        rows=[]
+        for i in range(6):
+            row=result(cursor=i+1,sport=1 if i<4 else 2)
+            row['data']['date']=(datetime.now(UTC)-timedelta(days=10-i)).isoformat()
+            rows.append(rekey(row))
+        self.assertEqual(self.send('results',source='a'*64,rows=rows).status_code,200)
+        data=self.client.get('/api/archive/results?sport=1&limit=2&offset=1').json()
+        self.assertEqual((data['total'],data['limit'],data['offset'],len(data['results'])),(4,2,1,2))
+        self.assertEqual([x['result_key'] for x in data['results']],[rows[2]['result_key'],rows[1]['result_key']])
+        self.assertTrue(all('payload' not in row for row in data['results']))
+
     def test_future_results_are_quarantined_and_result_identity_collisions_rejected(self):
         row = result()
         row["data"]["date"] = (datetime.now(UTC) + timedelta(days=1)).isoformat()
