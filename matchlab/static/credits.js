@@ -8,7 +8,10 @@ window.Credits=(()=>{
   let unlimited=false,currentSubscription=null,selectedPlan=null,subscriptionKey=null;
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' МСК':'после подтверждения оплаты';
   const demonstration=()=>new URLSearchParams(location.search).get('billing_demo')==='1'&&Account.user?.role==='admin';
-  const planName=p=>p.credits===0?'Безлимитные разборы':units(p.credits)+' каждый день';
+  const hours=p=>Number(p.period_hours)||24;
+  const period=p=>hours(p)===72?'3 дня':'1 день';
+  const repeat=p=>hours(p)===72?'раз в 3 дня':'каждый день';
+  const planName=p=>(p.credits===0?'Безлимитные разборы':units(p.credits))+' · '+repeat(p);
   const stateNames={creating:'Создаём платёж',pending:'Ожидаем оплату',checking:'Проверяем оплату',succeeded:'Оплачено',canceled:'Отменено',refunded:'Возврат',failed:'Платёж не создан',review:'Платёж требует проверки'};
   const key=()=>owner?'matchlab:payment:'+(config?.test_mode?'test':'live')+':'+owner:null;
   function remember(){try{if(key())order?sessionStorage.setItem(key(),JSON.stringify({id:order.id,analysis_id:order.analysis_id})):sessionStorage.removeItem(key());}catch{}}
@@ -41,14 +44,14 @@ window.Credits=(()=>{
     order=value;remember();$('credits-order').hidden=false;$('credits-packages-area').hidden=true;
     $('subscription-plans-area').hidden=true;$('subscription-checkout').hidden=true;$('credits-one-time').hidden=true;
     $('credits-order-title').textContent=stateNames[value.state]||'Проверяем оплату';
-    $('credits-order-description').textContent=`${value.subscription_id?planName(value)+' · оплата каждые 24 часа':units(value.credits||0)} · ${rub(value.amount_kopecks||0)}${value.test_mode?' · Проверочная операция без списания денег':''}`;
+    $('credits-order-description').textContent=`${value.subscription_id?planName(value):units(value.credits||0)} · ${rub(value.amount_kopecks||0)}${value.test_mode?' · Проверочная операция без списания денег':''}`;
     $('credits-check').hidden=['succeeded','canceled','refunded','failed'].includes(value.state);
     $('credits-continue').hidden=!value.confirmation_url||!['pending','creating','checking'].includes(value.state);
     $('credits-continue').href=value.confirmation_url||'#';
     $('credits-order-open').hidden=value.state!=='succeeded'||!value.analysis_id;
     $('credits-order-open').textContent='Открыть прогноз за 1 разбор';
     $('credits-new-purchase').hidden=!['succeeded','canceled','refunded','failed'].includes(value.state);
-    if(value.state==='succeeded')$('credits-message').textContent=value.subscription_id&&value.credits===0?'Безлимит оплачен на 24 часа. Управление и отмена — в личном кабинете.':`Начислено: ${units(value.credits)}. Баланс: ${units(balance)}. Разбор списывается ТОЛЬКО за «Ставить». «Пропустить» бесплатно.`;
+    if(value.state==='succeeded')$('credits-message').textContent=value.subscription_id&&value.credits===0?`Безлимит оплачен на ${period(value)}. Управление и отмена — в личном кабинете.`:`Начислено: ${units(value.credits)}. Баланс: ${units(balance)}. Разбор списывается ТОЛЬКО за «Ставить». «Пропустить» бесплатно.`;
     if(value.state==='canceled')$('credits-message').textContent='Оплата отменена. Разборы не начислены.';
     if(value.state==='review')$('credits-message').textContent='Статус оплаты требует проверки поддержки. Напишите m@krichigin.ru, повторно не оплачивайте.';
     if(value.state==='failed')$('credits-message').textContent='Платёж не создан. Повторите попытку позже или обратитесь в поддержку. Баланс не изменён.';
@@ -187,14 +190,14 @@ window.Credits=(()=>{
   function plans(){
     $('subscription-launch').hidden=!!config?.subscriptions_enabled;
     $('subscription-plans').replaceChildren(...(config?.subscription_plans||[]).map(p=>{
-      const card=node('article','subscription-plan'+(p.id==='daily_five'?' subscription-plan-featured':''));
+      const card=node('article','subscription-plan'+(p.id==='three_days_fifteen'?' subscription-plan-featured':''));
       card.append(node('p','subscription-plan-caption',p.credits===0?'Без ограничений':'Накапливаются без срока действия'));
-      const quantity=node('div','subscription-quantity');quantity.append(node('strong','',p.credits===0?'∞':String(p.credits)),node('small','','/1 день'));
-      card.append(quantity,node('h3','',p.credits===0?'Безлимитные разборы':p.credits===1?'Разбор':'Разборов'));
-      const price=node('p','subscription-price');price.append(node('strong','',rub(p.amount_kopecks)),node('span','','каждый день'));
-      card.append(price,node('p','small muted',p.credits===0?'Полный доступ на 24 часа. Накопленный баланс не тратится.':'Каждая оплата пополняет баланс. Остаток сохраняется после отмены.'));
+      const quantity=node('div','subscription-quantity');quantity.append(node('strong','',p.credits===0?'∞':String(p.credits)),node('small','','/'+period(p)));
+      card.append(quantity,node('h3','',p.credits===0?'Безлимитные разборы':p.credits===1?'Разбор':p.credits===3?'Разбора':'Разборов'));
+      const price=node('p','subscription-price');price.append(node('strong','',rub(p.amount_kopecks)),node('span','',repeat(p)));
+      card.append(price,node('p','small muted',p.credits===0?`Полный доступ на ${period(p)}. Накопленный баланс не тратится.`:'Каждая оплата пополняет баланс. Остаток сохраняется после отмены.'));
       const b=node('button','primary-button','Подписаться');b.type='button';b.disabled=!config?.subscriptions_enabled;
-      b.setAttribute('aria-label','Подписаться: '+planName(p)+', '+rub(p.amount_kopecks)+' каждый день');
+      b.setAttribute('aria-label','Подписаться: '+planName(p)+', '+rub(p.amount_kopecks)+' '+repeat(p));
       b.addEventListener('click',()=>choosePlan(p));card.append(b);return card;
     }));
   }
@@ -203,7 +206,7 @@ window.Credits=(()=>{
     selectedPlan=p;subscriptionKey=null;
     $('subscription-plans-area').hidden=true;$('credits-one-time').hidden=true;$('subscription-checkout').hidden=false;$('credits-message').textContent='';
     $('subscription-checkout-title').textContent=planName(p);
-    $('subscription-checkout-price').textContent=rub(p.amount_kopecks)+' сейчас, затем '+rub(p.amount_kopecks)+' каждые 24 часа';
+    $('subscription-checkout-price').textContent=rub(p.amount_kopecks)+' сейчас, затем '+rub(p.amount_kopecks)+' '+repeat(p)+' (каждые '+hours(p)+' часа)';
     $('subscription-consent-text').textContent=p.consent_text;
     $('subscription-offer').checked=false;$('subscription-recurring').checked=false;
     if(!$('subscription-email').value)$('subscription-email').value=$('credits-email').value;
@@ -215,7 +218,7 @@ window.Credits=(()=>{
     $('subscription-cancel').hidden=!s?.auto_renew;$('subscription-choose').hidden=!!s;$('profile-subscription-terms').hidden=!s;
     if(!s){
       $('subscription-name').textContent='Нет активной подписки';$('subscription-state').textContent='Не подключена';$('subscription-state').dataset.state='none';
-      area.append(node('p','',config?.subscriptions_enabled?'Выберите ежедневный тариф или безлимит. Накопленные разборы не сгорают.':'Подписки скоро откроются. Накопленные разборы доступны без ограничений по сроку.'));
+      area.append(node('p','',config?.subscriptions_enabled?'Выберите тариф на 3 дня или безлимит. Накопленные разборы не сгорают.':'Подписки скоро откроются. Накопленные разборы доступны без ограничений по сроку.'));
       $('subscription-choose').textContent='Тарифы';$('subscription-choose').setAttribute('aria-label','Посмотреть тарифы');return;
     }
     $('subscription-name').textContent=planName(s);
@@ -224,8 +227,9 @@ window.Credits=(()=>{
     if(demonstration())area.append(node('p','notice','Демонстрация интерфейса: настоящая карта не привязана, платежи не выполняются.'));
     const facts=node('dl','profile-subscription-facts');
     const fact=(label,value)=>{const d=node('div');d.append(node('dt','',label),node('dd','',value));facts.append(d);};
-    fact('Стоимость',rub(s.amount_kopecks)+' / 24 ч');
+    fact('Стоимость',rub(s.amount_kopecks)+' / '+period(s));
     fact(s.auto_renew?'Следующее списание':'Оплаченный период до',s.period_end_at?when(s.period_end_at):'После подтверждения оплаты');
+    $('profile-subscription-period').textContent=`Деньги списываются ${repeat(s)} (каждые ${hours(s)} часа) до отмены независимо от использования. Начисленные разборы не сгорают. Безлимит действует в оплаченном периоде и сохраняет накопленный баланс.`;
     area.append(facts,node('p','small muted',s.credits?`При каждой оплате +${units(s.credits)} на баланс. Разборы не сгорают.`:'Безлимит действует в оплаченном периоде. Накопленные разборы не тратятся.'));
     if(!s.auto_renew)area.append(node('p','small muted','Новых автоматических списаний не будет.'));
     if(s.error_code==='payment_refunded')area.append(node('p','notice','По оплате оформлен возврат. Остальные накопленные разборы сохраняются.'));
@@ -240,7 +244,7 @@ window.Credits=(()=>{
   });
   $('subscription-pay').addEventListener('click',async()=>{
     if(!selectedPlan||!config?.subscriptions_enabled)return;
-    if(!$('subscription-offer').checked||!$('subscription-recurring').checked){$('credits-message').textContent='Подтвердите оферту и отдельно — ежедневные автоматические списания.';return;}
+    if(!$('subscription-offer').checked||!$('subscription-recurring').checked){$('credits-message').textContent='Подтвердите оферту и отдельно — автоматические списания раз в 3 дня.';return;}
     if(!$('subscription-email').reportValidity())return;
     const b=$('subscription-pay'),serial=epoch;b.disabled=true;
     subscriptionKey=subscriptionKey||crypto.randomUUID().replaceAll('-','');

@@ -6,7 +6,8 @@ window.AdminBilling=(()=>{
   const num=n=>Number(n||0).toLocaleString('ru-RU');
   const unitRules=new Intl.PluralRules('ru'),units=n=>`${num(n)} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[unitRules.select(n)]}`;
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-  const subName=o=>o.credits===0?'Безлимит / 1 день':units(o.credits)+(o.subscription_id?' / 1 день':'');
+  const period=o=>Number(o.period_hours)===72?'3 дня':'1 день';
+  const subName=o=>(o.credits===0?'Безлимит':units(o.credits))+(o.subscription_id?' / '+period(o):'');
   const names={creating:'Создаётся',pending:'Ожидает оплаты',succeeded:'Оплачен',canceled:'Отменён',refunded:'Возвращён',failed:'Ошибка создания'};
   const kinds={payment:'Начисление за оплату',unlock:'Открытие разбора',bonus_unlock:'Открытие за бонус',refund:'Корректировка после возврата'};
   let offset=0,timer,controller,detailController,epoch=0,detailEpoch=0,current=null,detailId=null,detailOffset=0;
@@ -50,10 +51,10 @@ window.AdminBilling=(()=>{
       metric('Оплачено заказов',m.payment_rate==null?'—':(m.payment_rate*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%',`Начислено за оплаты: ${num(m.credited_units)} разборов, до возвратов`));
     if(!test){const r=d.receipt_statuses||{};$('ab-metrics').append(metric('Кассовые чеки',num(r.succeeded||0),`Ожидают: ${(r.pending||0)+(r.processing||0)} · требуют проверки: ${r.review||0}`));}
     $('ab-subscriptions').replaceChildren(table(['Пользователь','Тариф','Списание','Продление','Состояние'],(d.subscriptions||[]).map(s=>[
-      s.username||s.id,s.credits===0?'Безлимит':units(s.credits)+' каждый день',money(s.amount_kopecks)+' / 24 ч',
+      s.username||s.id,(s.credits===0?'Безлимит':units(s.credits))+' / '+period(s),money(s.amount_kopecks)+' / '+period(s),
       s.auto_renew?when(s.period_end_at)+' МСК':'Отключено',({active:'Действует',creating:'Первая оплата',canceled:'Отменена',past_due:'Оплата не прошла',review:'Требует проверки'})[s.state]||s.state])));
     chart(d.daily);
-    $('ab-packages').replaceChildren(table(['Пакет','Оплачено / заказов','Сумма оплат','Возвраты'],d.packages.map(p=>[p.id.startsWith('daily_')?(p.units===0?'Безлимит / 1 день':units(p.units)+' / 1 день'):units(p.units),`${p.paid} / ${p.orders}`,money(p.gross_kopecks),money(p.refunded_kopecks)])));
+    $('ab-packages').replaceChildren(table(['Пакет','Оплачено / заказов','Сумма оплат','Возвраты'],d.packages.map(p=>[p.period_hours?(p.units===0?'Безлимит':units(p.units))+' / '+period(p):units(p.units),`${p.paid} / ${p.orders}`,money(p.gross_kopecks),money(p.refunded_kopecks)])));
     $('ab-statuses').replaceChildren(...Object.entries(d.statuses).map(([state,count])=>{const e=node('div');e.append(badge(state),node('strong','',num(count)));return e;}));
     $('ab-orders').replaceChildren(table(['Создан · МСК','Покупатель','Пакет','Сумма','Статус','Возвращено','Заказ'],d.orders.map(o=>{
       const who=node('div');who.append(node('strong','',o.username||'Аккаунт недоступен'),node('small','ab-id',o.user_id));
@@ -83,8 +84,7 @@ window.AdminBilling=(()=>{
       for(const [label,value] of [['Покупатель',o.username||o.user_id],['Тариф',subName(o)],['Сумма',money(o.amount_kopecks)],['Возвращено',money(o.refunded_kopecks)],['Создан',when(o.created_at)+' МСК'],['Запись обновлена',when(o.updated_at)+' МСК'],['ID заказа',o.id],['ID платежа ЮKassa',o.payment_id||'Ещё не получен'],['Редакция условий',o.offer_version],['Ошибка',o.error_code||'Не записана'],['ID связанного разбора',o.analysis_id||'Не указан']])fields.append(node('dt','',label),node('dd','',value));
       content.append(fields,node('p','small muted','Время обновления записи не равно времени оплаты. Историческая дата фактической оплаты отдельно не сохранялась.'));
       if(o.mode==='live'){
-        const unit=o.credits?o.amount_kopecks/o.credits:0;
-        content.append(node('p','notice',o.credits?`Неиспользованный остаток: ${units(d.refundable_units)} · ${money(d.refundable_units*unit)}. Возврат по исходному платежу в кабинете ЮKassa.`:'Безлимитный доступ на 24 часа. Возврат за неиспользованную часть периода рассматривается отдельно; единицы не начисляются.'));
+        content.append(node('p','notice',o.credits?`Неиспользованный остаток: ${units(d.refundable_units)} · ${money(d.refundable_kopecks)}. Возврат по исходному платежу в кабинете ЮKassa.`:`Безлимитный доступ на ${period(o)}. Возврат за неиспользованную часть периода рассматривается отдельно; единицы не начисляются.`));
         const receiptTable=node('div','admin-table-wrap');receiptTable.append(table(['Операция','Состояние','ID чека','Проверка'],(d.receipts||[]).map(r=>[
           r.kind==='subscription'?'Полный расчёт · безлимит':r.kind==='prepayment'?'Предоплата разборов':'Зачёт за разбор',({succeeded:'Зарегистрирован',pending:'Ожидает',processing:'Проверяется',review:'Требует внимания'})[r.state]||r.state,
           r.provider_receipt_id||'В составе платежа',r.error_code||'—'])));
@@ -92,7 +92,7 @@ window.AdminBilling=(()=>{
         const allocationTable=node('div','admin-table-wrap');allocationTable.append(table(['Разбор','Стоимость','Открыт · МСК'],(d.allocations||[]).map(a=>[a.analysis_id,money(a.unit_kopecks),when(a.at)])));
         content.append(node('h3','','Оплаченные открытия из этого пакета'),allocationTable);
       }
-      if(d.subscription){const s=d.subscription;content.append(node('h3','','Согласие на ежедневные списания'),node('p','',s.consent_text),node('p','small muted',`Принято ${when(s.consent_at)} МСК · ${s.recurring_version} · продление ${s.auto_renew?'включено':'отключено'} · ${s.error_code||'без ошибок'}`));}
+      if(d.subscription){const s=d.subscription;content.append(node('h3','','Согласие на регулярные списания'),node('p','',s.consent_text),node('p','small muted',`Принято ${when(s.consent_at)} МСК · ${s.recurring_version} · продление ${s.auto_renew?'включено':'отключено'} · ${s.error_code||'без ошибок'}`));}
       const metrics=node('div','ab-wallet');metrics.append(metric('Баланс аккаунта',num(d.wallet.balance),'Включая бонусы'),metric('Бонусный остаток',num(d.wallet.bonus_units),'Показан отдельно от оплаченных единиц'),metric('Открыто ответов',num(d.wallet.opened_answers),'В выбранном режиме'));content.append(metrics);
       const refundTable=node('div','admin-table-wrap');refundTable.append(table(['Дата · МСК','Сумма','ID возврата'],d.refunds.map(r=>[when(r.at),money(r.amount_kopecks),r.id])));
       content.append(node('h3','','Возвраты по заказу'),refundTable);

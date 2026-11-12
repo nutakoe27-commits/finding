@@ -31,20 +31,36 @@ def receipt_email(value):
 def money(amount):return {'value':f'{amount//100}.{amount%100:02d}','currency':'RUB'}
 
 
-def receipt(settings,order,*,mode='full_prepayment',quantity=None,description=None):
+def unit_price(order,index):
+    """Distribute indivisible kopecks without losing part of a package's price."""
+    amount=order['amount_kopecks'];n=order['credits']
+    return amount*(index+1)//n-amount*index//n
+
+
+def refunded_units(order,amount=None):
+    total=order['refunded_kopecks'] if amount is None else amount
+    # Refund unused units from the end of the same cumulative price schedule.
+    return min(order['credits'],((total-1)*order['credits'])//order['amount_kopecks']+1) if total else 0
+
+
+def receipt(settings,order,*,mode='full_prepayment',quantity=None,description=None,amount_kopecks=None):
     units=order['credits'] if quantity is None else quantity
-    unit=order['amount_kopecks']//order['credits']
+    prices={}
+    for i in range(units):
+        price=amount_kopecks if amount_kopecks is not None else unit_price(order,i)
+        prices[price]=prices.get(price,0)+1
     value={'customer':{'email':receipt_email(order.get('receipt_email'))},'items':[{
         'description':description or 'Доступ к одному ИИ-разбору спортивного матча',
-        'quantity':str(units)+'.00','amount':money(unit),'vat_code':1,
-        'payment_mode':mode,'payment_subject':'service'}]}
+        'quantity':str(count)+'.00','amount':money(price),'vat_code':1,
+        'payment_mode':mode,'payment_subject':'service'} for price,count in prices.items()]}
     if settings.yookassa_tax_system_code:value['tax_system_code']=settings.yookassa_tax_system_code
     return value
 
 
 def subscription_receipt(settings,order):
+    from .subscriptions import period_hours
     value={'customer':{'email':receipt_email(order.get('receipt_email'))},'items':[{
-        'description':'Безлимитный доступ к ИИ-разборам на 24 часа','quantity':'1.00',
+        'description':f'Безлимитный доступ к ИИ-разборам на {period_hours(order)} часа','quantity':'1.00',
         'amount':money(order['amount_kopecks']),'vat_code':1,'payment_mode':'full_payment','payment_subject':'service'}]}
     if settings.yookassa_tax_system_code:value['tax_system_code']=settings.yookassa_tax_system_code
     return value
@@ -64,8 +80,8 @@ def allocate(db,settings,user_id,analysis_id):
         (SELECT order_id,count(*) used FROM analysis_credit_allocations GROUP BY order_id) a ON a.order_id=o.id
         WHERE o.user_id=? AND o.mode='live' AND o.state='succeeded' AND o.credits>0 ORDER BY o.created_at,o.id''',(user_id,)).fetchall()
     for row in orders:
-        order=dict(row);unit=order['amount_kopecks']//order['credits']
-        refunded=(order['refunded_kopecks']+unit-1)//unit
+        order=dict(row);unit=unit_price(order,order['used'])
+        refunded=refunded_units(order)
         if order['credits']-refunded-order['used']<=0:continue
         db.execute('INSERT INTO analysis_credit_allocations VALUES (?,?,?,?,?,?)',(user_id,analysis_id,'live',order['id'],unit,accounts.now()))
         enqueue(db,order,'settlement',unit,analysis_id)
@@ -102,7 +118,7 @@ def process_one(repo,settings):
             with repo.connection() as db:
                 parent=db.execute("SELECT state FROM billing_receipt_jobs WHERE order_id=? AND kind='prepayment'",(order['id'],)).fetchone()
             if not parent or parent['state']!='succeeded':raise ProviderUnavailable('prepayment_not_registered')
-            body=receipt(settings,order,mode='full_payment',quantity=1,description='ИИ-разбор '+job['analysis_id'])
+            body=receipt(settings,order,mode='full_payment',quantity=1,description='ИИ-разбор '+job['analysis_id'],amount_kopecks=job['amount_kopecks'])
             body.update(type='payment',payment_id=order['payment_id'],send=True,settlements=[{'type':'prepayment','amount':money(job['amount_kopecks'])}])
             if provider_id:value=provider.request('GET','/receipts/'+provider_id)
             elif now-datetime.fromisoformat(job['created_at'])>=timedelta(hours=23):

@@ -1,4 +1,4 @@
-"""Daily subscription UX at mobile/desktop widths, entirely fake money and AI."""
+"""Three-day subscription UX at mobile/desktop widths, entirely fake money and AI."""
 import asyncio
 import os
 from pathlib import Path
@@ -35,18 +35,20 @@ async def exercise(base):
                 if await page.locator('#privacy-banner').is_visible():await page.locator('#privacy-reject').click()
                 await page.locator('#credits-open').click()
                 await expect(page.locator('#subscription-plans .subscription-plan')).to_have_count(3)
-                await expect(page.locator('.subscription-quantity strong')).to_have_text(['1','5','∞'])
-                await expect(page.locator('.subscription-quantity small')).to_have_text(['/1 день']*3)
+                await expect(page.locator('.subscription-quantity strong')).to_have_text(['3','15','∞'])
+                await expect(page.locator('.subscription-quantity small')).to_have_text(['/3 дня']*3)
+                await expect(page.locator('.subscription-price strong')).to_have_text(['490 ₽','2 290 ₽','6 090 ₽'])
                 await expect(page.locator('#credits-dialog')).to_contain_text('ТОЛЬКО когда ИИ рекомендует «Ставить»')
                 assert not await page.locator('#credits-one-time').evaluate('(e)=>e.open')
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),width
-                await page.screenshot(path=f'/workspace/outputs/subscription-plans-{width}.png',full_page=True)
+                await page.locator('#credits-dialog').screenshot(path=f'/workspace/outputs/subscription-plans-{width}.png')
                 await page.locator('.subscription-plan-featured button').click()
                 await expect(page.locator('#subscription-checkout')).to_be_visible()
+                await expect(page.locator('#subscription-consent-text')).to_contain_text('каждые 72 часа')
                 assert not await page.locator('#subscription-offer').is_checked()
                 assert not await page.locator('#subscription-recurring').is_checked()
                 await page.locator('#subscription-pay').click()
-                await expect(page.locator('#credits-message')).to_contain_text('ежедневные автоматические списания')
+                await expect(page.locator('#credits-message')).to_contain_text('автоматические списания раз в 3 дня')
                 await page.locator('#subscription-email').fill('buyer@example.ru')
                 await page.locator('#subscription-offer').check();await page.locator('#subscription-recurring').check()
                 await page.locator('#subscription-pay').click();await page.wait_for_url('https://yoomoney.ru/**')
@@ -54,7 +56,7 @@ async def exercise(base):
                 assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==0
                 await ctx.request.post(base+'/fixture/succeed/'+order_id);await page.locator('#return').click()
                 await expect(page.locator('#credits-order-title')).to_have_text('Оплачено')
-                await expect(page.locator('#credits-balance')).to_have_text('5')
+                await expect(page.locator('#credits-balance')).to_have_text('15')
                 await page.locator('#credits-close').click()
                 await expect(page.locator('#account-subscription')).to_be_visible()
                 await expect(page.locator('#subscription-summary')).to_contain_text('Следующее списание')
@@ -65,24 +67,25 @@ async def exercise(base):
                 await page.locator('.subscription-cancel-confirm .secondary-button').click()
                 await expect(page.locator('#subscription-state')).to_have_text('Автопродление отключено')
                 await expect(page.locator('#subscription-summary')).to_contain_text('Карта отвязана от автоплатежей сервиса')
-                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==5
+                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==15
                 await page.goto(base+'/#analysis/'+seeded['skip'])
                 await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
                 await expect(page.locator('#saved-analysis-text')).to_contain_text('«Пропустить» — бесплатно')
                 assert await page.locator('#saved-analysis-text .credit-gate').count()==0
-                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==5
+                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==15
                 await page.goto(base+'/#analysis/'+seeded['private'])
                 await expect(page.locator('#saved-analysis-text .credit-gate')).to_be_visible()
                 await page.locator('#saved-analysis-text .credit-gate .primary-button').click()
                 await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
-                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==4
+                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==14
                 await page.evaluate("Account.api('/fixture/subscription-admin',{method:'POST',body:'{}'}).then(()=>Account.refresh())")
                 await page.goto(base+'/#admin');await page.locator('[data-admin-tab="billing"]').click()
-                await expect(page.locator('#ab-subscriptions')).to_contain_text('5 разборов каждый день')
+                await expect(page.locator('#ab-subscriptions')).to_contain_text('15 разборов / 3 дня')
+                await expect(page.locator('#ab-orders')).to_contain_text('15 разборов / 3 дня')
                 await expect(page.locator('#ab-subscriptions')).to_contain_text('Отключено')
                 await page.locator('#ab-orders button').first.click()
-                await expect(page.locator('#ab-detail-content')).to_contain_text('Согласие на ежедневные списания')
-                await expect(page.locator('#ab-detail-content')).to_contain_text('2190 ₽ сейчас')
+                await expect(page.locator('#ab-detail-content')).to_contain_text('Согласие на регулярные списания')
+                await expect(page.locator('#ab-detail-content')).to_contain_text('2290 ₽ сейчас')
                 await page.keyboard.press('Escape')
                 await page.goto(base+'/?billing_demo=1#account')
                 await expect(page.locator('#billing-demo-banner')).to_be_visible()
@@ -92,16 +95,16 @@ async def exercise(base):
                 await page.locator('#subscription-cancel').click()
                 await page.locator('.subscription-cancel-confirm .secondary-button').click()
                 await expect(page.locator('#subscription-state')).to_have_text('Автопродление отключено')
-                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==4
+                assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==14
                 await page.locator('#billing-demo-reset').click()
                 await expect(page.locator('#subscription-state')).to_have_text('Подписка действует')
                 await page.get_by_role('link',name='Выйти из демонстрации',exact=True).click()
                 await expect(page.locator('#billing-demo-banner')).to_be_hidden()
-                await expect(page.locator('#account-credit-balance')).to_have_text('4 разбора')
+                await expect(page.locator('#account-credit-balance')).to_have_text('14 разборов')
                 assert not errors,errors
                 await ctx.close()
         finally:await browser.close()
-    print('PASS: 1440/390/320; daily plan cards, explicit consent, payment return, cancellation, accumulation, free skip and one-credit bet; no real payments or model calls')
+    print('PASS: 1440/390/320; three-day plan cards, explicit consent, payment return, cancellation, accumulation, free skip and one-credit bet; no real payments or model calls')
 
 
 def main():

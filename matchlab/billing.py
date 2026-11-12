@@ -11,8 +11,8 @@ from . import accounts
 from .yookassa import YooKassa,ProviderUnavailable,ProviderMismatch,kopecks,confirmation_url
 
 MODE='test'
-OFFER_VERSION='2026-11-12.test.v2'
-PUBLIC_OFFER_VERSION='2026-11-12.v3'
+OFFER_VERSION='2026-11-12.test.v3'
+PUBLIC_OFFER_VERSION='2026-11-12.v4'
 PACKAGES=[{'id':'one','credits':1,'amount_kopecks':49000},
           {'id':'five','credits':5,'amount_kopecks':219000},
           {'id':'ten','credits':10,'amount_kopecks':409000}]
@@ -178,7 +178,8 @@ def unlock(repo,settings,user,identifier):
 
 
 def public_order(row):
-    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}|{'test_mode':row['mode']=='test','subscription_id':row['subscription_id']}
+    from .subscriptions import period_hours
+    return {key:row[key] for key in ('id','package_id','credits','amount_kopecks','state','created_at','confirmation_url','analysis_id','refunded_kopecks')}|{'test_mode':row['mode']=='test','subscription_id':row['subscription_id'],'period_hours':period_hours(row) if row['subscription_id'] else None}
 
 
 def checkout_allowed(settings,user):
@@ -295,8 +296,9 @@ def apply_refund(repo,settings,value):
         if db.execute('SELECT 1 FROM payment_refunds WHERE id=?',(value['id'],)).fetchone():return
         total=order['refunded_kopecks']+amount
         if total>order['amount_kopecks']:raise ProviderMismatch('refund_total')
-        old_units=(order['refunded_kopecks']*order['credits']+order['amount_kopecks']-1)//order['amount_kopecks']
-        units=(total*order['credits']+order['amount_kopecks']-1)//order['amount_kopecks']-old_units
+        from .billing_fiscal import refunded_units
+        old_units=refunded_units(order)
+        units=refunded_units(order,total)-old_units
         if order['mode']=='live':
             used=db.execute('SELECT count(*) FROM analysis_credit_allocations WHERE order_id=?',(order['id'],)).fetchone()[0]
             removed=db.execute("""SELECT coalesce(sum(-l.delta),0) FROM analysis_credit_ledger l

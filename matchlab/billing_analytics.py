@@ -6,6 +6,8 @@ import re
 from fastapi import HTTPException,Request
 from . import accounts
 from .bookmakers import instant
+from .subscriptions import PLAN_PERIODS,period_hours
+from .billing_fiscal import refunded_units
 
 STATES=('creating','pending','succeeded','canceled','refunded','failed')
 ORDER_FIELDS=('id','user_id','package_id','credits','amount_kopecks','state','created_at','updated_at',
@@ -57,8 +59,8 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
             'average_check_kopecks':round(gross/len(paid)) if paid else None,
             'payment_rate':len(paid)/len(rows) if rows else None,'credited_units':sum(r['credits'] for r in paid)},
         'statuses':dict(counts),'receipt_statuses':dict(receipts),'daily':[{'day':k,**v} for k,v in sorted(daily.items())],
-        'packages':[{'id':k[0],'units':k[1],**v} for k,v in sorted(packages.items())],
-        'orders':[{k:r.get(k) for k in ORDER_FIELDS} for r in rows[offset:offset+limit]],
+        'packages':[{'id':k[0],'units':k[1],'period_hours':PLAN_PERIODS.get(k[0]),**v} for k,v in sorted(packages.items())],
+        'orders':[{k:r.get(k) for k in ORDER_FIELDS}|{'period_hours':period_hours(r) if r['subscription_id'] else None} for r in rows[offset:offset+limit]],
         'offset':offset,'limit':limit,'total':len(rows),'subscriptions':subscription_rows,
         'notice':'Тестовые операции. Реальные деньги не списывались.' if mode=='test' else 'Подтверждённые операции рабочего магазина ЮKassa.',
         'methodology':'Отбор по дате создания заказа. Показан его текущий подтверждённый статус; возвраты относятся к выбранным заказам. Сумма после возвратов не является прибылью. Историческое время фактической оплаты отдельно не записывалось; updated_at — время обновления записи, не дата оплаты.'}
@@ -84,10 +86,12 @@ def detail(repo,identifier,offset=0,limit=30):
         if row['subscription_id']:
             sub=db.execute('''SELECT plan_id,state,auto_renew,period_end_at,consent_at,consent_text,offer_version,recurring_version,
                 canceled_at,error_code FROM billing_subscriptions WHERE id=?''',(row['subscription_id'],)).fetchone()
-            subscription=dict(sub) if sub else None
-    return {'order':{k:row.get(k) for k in ORDER_FIELDS},'refunds':refunds,'ledger':ledger,'ledger_total':total,'offset':offset,'limit':limit,'subscription':subscription,
+            subscription=dict(sub)|{'period_hours':period_hours(sub)} if sub else None
+    refundable=row['mode']=='live' and row['state']=='succeeded' and row['credits']>0
+    return {'order':{k:row.get(k) for k in ORDER_FIELDS}|{'period_hours':period_hours(row) if row['subscription_id'] else None},'refunds':refunds,'ledger':ledger,'ledger_total':total,'offset':offset,'limit':limit,'subscription':subscription,
         'allocations':allocations,'receipts':receipts,
-        'refundable_units':max(0,row['credits']-len(allocations)-(row['refunded_kopecks']*row['credits']+row['amount_kopecks']-1)//row['amount_kopecks']) if row['mode']=='live' and row['state']=='succeeded' else 0,
+        'refundable_units':max(0,row['credits']-len(allocations)-refunded_units(row)) if refundable else 0,
+        'refundable_kopecks':max(0,row['amount_kopecks']-row['refunded_kopecks']-sum(a['unit_kopecks'] for a in allocations)) if refundable else 0,
         'wallet':{'ledger_units':paid,'bonus_units':bonus[0] if bonus else 0,'balance':paid+(bonus[0] if bonus else 0),'opened_answers':opens},
         'ledger_notice':'Операции всего аккаунта в выбранном режиме. Единицы разных пакетов объединены; списания не приписываются конкретному заказу. Бонусный остаток показан отдельно.'}
 

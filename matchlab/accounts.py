@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS admin_audit (
  target TEXT,details TEXT NOT NULL);
 """
 HASH_SLOTS = BoundedSemaphore(3)
-LEGAL_VERSION = '2026-11-12.v3'
+LEGAL_VERSION = '2026-11-12.v4'
 LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"

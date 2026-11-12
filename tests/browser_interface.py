@@ -55,7 +55,7 @@ async def exercise(base,repo):
                 await expect(page.locator('#credits-title')).to_have_text('Разборы и подписки')
                 await expect(page.locator('.subscription-plan')).to_have_count(3)
                 await expect(page.locator('.credit-rule-hero')).to_contain_text('ТОЛЬКО')
-                await expect(page.locator('.subscription-money-note')).to_contain_text('каждые 24 часа')
+                await expect(page.locator('.subscription-money-note')).to_contain_text('каждые 72 часа')
                 await fits('tariffs','#credits-dialog');await shot('tariffs')
                 await page.locator('#credits-close').click()
                 await page.locator('#account-button').click();await expect(page.locator('#auth-dialog')).to_be_visible()

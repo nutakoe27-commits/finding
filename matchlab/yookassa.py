@@ -69,8 +69,11 @@ class YooKassa:
 
     def create_subscription(self,order,origin,payment_method_id=None):
         from .billing_fiscal import receipt,subscription_receipt
+        from .subscriptions import period_label,credit_label
+        description=('prognozich: ежедневная подписка '+order['package_id'] if order['package_id'].startswith('daily_') else
+            'prognozich: '+(credit_label(order['credits']) if order['credits'] else 'безлимит')+' / '+period_label(order))
         data={'amount':{'value':f"{order['amount_kopecks']//100}.{order['amount_kopecks']%100:02d}",'currency':'RUB'},
-            'capture':True,'description':'prognozich: ежедневная подписка '+order['package_id'],
+            'capture':True,'description':description,
             'metadata':{'order_id':order['id'],'user_id':order['user_id'],'subscription_id':order['subscription_id']}}
         if payment_method_id:
             data['payment_method_id']=payment_method_id

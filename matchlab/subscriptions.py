@@ -1,4 +1,4 @@
-"""Durable daily subscriptions. Only verified provider payments grant access.
+"""Durable subscriptions. Only verified provider payments grant access.
 
 Finite grants accumulate in the existing permanent credit ledger. Unlimited
 access expires; it never consumes that ledger. No scheduler runs money charges
@@ -16,10 +16,29 @@ from fastapi.responses import JSONResponse
 from . import accounts
 from .yookassa import YooKassa, ProviderMismatch, ProviderUnavailable
 
-VERSION = '2026-11-12.daily.v1'
-PLANS = [dict(id='daily_one', credits=1, amount_kopecks=49000, unlimited=False),
-         dict(id='daily_five', credits=5, amount_kopecks=219000, unlimited=False),
-         dict(id='daily_unlimited', credits=0, amount_kopecks=609000, unlimited=True)]
+VERSION = '2026-11-12.3days.v1'
+PLANS = [dict(id='three_days_three', credits=3, amount_kopecks=49000, unlimited=False, period_hours=72),
+         dict(id='three_days_fifteen', credits=15, amount_kopecks=229000, unlimited=False, period_hours=72),
+         dict(id='three_days_unlimited', credits=0, amount_kopecks=609000, unlimited=True, period_hours=72)]
+# Plan IDs are immutable contracts. Old payments and renewals keep their
+# original interval, amount and grants, including callbacks received after deploy.
+PLAN_PERIODS = {'daily_one':24, 'daily_five':24, 'daily_unlimited':24,
+                **{p['id']:p['period_hours'] for p in PLANS}}
+
+
+def period_hours(value):
+    row=dict(value)
+    identifier=row.get('plan_id') or row.get('package_id') or row.get('id')
+    try:return PLAN_PERIODS[identifier]
+    except KeyError:raise ProviderMismatch('subscription_plan') from None
+
+
+def period_label(value):
+    return '3 дня' if period_hours(value)==72 else '1 день'
+
+
+def credit_label(n):
+    return str(n)+' '+('разбор' if n%10==1 and n%100!=11 else 'разбора' if n%10 in (2,3,4) and n%100 not in (12,13,14) else 'разборов')
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS billing_subscriptions (
  id TEXT PRIMARY KEY,user_id TEXT NOT NULL,mode TEXT NOT NULL,plan_id TEXT NOT NULL,
@@ -49,9 +68,9 @@ def enabled(settings):
 
 
 def consent_text(plan):
-    quantity = 'безлимитный доступ' if plan['credits'] == 0 else ('1 разбор' if plan['credits']==1 else '5 разборов') + ' на постоянный баланс'
+    quantity = 'безлимитный доступ' if plan['credits'] == 0 else credit_label(plan['credits']) + ' на постоянный баланс'
     return (f"Подключаю {quantity}. Разрешаю ЮKassa сохранить способ оплаты, а сервису списывать "
-            f"{plan['amount_kopecks'] // 100} ₽ сейчас и далее каждые 24 часа до отмены. "
+            f"{plan['amount_kopecks'] // 100} ₽ сейчас и далее раз в {period_label(plan)} (каждые {period_hours(plan)} часа) до отмены. "
             'Отмена: Личный кабинет → Подписка → Отвязать карту и отменить подписку. '
             'Деньги за подписку списываются независимо от использования. '
             'Разбор расходуется только при открытии решения «Ставить»; «Пропустить» — бесплатно.')
@@ -63,7 +82,7 @@ def plans():
 
 def public(row):
     return {k: row[k] for k in ('id', 'plan_id', 'credits', 'amount_kopecks', 'state', 'auto_renew',
-                                'period_end_at', 'created_at', 'canceled_at', 'error_code')} | {'unlimited': row['credits'] == 0}
+                                'period_end_at', 'created_at', 'canceled_at', 'error_code')} | {'unlimited': row['credits'] == 0,'period_hours':period_hours(row)}
 
 
 def unlimited(db, user_id, mode, stamp=None):
@@ -103,7 +122,7 @@ def create(repo, settings, user, body):
     if body.get('offer_version') != billing.offer_version(settings) or body.get('recurring_version') != VERSION:
         raise HTTPException(422,'Условия обновились. Закройте и снова откройте тарифы, затем подтвердите новые условия.')
     if body.get('offer_accepted') is not True or body.get('recurring_accepted') is not True:
-        raise HTTPException(422, 'Отдельно подтвердите оферту и ежедневные автоматические списания.')
+        raise HTTPException(422, 'Отдельно подтвердите оферту и автоматические списания раз в 3 дня.')
     email = receipt_email(body.get('receipt_email'))
     with repo.connection() as db:
         db.execute('BEGIN IMMEDIATE')
@@ -130,7 +149,7 @@ def create(repo, settings, user, body):
             sub = dict(db.execute('SELECT * FROM billing_subscriptions WHERE id=?', (identifier,)).fetchone())
             order = _order(db, settings, sub, 1, key)
             accounts.audit(db, user['id'], 'subscription.consent', identifier,
-                           {'plan': plan['id'], 'version': VERSION, 'amount_kopecks': plan['amount_kopecks'], 'period_hours': 24})
+                           {'plan': plan['id'], 'version': VERSION, 'amount_kopecks': plan['amount_kopecks'], 'period_hours': period_hours(plan)})
     if order['state'] not in ('succeeded', 'refunded', 'canceled', 'failed'):
         return reconcile(repo, settings, order)
     return billing.public_order(order)
@@ -181,7 +200,7 @@ def apply_verified(db, settings, order, value, state):
             raise ValueError
     except (ValueError, TypeError, AttributeError): raise ProviderMismatch('subscription_capture_time') from None
     start=start.astimezone(timezone.utc)
-    end = start + timedelta(days=1)
+    end = start + timedelta(hours=period_hours(sub))
     db.execute('INSERT INTO billing_subscription_periods VALUES (?,?,?,?,?,?,0)',
                (order['id'], sub['id'], charge['period_number'], start.isoformat(), end.isoformat(), int(sub['credits'] == 0)))
     if sub['credits']:
@@ -332,11 +351,11 @@ def install(app, repo, settings):
         with repo.connection() as db:
             row=db.execute('SELECT value FROM site_settings WHERE key=?',('billing_unlink_demo:'+user['id'],)).fetchone()
         saved=json.loads(row['value']) if row else {}
-        stamp=accounts.now();end=saved.get('ends_at') or (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
+        stamp=accounts.now();end=(saved.get('ends_at') if saved.get('plan_version')==VERSION else None) or (datetime.now(timezone.utc)+timedelta(hours=72)).isoformat()
         canceled=saved.get('canceled_at')
-        return {'demonstration':True,'balance':5,'bonus_balance':0,'adjustment_due':0,'receipt_email':None,
+        return {'demonstration':True,'balance':15,'bonus_balance':0,'adjustment_due':0,'receipt_email':None,
             'test_mode':False,'orders':[],'subscription':{'current':{
-                'id':'demonstration','plan_id':'daily_five','credits':5,'amount_kopecks':219000,
+                'id':'demonstration','plan_id':'three_days_fifteen','credits':15,'amount_kopecks':229000,'period_hours':72,
                 'state':'canceled' if canceled else 'active','auto_renew':0 if canceled else 1,
                 'period_end_at':end,'created_at':stamp,'canceled_at':canceled,'error_code':None,'unlimited':False},
                 'history':[],'unlimited_active':False}}
@@ -352,7 +371,7 @@ def install(app, repo, settings):
         accounts.limited(repo,'billing-demo:'+user['id'],30,60)
         # This isolated setting never creates a subscription, payment, token,
         # credit or receipt. Actual cancellation uses the ordinary endpoint.
-        value={'ends_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat(),
+        value={'ends_at':(datetime.now(timezone.utc)+timedelta(hours=72)).isoformat(),'plan_version':VERSION,
                'canceled_at':accounts.now() if action=='cancel' else None}
         with repo.connection() as db:
             db.execute('INSERT OR REPLACE INTO site_settings VALUES (?,?,?)',
