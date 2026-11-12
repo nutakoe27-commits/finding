@@ -21,7 +21,7 @@ window.Account = (() => {
   }
   function sync() {
     if(legalPrompt && legalPrompt.userId!==user?.id) finishLegal(false);
-    byId("account-button").textContent = user ? user.username : "Войти";
+    byId("account-button").textContent = user ? user.display_name||user.username : "Войти";
     byId("admin-link").hidden = user?.role !== "admin";
     document.dispatchEvent(new Event("accountchange"));
   }
@@ -44,7 +44,7 @@ window.Account = (() => {
     if(byId('legal-renewal').open) byId('legal-renewal').close();
     pending?.resolve(accepted);
   }
-  function show(nextMode="register", callback=null) {
+  function show(nextMode="register", callback=null, native=false) {
     afterLogin = callback; mode = nextMode;
     byId("auth-title").textContent = mode === "register" ? "Ваш личный аналитик" : "С возвращением";
     byId("auth-description").textContent = mode === "register" ? "Создайте аккаунт, чтобы получать ИИ-разборы и сохранять их в личной истории." : "Войдите, чтобы продолжить разбор выбранного матча.";
@@ -54,15 +54,20 @@ window.Account = (() => {
     byId("auth-legal").hidden=mode !== "register";
     for (const id of ["auth-terms","auth-personal-data","auth-age"]) { byId(id).required=mode === "register"; byId(id).checked=false; }
     byId("auth-error").textContent = ""; byId("auth-password").value = "";
+    byId('auth-form').hidden=!native;byId('auth-switch').hidden=!native;
+    byId('auth-native-toggle').textContent=native?'Скрыть форму':mode==='register'?'Зарегистрироваться по логину':'Войти по логину и паролю';
+    byId('auth-native-toggle').setAttribute('aria-expanded',String(native));
+    window.SocialLogin?.show();
     byId("auth-password").type="password";byId("auth-password-toggle").textContent="Показать";byId("auth-password-toggle").setAttribute("aria-pressed","false");
     if (!byId("auth-dialog").open) byId("auth-dialog").showModal();
-    byId("auth-username").focus();
+    if(native)byId("auth-username").focus();else (byId('auth-dialog').querySelector('[data-social]:not([hidden])')||byId('auth-native-toggle')).focus();
   }
   async function ensure(callback) { await ready; if (user) return true; show("register",callback); return false; }
   byId("account-button").addEventListener("click",()=>{ if (user) location.hash="#account"; else show("login"); });
   byId("auth-close").addEventListener("click",()=>{ afterLogin=null; byId("auth-dialog").close(); });
   byId("auth-dialog").addEventListener("cancel",()=>{ afterLogin=null; });
-  byId("auth-switch").addEventListener("click",()=>show(mode === "register" ? "login" : "register",afterLogin));
+  byId("auth-switch").addEventListener("click",()=>show(mode === "register" ? "login" : "register",afterLogin,true));
+  byId('auth-native-toggle').addEventListener('click',()=>show(mode,afterLogin,byId('auth-form').hidden));
   byId('legal-close').addEventListener('click',()=>finishLegal(false));
   byId('legal-renewal').addEventListener('cancel',()=>finishLegal(false));
   byId('legal-renewal').addEventListener('close',()=>finishLegal(false));
@@ -98,7 +103,9 @@ window.Account = (() => {
     await ready;
     byId("account-guest").hidden=!!user;byId("account-content").hidden=!user;
     if(!user)return;
-    byId("account-name").textContent=user.username;
+    byId("account-name").textContent=user.display_name||user.username;
+    byId('account-password-card').hidden=!user.local_login_available;
+    await window.SocialLogin?.connections();
     try {
       const [usage,push]=await Promise.all([api("/api/account/usage"),api("/api/push/config")]);
       byId("account-usage").textContent=`Разборов сегодня: ${usage.today}${usage.daily_limit ? " из " + usage.daily_limit : ""}`;

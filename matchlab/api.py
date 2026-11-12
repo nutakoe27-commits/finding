@@ -116,6 +116,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     from . import accounts, growth, push, billing
     accounts.install(app,repo,settings)
+    from . import social_login
+    social_login.install(app,repo,settings)
     growth.install(app,repo,settings)
     push.install(app,repo,settings)
     from . import public_results

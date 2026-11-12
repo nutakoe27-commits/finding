@@ -67,6 +67,7 @@ async def exercise(base):
                 if not replay:
                     await page.locator('#account-button').click()
                     await page.locator('#auth-switch').click()
+                    if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
                     await page.locator('#auth-username').fill('metrika_test')
                     await page.locator('#auth-password').fill('fixture-password-long-enough')
                     for selector in ('#auth-terms','#auth-personal-data','#auth-age'): await page.locator(selector).check()
@@ -102,6 +103,7 @@ async def exercise(base):
                     await page.wait_for_function("() => window.__ymCalls.some(x=>x[1]==='reachGoal' && x[2]==='promo_redeemed')")
                     await page.locator('#account-logout').click()
                     await page.locator('#account-button').click()
+                    if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
                     await page.locator('#auth-username').fill('metrika_test')
                     await page.locator('#auth-password').fill('fixture-password-long-enough')
                     await page.locator('#auth-submit').click()

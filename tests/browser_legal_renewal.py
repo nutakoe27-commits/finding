@@ -74,6 +74,7 @@ async def exercise(base,repo):
             context=await browser.new_context(viewport={'width':390,'height':1000},locale='ru-RU')
             page=await context.new_page();await prepare(page,base)
             await page.evaluate('Account.show("register")')
+            if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
             await page.locator('#auth-username').fill('legal_new_reader')
             await page.locator('#auth-password').fill(fixture.PASSWORD)
             for selector in ('#auth-terms','#auth-personal-data','#auth-age'):await page.locator(selector).check()

@@ -1,0 +1,5 @@
+VK, Odnoklassniki and Mail.ru icon paths: Simple Icons (CC0),
+https://github.com/simple-icons/simple-icons/tree/develop/icons
+The respective brands and trademarks belong to their owners.
+Icons identify login providers; they do not imply endorsement.
+Service avatar was generated for prognozich ai on 2026-11-12.

@@ -76,6 +76,11 @@ server {{
         limit_req_status 429;
 {proxy}
     }}
+    # Managed by Matchlab social callback privacy
+    location ~ ^/api/auth/social/(yandex|vkid)/callback$ {{
+        access_log off;
+{proxy}
+    }}
     location / {{
 {proxy}
     }}

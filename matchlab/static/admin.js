@@ -71,13 +71,14 @@ window.Admin = (() => {
   async function loadUsers(){
     const query=new URLSearchParams({search:$("admin-user-search").value,offset:String(userOffset)}),data=await api("/api/admin/users?"+query);if(tab!=="users")return;
     $("admin-user-total").textContent=`Аккаунтов: ${format(data.total)}`;
-    $("admin-users").replaceChildren(table(["Пользователь","Регистрация","Последний вход","Разборы","Бонусы","Доступ"],data.users.map(user=>{
+    $("admin-users").replaceChildren(table(["Пользователь","Способ входа","Регистрация","Последний вход","Разборы","Бонусы","Доступ"],data.users.map(user=>{
       const controls=node("div","button-row");controls.append(badge(user.enabled?"active":"paused"));
       if(user.role!=="admin")controls.append(button(user.enabled?"Ограничить":"Включить",()=>sensitive(async()=>{
         if(user.enabled && !confirm(`Ограничить доступ аккаунта ${user.username}? Его текущие сеансы будут завершены.`))return;
         await api("/api/admin/users/"+user.id,{method:"PATCH",body:JSON.stringify({enabled:!user.enabled})});message("Доступ пользователя обновлён.");await loadUsers();
       })));
-      return [user.username+(user.role==="admin"?" · администратор":""),when(user.created_at),when(user.last_login_at),format(user.analyses),format(user.bonus_analyses),controls];
+      const method=({local:'Логин и пароль',yandex:'Яндекс',vk:'ВК',ok:'ОК',mail:'Mail.ru'})[user.last_login_provider]||'Логин и пароль';
+      return [(user.display_name?user.display_name+' · ':'')+user.username+(user.role==="admin"?" · администратор":""),method,when(user.created_at),when(user.last_login_at),format(user.analyses),format(user.bonus_analyses),controls];
     })));
     $("admin-users-prev").disabled=userOffset===0;$("admin-users-next").disabled=userOffset+data.users.length>=data.total;
   }

@@ -5,6 +5,8 @@
 .env
 .env.before-yookassa-*
 .env.yookassa-new
+.env.before-social-login-*
+.env.social-new
 .env.before-database-*
 mysql-target.env
 database-migrations/

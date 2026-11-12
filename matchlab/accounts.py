@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS users (
  id TEXT PRIMARY KEY,username TEXT NOT NULL UNIQUE,password_hash TEXT NOT NULL,
  role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
  enabled INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,last_login_at TEXT,
- bonus_analyses INTEGER NOT NULL DEFAULT 0 CHECK(bonus_analyses>=0));
+ bonus_analyses INTEGER NOT NULL DEFAULT 0 CHECK(bonus_analyses>=0),
+ display_name TEXT,last_login_provider TEXT NOT NULL DEFAULT 'local');
 CREATE TABLE IF NOT EXISTS user_identities (
  provider TEXT NOT NULL,subject TEXT NOT NULL,user_id TEXT NOT NULL,
  PRIMARY KEY(provider,subject));
@@ -43,7 +44,7 @@ CREATE TABLE IF NOT EXISTS admin_audit (
  target TEXT,details TEXT NOT NULL);
 """
 HASH_SLOTS = BoundedSemaphore(3)
-LEGAL_VERSION = '2026-11-12.v1'
+LEGAL_VERSION = '2026-11-12.v2'
 LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"
@@ -231,11 +232,14 @@ def make_session(repo, user_id):
 def public_user(user, settings):
     return {
         k: user[k] for k in ("id", "username", "role", "created_at", "bonus_analyses")
-    } | {"daily_limit": settings.ai_daily_limit}
+    } | {"daily_limit": settings.ai_daily_limit,'display_name':user['display_name'],
+        'local_login_available':str(user['password_hash']).startswith('scrypt$'),'login_provider':user['last_login_provider']}
 
 
 def authenticated_response(request, user_id, status=200, old_token=None):
     repo = request.app.state.repository
+    from .social_login import invalidate
+    with repo.connection() as db:invalidate(db,request)
     if old_token:
         with repo.connection() as db:
             db.execute(
@@ -396,6 +400,12 @@ def install(app, repo, settings):
         started = time.monotonic()
         try:
             path = request.url.path
+            if re.fullmatch(r'/api/auth/social/(?:yandex|vkid)/callback',path):
+                # Uvicorn logs the scope at response time. Keep OAuth codes,
+                # state and device identifiers out of access/error logs.
+                pairs=list(request.query_params.multi_items())
+                request.state.social_query=dict(pairs) if len(pairs)==len(dict(pairs)) and len(request.scope.get('query_string',b''))<=8192 else {}
+                request.scope['query_string']=b''
             if (AI_ROUTE.fullmatch(path) or AI_JOB_ROUTE.fullmatch(path)) and request.method == "POST":
                 user = current_user(request)
                 from .billing import active
@@ -442,7 +452,7 @@ def install(app, repo, settings):
             )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Referrer-Policy"] = 'no-referrer' if path.startswith('/api/auth/social/') else "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = (
             "camera=(), microphone=(), geolocation=()"
         )
@@ -456,10 +466,11 @@ def install(app, repo, settings):
     @app.get("/api/auth/me")
     def me(request: Request):
         user = current_user(request, False)
+        from .social_login import configured
         return {
             "user": public_user(user, settings) if user else None,
             "csrf": csrf(request.cookies[cookie_name(request)]) if user else None,
-            "providers": ["local"],
+            "providers": ["local"]+[p for p in ('yandex','vk','ok','mail') if configured(settings,p)],
             "legal_version": LEGAL_VERSION,
         }
 
@@ -498,12 +509,13 @@ def install(app, repo, settings):
         # Unknown accounts perform the same password derivation; the digest is not a credential.
         stored = (
             row["password_hash"]
-            if row
+            if row and str(row['password_hash']).startswith('scrypt$')
             else "scrypt$32768$8$1$" + "0" * 32 + "$" + "0" * 64
         )
         valid = await run_in_threadpool(password_matches, data["password"], stored)
         if not valid or not row or not row["enabled"]:
             raise HTTPException(401, "Неверный логин или пароль.")
+        with repo.connection() as db:db.execute("UPDATE users SET last_login_provider='local' WHERE id=?",(row['id'],))
         return authenticated_response(
             request, row["id"], old_token=request.cookies.get(cookie_name(request))
         )
@@ -513,6 +525,8 @@ def install(app, repo, settings):
         current_user(request)
         mutation(request)
         with repo.connection() as db:
+            from .social_login import invalidate
+            invalidate(db,request)
             db.execute(
                 "DELETE FROM user_sessions WHERE token_hash=?",
                 (token_hash(request.cookies[cookie_name(request)]),),

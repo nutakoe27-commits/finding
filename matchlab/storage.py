@@ -135,6 +135,11 @@ class Repository:
             db.executescript(SCHEMA)
             from .accounts import SCHEMA as ACCOUNT_SCHEMA
             db.executescript(ACCOUNT_SCHEMA)
+            user_columns={row['name'] for row in db.execute('PRAGMA table_info(users)')}
+            if 'display_name' not in user_columns:db.execute('ALTER TABLE users ADD COLUMN display_name TEXT')
+            if 'last_login_provider' not in user_columns:db.execute("ALTER TABLE users ADD COLUMN last_login_provider TEXT NOT NULL DEFAULT 'local'")
+            from .social_login import SCHEMA as SOCIAL_SCHEMA
+            db.executescript(SOCIAL_SCHEMA)
             from .analysis_jobs import SCHEMA as ANALYSIS_JOB_SCHEMA
             db.executescript(ANALYSIS_JOB_SCHEMA)
             job_columns={row['name'] for row in db.execute('PRAGMA table_info(ai_analysis_jobs)')}

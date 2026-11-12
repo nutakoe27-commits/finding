@@ -89,6 +89,7 @@ async def exercise(base, repo):
                     path=f"/tmp/matchlab-register-{theme}-{width}.png", full_page=True
                 )
                 username = f"browser_reader_{index}"
+                if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
                 await page.locator("#auth-username").fill(username)
                 await page.locator("#auth-password").fill(PASSWORD)
                 await page.locator("#auth-terms").check()
@@ -202,6 +203,7 @@ async def exercise(base, repo):
                 await expect(page.locator("#account-button")).to_have_text("Войти")
                 assert await page.locator("#history-list").inner_text() == ""
                 await page.locator("#account-button").click()
+                if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
                 await page.locator("#auth-username").fill("admin_fixture")
                 await page.locator("#auth-password").fill(PASSWORD)
                 await page.locator("#auth-submit").click()

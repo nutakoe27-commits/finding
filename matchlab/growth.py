@@ -489,7 +489,7 @@ def install(app, repo, settings):
             rows = [
                 dict(r)
                 for r in db.execute(
-                    "SELECT u.id,u.username,u.role,u.enabled,u.created_at,u.last_login_at,u.bonus_analyses,(SELECT count(*) FROM ai_usage a WHERE a.user_id=u.id AND a.status='success') analyses FROM users u WHERE username LIKE ? ORDER BY created_at DESC LIMIT 30 OFFSET ?",
+                    "SELECT u.id,u.username,u.role,u.enabled,u.created_at,u.last_login_at,u.bonus_analyses,u.display_name,u.last_login_provider,(SELECT count(*) FROM ai_usage a WHERE a.user_id=u.id AND a.status='success') analyses FROM users u WHERE username LIKE ? ORDER BY created_at DESC LIMIT 30 OFFSET ?",
                     (*args, offset),
                 )
             ]

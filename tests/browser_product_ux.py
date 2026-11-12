@@ -104,6 +104,7 @@ async def journey_checks(page,base,repo,fixtures,width):
     await page.goto(base+'/#history');await expect(page.locator('#history-guest')).to_be_visible()
     await expect(page.locator('#auth-dialog')).not_to_be_visible()
     await page.locator('#history-login').click();await expect(page.locator('#auth-dialog')).to_be_visible()
+    if await page.locator('#auth-form').is_hidden():await page.locator('#auth-native-toggle').click()
     await page.locator('#auth-password').fill('private-browser-fixture')
     await page.locator('#auth-password-toggle').click();await expect(page.locator('#auth-password')).to_have_attribute('type','text')
     await page.locator('#auth-password-toggle').click();await expect(page.locator('#auth-password')).to_have_attribute('type','password')

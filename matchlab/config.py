@@ -41,6 +41,9 @@ class Settings:
     billing_mode: str = 'test'
     billing_receipts_enabled: bool = False
     yookassa_tax_system_code: int = 0
+    yandex_client_id: str = ''
+    yandex_client_secret: str = field(default='',repr=False)
+    vkid_client_id: str = ''
 
     @property
     def database(self):
@@ -115,6 +118,13 @@ class Settings:
             raise ValueError('Shop ID и секретный ключ ЮKassa должны соответствовать BILLING_MODE.')
         if billing=='true' and billing_mode=='live' and receipts!='true':
             raise ValueError('Для рабочего магазина включите передачу чеков в подключённую к ЮKassa кассу: BILLING_RECEIPTS_ENABLED=true.')
+        yandex_id=os.getenv('YANDEX_CLIENT_ID','').strip();yandex_secret=os.getenv('YANDEX_CLIENT_SECRET','').strip()
+        vkid_id=os.getenv('VKID_CLIENT_ID','').strip()
+        import re
+        if bool(yandex_id)!=bool(yandex_secret) or yandex_id and not re.fullmatch(r'[A-Za-z0-9_-]{8,128}',yandex_id):
+            raise ValueError('Для входа через Яндекс укажите YANDEX_CLIENT_ID и YANDEX_CLIENT_SECRET вместе.')
+        if vkid_id and not re.fullmatch(r'[0-9]{1,20}',vkid_id):raise ValueError('VKID_CLIENT_ID: числовой ID приложения VK ID.')
+        if any(ord(c)<32 for c in yandex_secret):raise ValueError('YANDEX_CLIENT_SECRET содержит недопустимые символы.')
         return cls(
             data_dir=Path(os.getenv("MATCHLAB_DATA_DIR", str(ROOT / ".local"))),
             database_url=os.getenv('MATCHLAB_DATABASE_URL','').strip(),
@@ -139,4 +149,5 @@ class Settings:
             event_analysis_mode=analysis_mode,verdict_max_stake_pct=stake_limit,
             billing_enabled=billing=='true',billing_public_testing=public_testing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
             billing_mode=billing_mode,billing_receipts_enabled=receipts=='true',yookassa_tax_system_code=tax_code,
+            yandex_client_id=yandex_id,yandex_client_secret=yandex_secret,vkid_client_id=vkid_id,
         )
