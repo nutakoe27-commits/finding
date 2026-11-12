@@ -1,0 +1,420 @@
+/* Shared interface: the same compact rhythm as the account, across every view.
+   Component behaviour and role-based visibility stay in their owning modules. */
+:root {
+  --ui-radius:16px;
+  --ui-navy:linear-gradient(120deg,#1d3046,#172638);
+  --ui-on-navy:#f6f8fc;
+  --ui-navy-muted:#bdccdc;
+}
+main>[data-view],main>.page-footer { max-width:1120px;margin-inline:auto;min-width:0; }
+.page-heading { padding:30px 0 22px;align-items:center; }
+.page-heading h1 { font-size:30px;letter-spacing:-1px;font-weight:730;margin:0 0 6px;line-height:1.25; }
+.page-heading h1>.lime { display:none; }
+.page-heading .eyebrow { display:none; }
+.page-heading .subtitle { font-size:13px;max-width:72ch;line-height:1.7;margin:0; }
+main h2 { font-weight:650;letter-spacing:-.35px; }
+.eyebrow { font-size:9px;letter-spacing:1.1px; }
+.primary-button,.secondary-button,.match-ai-button { border-radius:10px;min-height:44px;font-size:12px;padding:10px 15px;line-height:1.5; }
+.primary-button:hover:not(:disabled) { background:var(--accent-hover); }
+input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea { border-radius:10px; }
+button:disabled,a[aria-disabled=true] { cursor:default; }
+.panel { padding:23px 24px;border-radius:var(--ui-radius); }
+.panel h2 { font-size:18px;line-height:1.45;margin:0 0 12px; }
+.panel h3 { font-size:15px;font-weight:600;line-height:1.5; }
+.panel-heading { gap:14px;align-items:center; }
+.panel-heading h2,.panel-heading h3 { margin:0; }
+.notice { border-radius:11px;padding:13px 16px;font-size:12px;line-height:1.75; }
+.notice:empty { display:none; }
+.account-message:empty { display:none; }
+.empty-state { min-height:0;padding:34px 24px;text-align:center; }
+.empty-state h2 { font-size:20px;font-weight:650;letter-spacing:-.5px; }
+.empty-state p { max-width:48ch;margin:10px auto 18px;font-size:13px;line-height:1.75;color:var(--muted); }
+.empty-symbol { width:44px;height:44px;font-size:24px;margin-bottom:15px; }
+.loading-card { min-height:110px;font-size:12px; }
+.text-button,.back-link { min-height:44px; }
+.back-link { margin:10px 0;font-size:12px; }
+/* The results overview uses the same navy surface as the account balance. */
+.results-widget { background:var(--ui-navy);border-color:#2c425c;color:var(--ui-on-navy);padding:23px 24px;margin:24px 0 22px;border-radius:18px; }
+.results-widget .pr-heading { margin-bottom:20px;gap:8px 20px; }
+.results-widget .eyebrow { color:var(--ui-navy-muted);font-size:9px;margin-bottom:5px; }
+.results-widget .pr-heading h2 { font-size:20px;font-weight:650;letter-spacing:-.5px;color:var(--ui-on-navy); }
+.results-widget .pr-heading a { color:#ffbc92;gap:6px;font-size:11px;min-height:40px; }
+.results-widget .pr-heading .ux-icon { width:14px;height:14px; }
+.results-widget .pr-metrics { gap:0; }
+.results-widget .pr-metric { background:none;border-color:#7792ad3d;padding:2px 20px;gap:8px; }
+.results-widget .pr-label,.results-widget .pr-caption,#results-widget-note { color:var(--ui-navy-muted);font-size:10px;line-height:1.7; }
+.results-widget .pr-label { min-height:34px; }
+.results-widget .pr-metric.accuracy>.pr-label { color:#f0f5fa;font-weight:700; }
+.results-widget .pr-metric>strong { font-size:32px;font-weight:700;letter-spacing:-.8px;color:#fff; }
+.results-widget .pr-metric.win-rate>strong,.results-widget .pr-metric.positive>strong { color:#8fe0b3; }
+#results-widget-note { margin-top:18px;border-top:1px solid #7792ad3d;padding-top:13px; }
+/* Today's saved decisions. Keep the reveal action and the price easy to scan. */
+.today-picks { padding:23px 24px;margin-bottom:25px;background:var(--panel);border-radius:18px; }
+.tp-heading { margin-bottom:15px;gap:12px; }
+.tp-heading .eyebrow { display:none; }
+.tp-heading h2 { font-size:20px;font-weight:650;letter-spacing:-.5px;line-height:1.4; }
+.tp-subtitle { font-size:11px;margin-top:5px;max-width:70ch; }
+.tp-status { margin:10px 0 14px;font-size:10px;min-height:0; }
+.tp-cards { gap:12px; }
+.tp-scroll-hint { display:none; }
+.tp-card { padding:18px;border-radius:13px;background:var(--panel2);box-shadow:none; }
+.tp-card:before { display:none; }
+.tp-card-head { margin-bottom:5px; }
+.tp-match { font-size:16px;margin:13px 0 16px; }
+.tp-competition { margin-top:5px; }
+.tp-preview { font-size:10px;gap:7px; }
+.tp-line { margin:14px 0; }
+.tp-price>strong { font-size:27px;font-weight:650;letter-spacing:-.6px; }
+.tp-card-footer { padding-top:12px;gap:9px; }
+.tp-open { min-height:44px;border-radius:10px;background:var(--panel);font-size:11px;gap:7px; }
+.tp-open .ux-icon { width:14px;height:14px; }
+.tp-footnote { font-size:10px;line-height:1.75;margin-top:15px; }
+.tp-empty { padding:23px 18px;text-align:left; }
+.tp-empty>strong { font-size:13px; }
+.tp-empty>p { font-size:11px;margin:6px 0 0; }
+/* Main events stay in source order; the carousel is visually quieter. */
+.featured-events { margin-bottom:24px;padding-bottom:22px; }
+.featured-heading { margin-bottom:14px;align-items:center; }
+.featured-heading .eyebrow { display:none; }
+.featured-heading h2 { font-size:20px;letter-spacing:-.5px; }
+.featured-heading .small { font-size:10px;margin-top:4px; }
+.featured-controls button { width:44px;min-width:44px;min-height:44px;padding:10px; }
+.featured-controls button { display:grid;place-items:center; }
+.featured-controls button>span { display:grid;margin:0; }
+.featured-card { background:var(--ui-navy);padding:20px;border-radius:16px; }
+.featured-card:before,.featured-card:after { display:none; }
+.featured-top { margin-bottom:16px; }
+.featured-team strong { font-size:16px; }
+.featured-team-mark { border-radius:10px; }
+.featured-main { min-height:76px; }
+.featured-odds>div { min-height:47px;padding:8px 11px; }
+.featured-ai { min-height:44px;background:#ff954f;color:#2b180c;border-radius:10px; }
+.featured-ai:hover { background:#ffad75; }
+.featured-bottom { margin-top:14px; }
+.catalog-section-heading { margin-bottom:15px; }
+.catalog-section-heading h2 { font-size:20px;font-weight:650;letter-spacing:-.5px; }
+.catalog-section-heading p { font-size:11px; }
+.sport-navigation { margin-bottom:12px; }
+.sport-tab { min-height:44px;font-size:12px; }
+.catalog-stats { border-radius:13px;padding:14px 17px;gap:18px;background:var(--panel); }
+.catalog-stats strong { font-size:22px;font-weight:650; }.catalog-stats span,.catalog-stats p { font-size:10px; }
+.discovery-search { margin-bottom:14px; }
+.discovery-search .search-field { min-height:48px;border-radius:11px;box-shadow:none; }
+.discovery-search input { font-size:14px;padding:12px 0; }
+.discovery-search>p { display:none; }
+.catalog-tools { gap:10px;margin-bottom:10px; }
+.catalog-toolbar { gap:12px; }.segmented { border-radius:10px;padding:3px; }
+.segmented button { min-height:38px; }
+.sort-label select { padding-inline:8px; }
+.tournament-group { border-radius:14px;margin-bottom:15px; }
+.tournament-heading { padding:12px 16px;background:var(--panel2); }
+.match-card { padding:16px;gap:6px 16px; }
+.match-card-title { font-size:14px;line-height:1.6; }
+.match-card-meta { font-size:10px; }
+.match-ai-button { min-height:44px;font-size:11px;padding:10px 12px; }
+.match-open { min-height:36px; }
+.match-bookmaker-link { display:inline-flex;align-items:center;justify-content:center;gap:4px; }
+.match-bookmaker-link .ux-icon { width:11px;height:11px; }
+.match-card .favorite-button { min-height:44px; }
+.odds-tile { min-height:46px; }.odds-tile strong { font-size:14px;font-weight:650; }
+.catalog-footnote { font-size:10px; }
+/* Public results: compact statistics and a comfortable reading width. */
+#view-results .pr-metric { padding:18px;gap:8px;border-radius:14px; }
+#view-results .pr-metric>strong { font-size:30px;font-weight:680; }
+.pr-label,.pr-caption { font-size:11px;line-height:1.65; }
+.pr-chart-panel { padding:21px 23px;margin:18px 0;border-radius:16px; }
+.pr-chart-panel h2 { font-size:17px;font-weight:650; }
+.pr-chart { height:135px;margin-top:18px; }
+.pr-tools { margin:20px 0 13px; }.pr-tools select { min-height:44px;border-radius:10px;font-size:12px; }
+.pr-row { padding:17px 20px;border-radius:13px;gap:16px; }
+.pr-row-title>strong { font-size:14px;font-weight:650; }
+.pr-row-pick>strong { font-size:13px;font-weight:600; }
+.pr-score { font-size:23px;font-weight:650; }
+.pr-open { min-height:26px;display:flex;align-items:center;gap:6px; }
+.pr-open .ux-icon { width:13px;height:13px; }
+.pr-outcome { border-radius:7px;font-size:10px;line-height:1.5; }
+html[data-theme=dark] .pr-outcome.win { color:#8fe0b3;background:#8fe0b312;border-color:#8fe0b34d; }
+html[data-theme=dark] .pr-outcome.loss { color:#ffb3a6;background:#ffb3a612;border-color:#ffb3a64d; }
+.pr-method { padding:12px 16px;margin-top:23px;font-size:11px; }
+.pr-method summary { min-height:32px;padding:6px 0; }
+.pr-answer { max-width:850px;padding:24px;border-radius:16px; }
+.pr-answer-lead { background:var(--ui-navy);color:var(--ui-on-navy);border-color:#2c425c;padding:23px;border-radius:14px;margin-bottom:24px; }
+.pr-answer-lead .pr-caption { color:var(--ui-navy-muted);font-size:10px; }
+.pr-answer-lead h2 { font-size:25px;font-weight:650;letter-spacing:-.6px;line-height:1.4; }
+.pr-answer-lead>p { font-size:12px;line-height:1.75; }
+.pr-answer-lead .pr-outcome.win { color:#8fe0b3;border-color:#8fe0b34d;background:#8fe0b312; }
+.pr-answer-lead .pr-outcome.loss { color:#ffb3a6;border-color:#ffb3a64d;background:#ffb3a612; }
+.pr-answer-lead .pr-outcome.pending { color:var(--ui-navy-muted);border-color:#7792ad60; }
+.pr-answer-block { margin:22px 0;max-width:74ch; }
+.pr-answer-block h3 { font-size:14px;font-weight:650;margin-bottom:7px; }
+.pr-answer-block p { font-size:13px;line-height:1.85;margin-top:0; }
+.pr-answer-notice { font-size:11px; }
+/* Match details and the focused AI reader. */
+.inline-ai-desk .event-header { padding:23px 24px;border-radius:16px;grid-template-columns:minmax(0,1fr) 250px;gap:14px 24px; }
+.event-heading h1 { font-size:29px;font-weight:680;line-height:1.35;letter-spacing:-.8px; }
+.event-heading { margin:0; }
+.event-ai-actions { margin-top:15px; }
+.event-ai-actions .primary-button { width:auto;display:inline-flex;align-items:center;justify-content:center; }
+.event-ai-actions .event-bookmaker-button { display:inline-flex;align-items:center;gap:5px;width:auto;margin:0; }
+.event-ai-actions .ux-icon { width:16px;height:16px; }
+.event-ai-actions .event-bookmaker-button .ux-icon { width:12px;height:12px; }
+.event-primary .odds-tile { min-height:52px; }
+.event-topline button { min-height:44px; }
+.event-ai-actions .primary-button { min-height:44px;font-size:12px; }
+.event-bookmaker-button { min-height:44px; }
+.event-data-line { font-size:10px; }
+.detail-tabs { border-bottom:1px solid var(--line); }
+.detail-tabs button { border:0!important;border-radius:0;background:transparent!important;min-height:44px;font-size:13px!important;padding:10px 4px;margin-right:20px; }
+.detail-tabs button[aria-selected=true] { box-shadow:inset 0 -3px var(--accent);color:var(--text); }
+.market-detail { padding:20px 23px; }
+.market-group summary { min-height:48px;font-size:12px; }
+.ai-dialog { border-radius:18px; }
+.ai-dialog-header { padding:17px 24px; }
+.ai-dialog-title h2 { font-size:18px;font-weight:650; }
+.ai-dialog-title .eyebrow { display:none; }
+.ai-dialog .ai-symbol { width:34px;height:34px;border-radius:10px; }
+#ai-dialog .ai-desk { padding:23px 24px; }
+#ai-dialog #ai-desk { display:block; }
+#ai-dialog #ai-desk .ai-composer { display:block;position:static;padding:0;margin:0 0 16px;border:0; }
+#ai-dialog #ai-desk .report-section:not(.report-lead) { max-width:74ch; }
+#ai-dialog #ai-desk .report-lead { border-color:var(--line);border-radius:14px; }
+#ai-dialog .ai-match-label { font-size:20px;font-weight:650;line-height:1.5; }
+#ai-dialog-close { width:44px;height:44px;border:0;background:var(--panel2); }
+.ai-dialog-footer { padding:14px 24px; }
+.report-lead { background:var(--panel2);border-color:var(--line);border-radius:14px;padding:20px; }
+.structured-report .report-section>h3 { font-size:14px;letter-spacing:0;font-weight:650; }
+.structured-report .report-heading h3 { font-size:13px;font-weight:600; }
+.structured-report .verdict-preference { font-size:26px;letter-spacing:-.7px;font-weight:680;line-height:1.4; }
+.structured-report .verdict-choice { font-size:18px;line-height:1.5;font-weight:650; }
+.structured-report .report-section:not(.report-lead)>p,.structured-report .report-facts li { font-size:13px;line-height:1.85; }
+.structured-report .report-section { margin-bottom:22px; }
+.structured-report .report-limitations { padding:10px 14px; }
+.structured-report .report-limitations summary { min-height:32px;padding:6px 0;font-size:11px; }
+.verdict-report .credit-rule { font-size:11px;line-height:1.7; }
+.ai-wait { background:var(--panel2);border-color:var(--line); }
+.ai-wait-orbit { transform:scale(.85); }
+.ai-wait-top strong { font-size:17px; }
+.ai-progress { margin:20px 0 14px; }
+.ai-wait-note { font-size:11px; }
+.credit-gate { padding:24px;border-radius:14px; }
+.credit-gate h2 { font-size:22px;font-weight:650;letter-spacing:-.5px; }
+/* Saved answers: a list rather than a second dashboard. */
+.history-tools { margin-bottom:17px;gap:14px; }
+.history-tools .search-field { max-width:none;min-height:46px;border-radius:10px; }
+.history-tools .search-field input { padding:12px 0;font-size:14px; }
+.history-tools>p { font-size:10px; }
+.history-list { gap:10px; }
+.history-card { padding:18px 21px;gap:20px;border-radius:13px; }
+.history-card>div { min-width:0; }
+.history-card h2 { font-size:16px;font-weight:650;letter-spacing:-.3px;margin:0 0 6px;line-height:1.55; }
+.history-card .small { font-size:10px;margin:0; }
+.history-excerpt { font-size:12px;line-height:1.8;margin:9px 0 0;max-width:68ch; }
+.history-card>a { display:flex;align-items:center;justify-content:center;gap:8px;flex:none;font-size:11px; }
+.history-card>a .ux-icon { width:14px;height:14px; }
+.history-guest { max-width:580px;margin:0 auto;padding:32px;text-align:center; }
+.history-guest>.ux-icon { width:32px;height:32px;margin-bottom:14px; }
+.history-guest h2 { font-size:22px; }.history-guest p { font-size:13px;max-width:38ch;margin:12px auto 18px; }
+#saved-analysis { padding:24px;border-radius:16px;max-width:850px;margin-inline:auto; }
+#saved-analysis h2 { font-size:22px; }
+/* Purchase and sign-in dialogs share the same scale, with disclosures intact. */
+.credits-dialog { padding:24px;border-radius:18px; }
+.credits-dialog h2 { font-size:26px;font-weight:680;letter-spacing:-.7px;margin:15px 0 12px; }
+.credits-dialog-head { min-height:44px; }
+.credits-close { width:44px;height:44px;border-radius:10px; }
+.credit-test-badge { color:var(--muted);background:var(--panel2);font-size:10px; }
+.credit-rule-hero { font-size:14px;padding:13px 16px; }
+.credits-dialog .small { font-size:11px;line-height:1.8; }
+.subscription-intro { margin:24px 0 14px; }
+.subscription-intro h3 { font-size:18px;font-weight:650;margin-bottom:4px; }
+.subscription-intro p { font-size:11px; }
+.subscription-plan { padding:20px;background:var(--panel2);border-radius:14px; }
+.subscription-plan-featured { background:var(--ui-navy);border-color:#2c425c;color:var(--ui-on-navy);box-shadow:none; }
+.subscription-plan-featured .subscription-plan-caption,.subscription-plan-featured .subscription-quantity small,.subscription-plan-featured .subscription-price span,.subscription-plan-featured .small { color:var(--ui-navy-muted); }
+.subscription-plan-featured .primary-button { background:#ff954f;color:#2b180c; }
+.subscription-quantity strong { font-size:64px;font-weight:730;letter-spacing:-3px; }
+.subscription-plan h3 { font-size:16px;font-weight:600;margin:10px 0 18px; }
+.subscription-price strong { font-size:23px;letter-spacing:-.5px;font-weight:650; }
+.subscription-plan .small { font-size:11px; }
+.subscription-plan button { font-size:12px;min-height:44px; }
+.subscription-money-note { font-size:11px;line-height:1.8; }
+#credits-one-time>summary { font-size:13px;min-height:44px;padding:8px 0; }
+.subscription-checkout h3 { font-size:22px;font-weight:650; }
+.credit-email { font-size:12px; }.credit-email input { min-height:44px; }
+.credit-package { padding:14px; }.credit-package strong { font-size:15px; }.credit-package>b { font-size:18px; }
+.subscription-recurring { font-size:12px;line-height:1.8; }
+.auth-dialog { padding:26px;border-radius:18px; }
+.auth-dialog h2 { font-size:25px;font-weight:680;letter-spacing:-.6px; }
+.auth-dialog p { font-size:12px; }.auth-dialog label { font-size:12px; }
+.auth-dialog input:not([type=checkbox]) { min-height:44px; }
+.auth-dialog .auth-legal label { font-size:11px; }
+/* Administration uses the account's tabs, quiet cards and dense data rows. */
+.admin-security-line { font-size:10px; }
+.admin-tool-links { gap:8px;margin:12px 0 16px; }.admin-tool-links a { font-size:11px;min-height:40px; }
+.admin-tool-links a { display:inline-flex;align-items:center;gap:6px; }
+.admin-tool-links .ux-icon,.ar-hero .text-link .ux-icon { width:12px;height:12px;vertical-align:middle; }
+.admin-tabs { flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;gap:22px;padding:0;margin:0 0 22px;border-bottom:1px solid var(--line); }
+.admin-tabs button { position:relative;border:0;border-radius:0;background:transparent;min-height:49px;padding:10px 2px;flex:none;font-size:12px;font-weight:500;white-space:nowrap; }
+.admin-tabs button.active { border:0;background:transparent;color:var(--text);font-weight:650;box-shadow:inset 0 -3px var(--accent); }
+.admin-period { font-size:12px; }.admin-period select { min-height:44px;border-radius:10px; }
+.admin-metrics,.ar-metrics,.ab-metrics { gap:12px;margin-bottom:18px; }
+.admin-metric,.ar-metric { padding:18px;border-radius:14px; }
+.admin-metric strong,.ar-metric strong { font-size:30px;font-weight:680;letter-spacing:-.8px;line-height:1.2;margin:12px 0 7px; }
+.admin-metric small,.ar-metric small { font-size:10px;line-height:1.7; }
+.admin-metric>span,.ar-metric>span { font-size:11px; }
+.admin-overview-grid,.ar-chart-grid,.ab-grid { gap:16px;margin-bottom:18px; }
+.admin-health-grid { gap:18px;margin-top:18px; }.admin-health-grid strong { font-size:12px; }
+.admin-table-wrap { border-radius:10px;scrollbar-width:thin; }
+.admin-table { font-size:11px;line-height:1.7; }
+.admin-table th { background:var(--panel2);font-size:10px;font-weight:550;letter-spacing:0;padding:11px 12px; }
+.admin-table td { padding:13px 12px; }
+.admin-table tbody tr:hover { background:var(--panel2); }
+.admin-empty { padding:20px 0;font-size:12px; }
+.admin-status { font-size:10px; }
+.ar-hero { padding:22px 24px;gap:20px;border-radius:16px;background:var(--ui-navy);color:var(--ui-on-navy); }
+.ar-hero:before { display:none; }
+.ar-hero .eyebrow { color:var(--ui-navy-muted);font-size:9px;margin:0 0 6px; }
+.ar-hero h2 { font-size:23px;font-weight:650;letter-spacing:-.6px;margin:0; }
+.ar-hero p:last-child { font-size:11px;color:var(--ui-navy-muted);margin-top:8px;max-width:80ch; }
+.ar-hero .text-link { color:#ffbc92; }
+.ar-hero .ar-sync { color:var(--ui-navy-muted);font-size:10px; }
+.ar-filters { gap:12px;margin:18px 0; }
+.ar-filters label { gap:6px;font-size:10px; }
+.ar-filters select,.ar-state-label select { min-height:44px;font-size:12px;border-radius:10px; }
+.ar-chart-card h3,.ar-list-heading h3 { font-size:17px;font-weight:650; }
+.ar-chart-value { font-size:24px; }.ar-chart-card>.small { font-size:11px;line-height:1.75; }
+.ar-ring { width:112px;height:112px; }.ar-ring-center strong { font-size:26px; }
+.ar-table th,.ar-table td { padding:13px 11px; }
+.ar-table .ar-match-name { font-size:12px; }.ar-table .ar-score { font-size:22px; }
+.ar-method { font-size:11px;line-height:1.85; }.ar-method summary { min-height:40px;padding:8px 0; }
+#admin-billing { gap:18px; }.ab-notice { padding:12px 16px;font-size:12px;border-radius:11px;color:var(--lime);border-color:var(--secondary-border); }
+.ab-filters { gap:12px; }.ab-filters label { font-size:11px;gap:6px; }
+.ab-filters select { min-height:44px;font-size:12px; }
+.ab-statuses { gap:8px; }.ab-statuses>div { padding:8px 12px;border-radius:10px;font-size:12px; }
+.ab-badge { font-size:10px;border-radius:7px;padding:4px 8px; }
+.ab-detail { padding:24px;border-radius:18px; }.ab-detail-header h2 { font-size:22px;font-weight:650; }
+.ab-detail-fields dt,.ab-detail-fields dd { font-size:12px;line-height:1.75; }
+.admin-compose-grid { gap:16px; }.admin-promo-grid { gap:8px 18px; }
+#view-admin form label { font-size:12px;line-height:1.65; }
+.auto-setting { font-size:13px;align-items:start; }.auto-setting input { flex:none;margin-top:3px; }
+.auto-lanes { gap:8px;margin:15px 0; }.auto-lanes span { padding:10px 13px;font-size:11px; }
+/* Technical screens follow the same cards, without adding user-facing noise. */
+.archive-overview { gap:20px;padding:21px 23px;border-radius:16px; }
+.archive-overview strong { font-size:28px;font-weight:680;letter-spacing:-.7px; }
+.archive-overview span,.archive-overview p { font-size:11px;line-height:1.75; }
+.archive-result-card { padding:16px 19px;border-radius:13px; }
+.archive-result-row { font-size:12px; }
+.service-grid { gap:16px; }.service-card h2 { font-size:20px; }.service-card p { font-size:12px;line-height:1.8; }
+.summary-grid { gap:13px; }.summary-card { padding:20px;border-radius:14px; }.summary-card>strong { font-size:29px;font-weight:680; }
+.summary-card .tiny-label,.summary-card .muted { font-size:10px;line-height:1.75; }
+.validation-panel,.data-panel { margin-top:18px; }
+.forecast-grid.manual-mode { gap:18px; }.forecast-grid label { font-size:12px; }
+/* Footer and secondary surfaces stay quiet. */
+.page-footer { padding:26px 0;margin-top:32px;gap:18px 30px; }
+.footer-brand { font-size:18px; }.footer-intro p { font-size:11px;max-width:42ch;line-height:1.8; }
+.footer-links { gap:18px; }.footer-links a,.footer-links span,.footer-links button { font-size:10px;min-height:26px;line-height:1.7; }
+.footer-links strong { font-size:11px; }.footer-disclaimer { font-size:10px; }
+@media(min-width:901px) { .results-widget .pr-metric:first-child { padding-left:0; }.results-widget .pr-metric:last-child { padding-right:0; } }
+@media(max-width:1050px) { .inline-ai-desk .event-header { display:block; }.admin-overview-grid { grid-template-columns:1fr; } }
+@media(max-width:900px) {
+  .results-widget .pr-metrics { gap:18px 20px; }
+  .results-widget .pr-metric { padding:0;border:0; }
+  .results-widget .pr-label { min-height:0; }
+  .results-widget .pr-heading { align-items:start; }
+}
+@media(max-width:650px) {
+  .page-heading { padding:24px 0 20px;gap:12px;align-items:start; }
+  .page-heading h1 { font-size:27px;letter-spacing:-.8px;margin-bottom:6px; }
+  .page-heading .subtitle { font-size:12px;line-height:1.75; }
+  .page-heading>.secondary-button { min-height:44px;padding:10px 12px;font-size:11px; }
+  .page-heading .refresh-button { min-width:44px;width:44px;height:44px;padding:10px;font-size:0;display:grid;place-items:center;flex:none; }
+  .page-heading .refresh-button>span { display:grid;font-size:0; }
+  input:not([type=checkbox]):not([type=radio]):not([type=range]),textarea { font-size:16px; }
+  .panel { padding:19px 18px;border-radius:14px; }
+  .panel h2 { font-size:17px; }.panel-heading { flex-wrap:wrap;gap:10px; }
+  .results-widget { padding:20px;margin-top:18px;margin-bottom:18px;border-radius:16px; }
+  .results-widget .pr-heading { margin-bottom:18px; }
+  .results-widget .pr-heading h2 { font-size:18px;line-height:1.4; }
+  .results-widget .pr-heading a { font-size:10px;min-height:32px; }
+  .results-widget .pr-metric>strong { font-size:29px; }
+  .results-widget .pr-metrics { gap:18px 14px; }
+  .results-widget .pr-label { font-size:10px;line-height:1.55;min-height:31px; }
+  .results-widget .pr-caption { font-size:9px;line-height:1.7; }
+  #results-widget-note { font-size:9px;margin-top:16px;padding-top:12px; }
+  .today-picks { padding:19px 18px;margin-bottom:22px;border-radius:16px; }
+  .tp-heading h2 { font-size:19px;line-height:1.4; }.tp-subtitle { font-size:10px;line-height:1.8; }
+  .tp-card { padding:17px;border-radius:12px; }.tp-empty { padding:19px 15px; }
+  .tp-cards { display:flex;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:thin;scrollbar-color:var(--line) transparent;padding:2px 1px 12px; }
+  .tp-card { flex:0 0 92%;max-width:420px;scroll-snap-align:start; }
+  .tp-empty { flex:0 0 100%; }
+  .today-picks:has(.tp-card+.tp-card) .tp-scroll-hint { display:flex;align-items:center;gap:6px;color:var(--muted);font-size:9px;line-height:1.8;margin:0 0 10px; }
+  .tp-scroll-hint .ux-icon { width:12px;height:12px;flex:none; }
+  .tp-footnote { font-size:9px;line-height:1.8; }.tp-match { margin:13px 0 15px; }
+  .featured-heading h2,.catalog-section-heading h2 { font-size:19px; }
+  .featured-controls { gap:4px; }.featured-controls button { min-width:44px;width:44px;min-height:44px; }
+  .featured-controls span { font-size:10px; }.featured-card { padding:19px;min-width:230px;flex-basis:90%; }
+  .featured-team strong { font-size:16px; }.featured-events { padding-bottom:18px;margin-bottom:20px; }
+  .sport-tabs { gap:6px; }.sport-tab { font-size:11px;min-height:44px;padding:9px 11px; }
+  .discovery-search input { font-size:16px; }.discovery-search .search-field { min-height:48px; }
+  .catalog-tools { gap:8px; }.catalog-tools select { font-size:12px; }
+  .match-card { padding:15px 12px;gap:6px 10px; }.match-card-title { font-size:14px;line-height:1.65; }
+  .match-actions { gap:7px 13px; }.match-open { min-height:44px; }.match-bookmaker-link { min-height:36px; }
+  .match-card .odds-tile { min-height:44px; }.match-card .match-ai-button { min-height:44px;font-size:11px; }
+  .segmented button { min-height:38px; }.catalog-toolbar { gap:8px; }
+  #view-results .pr-metric { padding:15px 14px;gap:8px;border-radius:12px; }
+  #view-results .pr-metric>strong { font-size:27px; }.pr-label,.pr-caption { font-size:10px; }
+  .pr-row { padding:16px;gap:12px; }.pr-row-title>strong { font-size:13px; }.pr-row-pick>strong { font-size:12px; }
+  .pr-row-result { max-width:98px; }.pr-score { font-size:22px; }.pr-open { font-size:10px; }
+  .pr-chart-panel { padding:18px;margin-top:16px; }.pr-chart-panel h2 { font-size:16px; }
+  .pr-answer { padding:17px; }.pr-answer-lead { padding:19px; }.pr-answer-lead h2 { font-size:22px; }
+  .pr-answer-block p { font-size:13px; }.pr-answer-block h3 { font-size:13px; }
+  .inline-ai-desk .event-header { padding:19px 18px; }.event-heading h1 { font-size:25px;letter-spacing:-.6px; }
+  .event-topline .eyebrow { font-size:9px; }.event-topline button { font-size:10px;padding:9px; }
+  .event-ai-actions { gap:10px; }.event-ai-actions>* { min-height:44px; }
+  .market-detail { padding:18px 15px; }.market-group summary { font-size:12px; }
+  .ai-dialog { width:calc(100vw - 20px);border-radius:16px; }.ai-dialog-header { padding:13px 18px; }
+  #ai-dialog .ai-desk { padding:20px 18px; }#ai-dialog .ai-match-label { font-size:18px; }
+  .ai-dialog-footer { padding:13px 18px; }.ai-dialog-footer p { font-size:9px; }
+  .report-lead { padding:17px; }.structured-report .verdict-preference { font-size:24px; }
+  .structured-report .report-section:not(.report-lead)>p,.structured-report .report-facts li { font-size:12px; }
+  .structured-report .verdict-choice { font-size:17px; }.ai-wait-top strong { font-size:16px; }
+  .history-card { padding:17px 18px; }.history-card h2 { font-size:15px; }.history-card .small { font-size:10px; }
+  .history-excerpt { font-size:11px; }.history-card>a { display:inline-flex;margin-top:13px;min-height:44px;font-size:11px; }
+  .history-tools .search-field input { font-size:16px; }.history-guest { padding:28px 22px; }.history-guest h2 { font-size:21px; }
+  #saved-analysis { padding:18px; }.credit-gate { padding:20px 16px; }.credit-gate h2 { font-size:21px; }
+  .credits-dialog { padding:20px 18px; }.credits-dialog h2 { font-size:24px;line-height:1.35; }
+  .credit-rule-hero { font-size:13px;padding:12px 14px; }.subscription-intro h3 { font-size:17px; }
+  .subscription-plan { padding:18px; }.subscription-quantity strong { font-size:58px; }
+  .subscription-quantity { white-space:normal;gap:7px; }.subscription-quantity small { font-size:11px; }
+  .subscription-plan h3 { font-size:15px;margin:12px 0 8px; }.subscription-price strong { font-size:21px; }
+  .subscription-money-note { font-size:10px; }.subscription-recurring { font-size:11px; }
+  .auth-dialog { padding:24px 21px; }.auth-dialog h2 { font-size:24px; }
+  .admin-tabs { gap:20px;margin-bottom:20px; }.admin-tabs button { font-size:11px;min-height:48px; }
+  .admin-tool-links { gap:7px; }.admin-tool-links a { font-size:10px;min-height:40px;padding:9px 11px; }
+  .admin-metrics,.ar-metrics,.ab-metrics { gap:10px; }.admin-metric,.ar-metric { padding:15px 14px;border-radius:12px; }
+  .admin-metric strong,.ar-metric strong { font-size:27px;margin:11px 0 6px; }.admin-metric>span,.ar-metric>span { font-size:10px; }
+  .admin-metric small,.ar-metric small { font-size:9px; }.admin-overview-grid,.ar-chart-grid { gap:13px; }
+  .ar-hero { padding:20px;gap:14px; }.ar-hero h2 { font-size:21px;line-height:1.4; }.ar-hero p:last-child { font-size:10px; }
+  .ar-hero .ar-sync { font-size:10px; }.ar-filters { gap:10px;margin:16px 0; }.ar-filters label { min-width:110px; }
+  .ar-chart-card h3,.ar-list-heading h3 { font-size:16px; }.ar-chart-card>.small { font-size:10px; }
+  .ar-ring { width:105px;height:105px; }.ar-table th,.ar-table td { padding:0; }.ar-table .ar-match-name { font-size:13px; }
+  .ar-state-label { min-width:0;max-width:100%; }.ar-list-heading { gap:12px; }.ar-list-heading>label { flex:1; }
+  .ab-detail { padding:20px 18px; }.ab-detail-fields dt,.ab-detail-fields dd { font-size:12px; }
+  .ab-filters { grid-template-columns:repeat(2,minmax(0,1fr));gap:12px; }.ab-filters label:last-child { grid-column:1/-1; }
+  .ab-wallet { gap:10px; }.ab-notice { font-size:11px; }.ab-statuses>div { font-size:11px;padding:8px 10px; }
+  .archive-overview { padding:19px 18px;gap:16px; }.archive-overview>div { min-width:0;flex:1; }.archive-overview strong { font-size:25px; }
+  .archive-result-card { padding:15px; }.archive-result-row { grid-template-columns:1fr auto;gap:6px 12px;font-size:11px; }
+  .archive-result-row>time { grid-column:1/-1; }.archive-result-row>span { min-width:0; }.archive-result-score { font-size:15px; }
+  .service-card h2 { font-size:18px; }.service-card p { font-size:11px; }.summary-card { padding:17px; }
+  .page-footer { gap:20px;padding-top:24px; }.footer-intro p { font-size:10px; }.footer-links { gap:18px; }
+}
+@media(max-width:370px) {
+  .page-heading h1 { font-size:24px; }.page-heading>.secondary-button { font-size:10px;padding-inline:10px; }
+  .results-widget,.today-picks { padding:18px 16px; }.results-widget .pr-heading h2 { font-size:17px; }
+  .results-widget .pr-label { min-height:46px; }.results-widget .pr-metric>strong { font-size:27px; }
+  .tp-heading h2 { font-size:18px; }.featured-controls { gap:3px; }.featured-controls>#featured-position { display:none; }
+  .featured-heading h2 { font-size:18px; }.featured-heading .small { font-size:9px; }
+  .subscription-plan { padding:17px 15px; }.subscription-quantity strong { font-size:52px; }
+  .subscription-quantity { flex-wrap:wrap; }.subscription-price strong { font-size:20px; }
+  .pr-row { grid-template-columns:minmax(0,1fr); }.pr-row-result { grid-column:1;grid-row:auto;max-width:none;grid-template-columns:1fr auto;justify-items:start;align-items:center;border-top:1px solid var(--line);padding-top:12px;text-align:left; }.pr-open { grid-column:1/-1; }
+  .admin-metric strong,.ar-metric strong { font-size:25px; }.ar-pagination .button-row { gap:8px; }
+}

@@ -22,24 +22,25 @@
   <link rel="stylesheet" href="/static/social-login.css?v=20261112-social1" />
   <link rel="stylesheet" href="/static/featured-events.css?v=20261111-source2" />
   <script src="/static/featured-events.js?v=20261111-seo1" defer></script>
-  <script src="/static/product.js?v=20261111-public1" defer></script>
+  <script src="/static/product.js?v=20261112-interface1" defer></script>
   <script src="/static/analysis-dialog.js?v=20261111-popup1" defer></script>
-  <script src="/static/today-picks.js?v=20261111-payments1" defer></script>
+  <script src="/static/today-picks.js?v=20261112-interface1" defer></script>
   <script src="/static/credits.js?v=20261112-profile1" defer></script>
   <script src="/static/profile.js?v=20261112-profile1" defer></script>
-  <script src="/static/public-results.js?v=20261111-payments1" defer></script>
-  <script src="/static/app.js?v=20261112-subscriptions1" defer></script>
+  <script src="/static/public-results.js?v=20261112-interface1" defer></script>
+  <script src="/static/app.js?v=20261112-interface1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
   <script src="/static/admin-results.js?v=20261111-system-results1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
   <link rel="stylesheet" href="/static/admin-billing.css?v=20261111-1" />
   <script src="/static/admin-billing.js?v=20261112-subscriptions1" defer></script>
-  <script src="/static/admin.js?v=20261112-social1" defer></script>
+  <script src="/static/admin.js?v=20261112-interface1" defer></script>
   <link rel="stylesheet" href="/static/product.css?v=20261111-ux3" />
   <link rel="stylesheet" href="/static/analysis-dialog.css?v=20261111-popup1" />
   <link rel="stylesheet" href="/static/public-results.css?v=20261111-odds1" />
   <link rel="stylesheet" href="/static/today-picks.css?v=20261111-today4" />
   <link rel="stylesheet" href="/static/credits.css?v=20261112-subscriptions1" />
+  <link rel="stylesheet" href="/static/interface.css?v=20261112-interface1" />
   <link rel="stylesheet" href="/static/profile.css?v=20261112-profile1" />
 </head>
 <body class="ym-hide-content">
@@ -50,7 +51,7 @@
     <nav aria-label="Основные разделы">
       <a href="#matches" class="nav-link active"><span data-ux-icon="matches" aria-hidden="true"></span> Матчи <span class="nav-count" id="nav-matches">—</span></a>
       <a href="#results" class="nav-link"><span data-ux-icon="chart" aria-hidden="true"></span><span>Результаты</span></a>
-      <a href="#archive" class="nav-link" data-admin-only><span aria-hidden="true">◷</span> Архив</a>
+      <a href="#archive" class="nav-link" data-admin-only><span data-ux-icon="history" aria-hidden="true"></span> Архив</a>
       <a href="#favorites" class="nav-link"><span data-ux-icon="favorite" aria-hidden="true"></span> Избранное <span class="nav-count" id="nav-favorites">0</span></a>
       <a href="#history" class="nav-link" aria-label="История разборов"><span data-ux-icon="history" aria-hidden="true"></span><span class="nav-history-long" aria-hidden="true">История разборов</span><span class="nav-history-short" aria-hidden="true">История</span></a>
     </nav>
@@ -64,14 +65,15 @@
     <div id="global-error" class="notice error" role="alert" hidden></div>
     <section id="view-matches" data-view>
       <section id="results-widget" class="results-widget" aria-labelledby="results-widget-title">
-        <div class="pr-heading"><div><p class="eyebrow">ОТ РЕШЕНИЯ К ИТОГУ</p><h2 id="results-widget-title">Результаты ИИ за 30 дней</h2></div><a href="#results">Посмотреть прошлые прогнозы →</a></div>
+        <div class="pr-heading"><div><p class="eyebrow">ОТ РЕШЕНИЯ К ИТОГУ</p><h2 id="results-widget-title">Результаты ИИ за 30 дней</h2></div><a href="#results">Посмотреть прошлые прогнозы <span data-ux-icon="arrow" aria-hidden="true"></span></a></div>
         <div id="results-widget-metrics" class="pr-metrics" aria-live="polite"></div><p id="results-widget-note">Загружаем подтверждённые результаты…</p>
       </section>
       <section id="today-picks" class="today-picks" aria-labelledby="today-picks-title">
         <div class="tp-heading"><div><p class="eyebrow">БЛИЖАЙШИЕ МАТЧИ</p><h2 id="today-picks-title">Выбор ИИ на сегодня и завтра</h2><p class="tp-subtitle">Только вердикты «Ставить». Матчи до запланированного начала · время МСК.</p></div><span id="tp-date" class="tp-date"></span></div>
         <p id="tp-status" class="tp-status" role="status">Загружаем сохранённые разборы…</p>
         <button id="tp-retry" class="secondary-button" type="button" hidden>Повторить загрузку</button>
-        <div id="tp-cards" class="tp-cards" role="list" aria-busy="true"></div>
+        <p class="tp-scroll-hint">Листайте подборку, чтобы посмотреть другие прогнозы <span data-ux-icon="next" aria-hidden="true"></span></p>
+        <div id="tp-cards" class="tp-cards" role="list" tabindex="0" aria-label="Прогнозы на сегодня и завтра" aria-busy="true"></div>
         <button id="tp-more" class="secondary-button tp-more" type="button" hidden>Показать ещё</button>
         <p class="tp-footnote">Участники, турнир, время начала и ответ ИИ откроются по кнопке «Посмотреть прогноз». Коэффициент зафиксирован при разборе и мог измениться. В подборку входят только готовые рекомендации системного анализа.</p>
       </section>
@@ -79,9 +81,9 @@
         <div class="guide-heading"><div><span class="guide-kicker">ПЕРВЫЙ РАЗ ЗДЕСЬ?</span><h2 id="guide-title">От матча к понятному разбору</h2></div><button id="guide-close" class="guide-close" type="button" aria-label="Скрыть подсказку">×</button></div>
         <ol class="guide-steps"><li><span>01</span><div><strong>Выберите матч</strong><small>Найдите команду или турнир</small></div></li><li><span>02</span><div><strong>Запросите разбор</strong><small>Сопоставим доступные факты</small></div></li><li><span>03</span><div><strong>Изучите решение</strong><small>Претендент, аргументы или пропуск</small></div></li></ol>
       </section>
-      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Факты о встрече, аргументы и понятное решение — в одном разборе.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span aria-hidden="true">↻</span> Обновить</button></div>
+      <div class="page-heading"><div><p class="eyebrow" id="catalog-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1 id="catalog-title">Матчи<span class="lime">.</span></h1><p id="catalog-subtitle" class="subtitle">Факты о встрече, аргументы и понятное решение — в одном разборе.</p></div><button id="market-refresh" class="secondary-button refresh-button" type="button" title="Обновить список матчей"><span data-ux-icon="refresh" aria-hidden="true"></span> Обновить</button></div>
       <section id="featured-events" class="featured-events" aria-label="Главные события Winline" aria-roledescription="карусель" hidden>
-        <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>Главные события</h2><p class="small muted">Подборка Winline · все виды спорта</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события">←</button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события">→</button></div></div>
+        <div class="featured-heading"><div><p class="eyebrow">ЛИНИЯ WINLINE</p><h2>Главные события</h2><p class="small muted">Подборка Winline · все виды спорта</p></div><div class="featured-controls"><span id="featured-position" class="small muted" aria-live="polite"></span><button id="featured-prev" class="secondary-button" type="button" aria-label="Предыдущие события"><span data-ux-icon="previous" aria-hidden="true"></span></button><button id="featured-next" class="secondary-button" type="button" aria-label="Следующие события"><span data-ux-icon="next" aria-hidden="true"></span></button></div></div>
         <div id="featured-track" class="featured-track" role="list" tabindex="0" aria-label="Список основных событий"></div>
       </section>
       <div id="catalog-section" class="catalog-section-heading"><h2 id="catalog-list-title">Все матчи</h2><p class="small muted">Найдите команду или выберите турнир</p></div><div class="sport-navigation"><div id="sport-tabs" class="sport-tabs" role="group" aria-label="Вид спорта"></div><label class="sr-only" for="sport-filter">Все виды спорта</label><select id="sport-filter"><option value="">Все виды спорта</option><option value="football">Футбол</option><option value="hockey">Хоккей</option><option value="tennis">Теннис</option><option value="basketball">Баскетбол</option></select></div>
@@ -113,7 +115,7 @@
       <a id="match-back" class="back-link" href="#matches">← К матчам</a>
       <header id="event-header" class="event-header" hidden>
         <div class="event-topline"><p id="event-competition" class="eyebrow"></p><button id="event-favorite" class="secondary-button" type="button" aria-pressed="false">☆ В избранное</button></div>
-        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p><p id="event-red-card" class="small muted" hidden></p></div><div class="event-ai-actions"><button id="event-ai-button" type="button" class="primary-button" disabled><span data-ux-icon="spark" aria-hidden="true"></span>Разбор ИИ</button><a id="event-source" class="source-link event-bookmaker-button" target="_blank" rel="sponsored noopener noreferrer">На Winline ↗</a></div></div>
+        <div class="event-heading"><div><span id="event-phase" class="phase-label"></span><h1 id="market-detail-title">Загружаем матч…</h1><p id="event-kickoff" class="muted"></p><p id="event-red-card" class="small muted" hidden></p></div><div class="event-ai-actions"><button id="event-ai-button" type="button" class="primary-button" disabled><span data-ux-icon="spark" aria-hidden="true"></span>Разбор ИИ</button><a id="event-source" class="source-link event-bookmaker-button" target="_blank" rel="sponsored noopener noreferrer">На Winline <span data-ux-icon="arrow" aria-hidden="true"></span></a></div></div>
         <div id="event-primary" class="event-primary" hidden></div>
         <div class="event-data-line"><span id="event-freshness" class="freshness-badge"></span><button id="event-refresh" class="text-button" type="button" title="Запросить свежие данные по этому матчу">Обновить</button><button id="event-show-markets" class="text-button" type="button">Все рынки ↓</button><details class="snapshot-info" hidden><summary>О данных</summary><p id="market-detail-meta"></p></details></div>
         <p id="event-refresh-status" class="small muted" role="status" aria-live="polite"></p>
@@ -452,7 +454,7 @@
       <div id="admin-denied" class="panel" hidden><h2>Нужен аккаунт администратора</h2><p class="muted">Управление сервисом доступно только назначенным администраторам.</p></div>
       <div id="admin-content" hidden>
         <div class="admin-security-line"><span class="status-dot green"></span><span>Действия сохраняются в журнале</span><button id="admin-confirm-access" type="button" class="text-button">Подтвердить пароль</button></div>
-        <div class="admin-tool-links"><a class="secondary-button" href="#archive">Архив матчей ↗</a><a class="secondary-button" href="#status">Состояние сервиса ↗</a><a class="secondary-button" href="#calculator">Ручной расчёт ↗</a></div><nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="automation" type="button">Системный анализ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="billing" type="button">Оплаты</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
+        <div class="admin-tool-links"><a class="secondary-button" href="#archive">Архив матчей <span data-ux-icon="arrow" aria-hidden="true"></span></a><a class="secondary-button" href="#status">Состояние сервиса <span data-ux-icon="arrow" aria-hidden="true"></span></a><a class="secondary-button" href="#calculator">Ручной расчёт <span data-ux-icon="arrow" aria-hidden="true"></span></a></div><nav class="admin-tabs" aria-label="Разделы управления"><button data-admin-tab="overview" class="active" type="button">Обзор</button><button data-admin-tab="results" type="button">Результаты ИИ</button><button data-admin-tab="automation" type="button">Системный анализ</button><button data-admin-tab="tokens" type="button">Токены ИИ</button><button data-admin-tab="billing" type="button">Оплаты</button><button data-admin-tab="quality" type="button">Качество прогнозов</button><button data-admin-tab="users" type="button">Пользователи</button><button data-admin-tab="push" type="button">Уведомления</button><button data-admin-tab="promos" type="button">Промокоды</button><button data-admin-tab="links" type="button">Ссылки</button><button data-admin-tab="audit" type="button">Журнал</button></nav>
         <p id="admin-message" class="account-message" role="status"></p>
         <div data-admin-panel="overview">
           <div class="admin-period"><label for="admin-period">Период</label><select id="admin-period"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select><button id="admin-export" class="text-button" type="button">Скачать отчёт CSV ↓</button></div>
@@ -462,7 +464,7 @@
           <article class="panel"><h2>Последние запросы ИИ</h2><div id="admin-ai-list" class="admin-table-wrap"></div></article>
         </div>
         <div data-admin-panel="results" id="admin-results" hidden>
-          <div class="ar-hero"><div><p class="eyebrow">ОТ ПРОГНОЗА К РЕЗУЛЬТАТУ</p><h2>Как сыграли решения ИИ</h2><p>Первый предматчевый разбор каждого матча отдельно для системного анализа и запросов пользователей. <a href="#results" class="text-link">Основная статистика рекомендаций «Ставить» ↗</a></p></div><div class="ar-sync"><span class="ar-live-dot" aria-hidden="true"></span><span id="ar-updated">Ожидаем проверку</span></div></div>
+          <div class="ar-hero"><div><p class="eyebrow">ОТ ПРОГНОЗА К РЕЗУЛЬТАТУ</p><h2>Как сыграли решения ИИ</h2><p>Первый предматчевый разбор каждого матча отдельно для системного анализа и запросов пользователей. <a href="#results" class="text-link">Основная статистика рекомендаций «Ставить» <span data-ux-icon="arrow" aria-hidden="true"></span></a></p></div><div class="ar-sync"><span class="ar-live-dot" aria-hidden="true"></span><span id="ar-updated">Ожидаем проверку</span></div></div>
           <div class="ar-filters"><label>Матчи и новые разборы<select id="ar-days"><option value="7">7 дней</option><option value="30" selected>30 дней</option><option value="90">90 дней</option></select></label><label>Источник<select id="ar-source"><option value="site">Разборы сайта</option><option value="trials">Архивные тесты</option></select></label><label>Тип разбора<select id="ar-origin"><option value="all">Все разборы</option><option value="human">Запросы пользователей</option><option value="system">Системный анализ</option></select></label><label>Вид спорта<select id="ar-sport"><option value="">Все виды спорта</option></select></label><label>Версия ИИ<select id="ar-version"><option value="">Все версии</option></select></label><label id="ar-report-field" hidden>Сохранённый прогон<select id="ar-report"></select></label><button id="ar-export" class="text-button" type="button" disabled>Отчёт JSON ↓</button></div>
           <p id="ar-message" class="account-message" role="status"></p>
           <p id="ar-system-activity" class="notice" role="status" hidden></p>
@@ -515,7 +517,7 @@
 
   <dialog id="credits-dialog" class="credits-dialog ym-hide-content" aria-labelledby="credits-title">
     <div class="credits-dialog-head"><span id="credits-mode" class="credit-test-badge">Пакеты разборов</span><button id="credits-close" class="credits-close" type="button" aria-label="Закрыть покупку">×</button></div>
-    <h2 id="credits-title">Больше фактов. Взвешенные решения.</h2><p class="credit-rule credit-rule-hero">Разбор списывается ТОЛЬКО когда ИИ рекомендует «Ставить».</p><p class="small muted">Вы открываете полный прогноз за 1 разбор. Решение «Пропустить» и все его аргументы — бесплатно. Повторный просмотр тоже бесплатен.</p>
+    <h2 id="credits-title">Разборы и подписки</h2><p class="credit-rule credit-rule-hero">Разбор списывается ТОЛЬКО когда ИИ рекомендует «Ставить».</p><p class="small muted">Вы открываете полный прогноз за 1 разбор. Решение «Пропустить» и все его аргументы — бесплатно. Повторный просмотр тоже бесплатен.</p>
     <section id="subscription-plans-area"><div class="subscription-intro"><h3>Подписка на каждый день</h3><p>Разборы накапливаются и не сгорают</p></div><p id="subscription-launch" class="notice" hidden>Подключение подписок скоро откроется. Сейчас доступна разовая покупка без автопродления.</p><div id="subscription-plans" class="subscription-plans"></div><p class="subscription-money-note"><strong>Деньги списываются каждые 24 часа до отмены подписки</strong> — независимо от использования. Правило «только за Ставить» относится к расходу разборов, а не к оплате подписки.</p></section>
     <section id="subscription-checkout" class="subscription-checkout" hidden><button id="subscription-back" class="text-button" type="button">← Все тарифы</button><h3 id="subscription-checkout-title"></h3><p id="subscription-checkout-price" class="subscription-checkout-price"></p><p class="credit-rule">Разборы списываются ТОЛЬКО за «Ставить». «Пропустить» бесплатно.</p><label class="credit-email">E-mail для кассовых чеков<input id="subscription-email" type="email" autocomplete="email" inputmode="email" maxlength="254" required placeholder="name@example.ru"/></label><label class="credit-consent"><input id="subscription-offer" type="checkbox"/><span>Принимаю <a href="/static/legal/offer.html" target="_blank" rel="noopener">публичную оферту</a> и <a href="/static/legal/pricing.html" target="_blank" rel="noopener">тарифы</a>.</span></label><label class="credit-consent subscription-recurring"><input id="subscription-recurring" type="checkbox"/><span id="subscription-consent-text"></span></label><p class="small muted"><a href="/static/legal/recurring.html" target="_blank" rel="noopener">Условия автоплатежей</a>. Отменить можно в личном кабинете. Накопленные разборы останутся у вас.</p><button id="subscription-pay" class="primary-button credits-pay" type="button">Подписаться</button></section>
     <p class="credits-current">Ваш баланс: <strong id="credits-balance">0</strong></p>

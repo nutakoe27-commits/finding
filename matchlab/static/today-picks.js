@@ -19,7 +19,7 @@ window.TodayPicks=(()=>{
     match.append(names,node('span','sr-only','Участники скрыты до открытия прогноза'));
     const preview=node('div','tp-preview');preview.append(node('span','tp-ready-dot'),node('span','','Прогноз готов · команда и аргументы внутри'));
     const line=node('div','tp-line'),price=node('div','tp-price');price.append(node('span','tp-label','Коэффициент при разборе'),node('strong','',odds(pick.odds)));line.append(price);
-    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз →');link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, коэффициент ${odds(pick.odds)}`);
+    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз');link.append(ProductUX.icon('arrow'));link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, коэффициент ${odds(pick.odds)}`);
     footer.append(node('span','tp-observed','Разбор '+when(pick.forecast_at)+' МСК'),link);
     box.append(head,competition,match,preview,line,footer);return box;
   }

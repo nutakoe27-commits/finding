@@ -70,7 +70,7 @@ def meta(origin,path,title,description,*,index=True,schema=()):
 
 def shell(head,body):
     return ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+head+
-        '<link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/seo.css?v=20261111-seo1"></head><body>'
+        '<link rel="icon" href="/static/icon.svg" type="image/svg+xml"><script src="/static/theme.js?v=20261109-accounts1"></script><link rel="stylesheet" href="/static/seo.css?v=20261112-interface1"></head><body>'
         '<a class="seo-skip" href="#content">К содержимому</a><header class="seo-header seo-shell"><a class="seo-brand" href="/">prognozich <b>ai</b></a>'
         '<nav aria-label="Основная навигация"><a href="/matches/">Матчи и прогнозы</a><a href="/#results">Результаты ИИ</a><span class="seo-age">18+</span></nav></header>'
         '<main id="content" class="seo-shell">'+body+'</main><footer class="seo-footer seo-shell"><p>Спортивная аналитика. Сервис не принимает ставки. Прогноз ИИ может ошибаться.</p>'

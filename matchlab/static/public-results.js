@@ -39,7 +39,7 @@ window.PublicResults=(()=>{
     const a=node('a','pr-row');a.href='#result/'+row.id;
     const title=node('div','pr-row-title');title.append(node('strong','',`${row.event.home} — ${row.event.away}`),node('span','pr-caption',`${row.sport_label} · ${row.event.competition}`),node('span','pr-caption',`${when(row.event.kickoff_at)} МСК · ответ ${when(row.forecast_at)}`));
     const pick=node('div','pr-row-pick');pick.append(node('strong','',row.selection_label),node('span','pr-caption',`${row.market_label} · кф. ${fmt(row.odds)}`),node('span','pr-caption',row.origin==='system'?'Системный анализ':'Разбор по запросу пользователя'));
-    const [label,cls]=outcome(row),result=node('div','pr-row-result');result.append(node('span','pr-outcome '+cls,label),node('strong','pr-score',row.actual_score||'—'),node('span','pr-open','Посмотреть ответ →'));
+    const [label,cls]=outcome(row),result=node('div','pr-row-result'),open=node('span','pr-open','Посмотреть ответ');open.append(ProductUX.icon('arrow'));result.append(node('span','pr-outcome '+cls,label),node('strong','pr-score',row.actual_score||'—'),open);
     a.append(title,pick,result);return a;
   }
   async function list(nextOffset=offset){

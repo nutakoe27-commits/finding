@@ -13,7 +13,10 @@ window.ProductUX = (() => {
     arrow:'M7 17 17 7M7 7h10v10',
     clock:'M12 8v4l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
     chart:'M4 4v16h16M8 15l4-5 4 2 4-7',
-    close:'m6 6 12 12M6 18 18 6'
+    close:'m6 6 12 12M6 18 18 6',
+    refresh:'M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1',
+    previous:'m14 6-6 6 6 6',
+    next:'m10 6 6 6-6 6'
   };
   function icon(name) {
     const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');

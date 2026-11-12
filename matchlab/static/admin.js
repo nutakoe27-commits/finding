@@ -146,6 +146,13 @@ window.Admin = (() => {
     if(allowed)await load();
   }
   document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminTokens.stop();AdminBilling.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
+  document.querySelector('.admin-tabs').addEventListener('keydown',event=>{
+    const tabs=[...document.querySelectorAll('[data-admin-tab]')],index=tabs.indexOf(event.target);
+    if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+    event.preventDefault();
+    const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+    tabs[next].focus(); // Native focus scrolls the horizontal strip without activating a request.
+  });
   $("admin-refresh").addEventListener("click",load);$("admin-period").addEventListener("change",load);
   let userSearch;$("admin-user-search").addEventListener("input",()=>{clearTimeout(userSearch);userSearch=setTimeout(()=>{userOffset=0;loadUsers().catch(e=>message(e.message,true));},300);});
   $("admin-users-prev").addEventListener("click",()=>{userOffset=Math.max(0,userOffset-30);load();});$("admin-users-next").addEventListener("click",()=>{userOffset+=30;load();});
