@@ -200,7 +200,10 @@ def install(app,repo,settings):
             '<section class="seo-hero"><h1>Матч не найден</h1><p>Выберите другую встречу в каталоге.</p><a class="seo-button" href="/matches/">Открыть каталог матчей</a></section>'),status_code=404,headers={'X-Robots-Tag':'noindex','Cache-Control':'no-store'})
 
     @app.api_route('/robots.txt',methods=['GET','HEAD'],include_in_schema=False)
-    def robots():return Response('User-agent: *\nDisallow: /api/\nDisallow: /go/\n\nSitemap: '+origin+'/sitemap.xml\n',media_type='text/plain',headers={'Cache-Control':'public, max-age=300'})
+    def robots():
+        # Crawlers must see the redirect's noindex header; Disallow would hide it
+        # and can leave already discovered /go/ URLs listed in search results.
+        return Response('User-agent: *\nDisallow: /api/\n\nSitemap: '+origin+'/sitemap.xml\n',media_type='text/plain',headers={'Cache-Control':'public, max-age=300'})
 
     @app.api_route('/sitemap.xml',methods=['GET','HEAD'],include_in_schema=False)
     def sitemap():

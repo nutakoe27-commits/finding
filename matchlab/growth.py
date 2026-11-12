@@ -321,17 +321,19 @@ def install(app, repo, settings):
             )
         return response
 
-    @app.get("/go/winline/{event_id}")
+    @app.api_route("/go/winline/{event_id}", methods=["GET", "HEAD"])
     def go(event_id: str, request: Request, source: str = "stream"):
         if source not in ("stream", "legacy"):
             raise HTTPException(422, "Неизвестный источник.")
         destination = outbound(repo, event_id, source)
         accounts.limited(repo, "outbound:" + accounts.peer(request), 120, 60)
-        if analytics_allowed(repo,request):
+        if request.method == "GET" and analytics_allowed(repo,request):
             user = accounts.current_user(request, False)
             record(repo,"outbound_click",event_id,user["id"] if user else None,visitor(request))
-        response = RedirectResponse(destination, status_code=302)
-        response.headers["Cache-Control"] = "no-store"
+        response = RedirectResponse(destination, status_code=302, headers={
+            "Cache-Control": "no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+        })
         return response
 
     @app.post("/api/account/promo")

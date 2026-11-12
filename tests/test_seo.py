@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from xml.etree import ElementTree as ET
+from urllib.robotparser import RobotFileParser
 
 from fastapi.testclient import TestClient
 from matchlab import archive
@@ -81,6 +82,12 @@ class SeoTests(unittest.TestCase):
         self.assertEqual(robots.status_code,200);self.assertIn('Disallow: /api/',robots.text)
         self.assertIn('Sitemap: https://prognozich.online/sitemap.xml',robots.text)
         self.assertNotIn('Disallow: /static/',robots.text)
+        rules=RobotFileParser();rules.parse(robots.text.splitlines())
+        self.assertTrue(rules.can_fetch('Googlebot','https://prognozich.online/go/winline/101?source=stream'))
+        self.assertFalse(rules.can_fetch('Googlebot','https://prognozich.online/api/analyses'))
+        self.assertTrue(rules.can_fetch('Googlebot','https://prognozich.online'+self.url()))
+        source=next(attrs for tag,attrs in Parsed(html).tags if attrs.get('id')=='event-source')
+        self.assertTrue({'nofollow','sponsored'}<=set(source['rel'].split()))
         head=self.client.head(self.url());self.assertEqual(head.status_code,200);self.assertEqual(head.content,b'')
 
     def test_split_xml_sitemaps_and_directory_pagination_are_complete_and_do_not_fake_lastmod(self):

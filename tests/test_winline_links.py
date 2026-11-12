@@ -45,9 +45,11 @@ class WinlineLinksTests(unittest.TestCase):
         self.assertEqual(response.status_code,302)
         self.assertEqual(response.headers['location'],'https://winline.ru/stavki/sport/xokkej/91002')
         self.assertEqual(response.headers['cache-control'],'no-store')
+        self.assertEqual(response.headers['x-robots-tag'],'noindex, nofollow')
         with patch('matchlab.archive.document',return_value={**raw,'url':'https://winline.ru/stavki/event/91002'}):
             response=self.client.get('/go/winline/91002?source=stream',follow_redirects=False)
         self.assertEqual(response.headers['location'],'https://winline.ru/stavki/sport/xokkej/91002')
+        self.assertEqual(response.headers['x-robots-tag'],'noindex, nofollow')
         self.assertEqual(self.client.get('/go/winline/999?source=legacy',follow_redirects=False).status_code,404)
 
     def test_referral_receives_encoded_match_destination(self):
@@ -57,6 +59,17 @@ class WinlineLinksTests(unittest.TestCase):
         response=self.client.get('/go/winline/91002?source=legacy',follow_redirects=False)
         args=parse_qs(urlsplit(response.headers['location']).query)
         self.assertEqual(args,{'url':['https://winline.ru/stavki/sport/xokkej/91002'],'event':['91002']})
+        self.assertEqual(response.headers['x-robots-tag'],'noindex, nofollow')
+
+    def test_head_exposes_the_same_exclusion_and_destination_without_recording_a_click(self):
+        self.repo.import_event_markets(document(PROJECTIONS[1]))
+        with patch('matchlab.growth.analytics_allowed',return_value=True),patch('matchlab.growth.record') as record:
+            response=self.client.head('/go/winline/91002?source=legacy',follow_redirects=False)
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(response.headers['location'],'https://winline.ru/stavki/sport/xokkej/91002')
+        self.assertEqual(response.headers['x-robots-tag'],'noindex, nofollow')
+        self.assertEqual(response.content,b'')
+        record.assert_not_called()
 
     def test_old_landing_only_referral_cannot_replace_match_destination(self):
         raw=document(PROJECTIONS[1]);self.repo.import_event_markets(raw)

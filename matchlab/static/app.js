@@ -790,7 +790,7 @@ function renderCatalogue(result) {
       const ai = el("button", "match-ai-button", canAnalyze?"Разбор ИИ":"Открыть матч"); ai.type = "button"; ai.dataset.focusKey=event.source_event_id+":ai"; ai.prepend(ProductUX.icon(canAnalyze?"spark":"arrow"));
       ai.addEventListener("click", () => {if(canAnalyze)window.ProductAnalytics?.goal('ai_intent');openSelection(event.source_event_id,null,canAnalyze,event.source_kind==='stream'?'stream':'legacy');});
       const markets = el("a", "match-open", "О матче →"); publicMatchLink(markets,event); markets.dataset.focusKey=event.source_event_id+":open";
-      const bookmaker=el("a","match-bookmaker-link","На Winline");bookmaker.append(ProductUX.icon('arrow'));bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.dataset.focusKey=event.source_event_id+":source";bookmaker.target="_blank";bookmaker.rel="sponsored noopener noreferrer";
+      const bookmaker=el("a","match-bookmaker-link","На Winline");bookmaker.append(ProductUX.icon('arrow'));bookmaker.href=`/go/winline/${event.source_event_id}?source=${event.source_kind === "stream" ? "stream" : "legacy"}`;bookmaker.dataset.focusKey=event.source_event_id+":source";bookmaker.target="_blank";bookmaker.rel="sponsored nofollow noopener noreferrer";
       actions.append(ai, markets, bookmaker); card.append(actions);
       const freshness = el("div", "match-freshness"); freshness.append(el("span", event.is_stale ? "freshness-badge stale" : "freshness-badge", ageLabel(event)));
       if (isAdmin() && !event.coverage.complete && event.source_kind !== "stream") freshness.append(el("span", "partial-label", event.source_kind === "stream" ? "Основные рынки" : "Неполный снимок"));
