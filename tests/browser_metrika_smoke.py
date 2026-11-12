@@ -98,6 +98,7 @@ async def exercise(base):
                     popup=await pop.value;await popup.close()
                     await page.wait_for_function("() => window.__ymCalls.some(x=>x[1]==='reachGoal' && x[2]==='winline_click')")
                     await page.evaluate("location.hash='#account'")
+                    await page.locator('#profile-promo > summary').click()
                     await page.locator('#promo-code').fill('TESTCODE')
                     await page.locator('#promo-redeem-form button').click()
                     await page.wait_for_function("() => window.__ymCalls.some(x=>x[1]==='reachGoal' && x[2]==='promo_redeemed')")

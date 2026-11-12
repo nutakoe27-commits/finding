@@ -19,7 +19,7 @@ window.Credits=(()=>{
     $('credits-open').disabled=demo;
     $('credits-open').textContent=Account.user&&config?.enabled?(unlimited?'Безлимит активен':`Разборы: ${balance}`):'Тарифы';
     $('account-wallet').hidden=!config?.enabled||!Account.user;
-    $('credits-balance').textContent=String(balance);$('account-credit-balance').textContent=units(balance)+(unlimited?' · безлимит активен':'');
+    $('credits-balance').textContent=String(balance);$('account-credit-balance').replaceChildren(node('strong','profile-balance-value',Number(balance).toLocaleString('ru-RU')),node('span','profile-balance-unit',units(balance).slice(String(balance).length)));$('account-credit-balance').setAttribute('aria-label',units(balance));$('account-unlimited').hidden=!unlimited;$('profile-credit-lifetime').hidden=unlimited;
     $('credits-mode').textContent=testing?'Проверка интеграции · тестовый магазин':'Разборы и подписки';
     $('credits-launch-note').hidden=available;
     $('credits-launch-note').textContent='Оплата временно недоступна. Купленные разборы можно использовать.';
@@ -64,14 +64,17 @@ window.Credits=(()=>{
       const list=$('account-credit-orders');list.replaceChildren();
       for(const value of data.orders){
         const row=node('div','credit-order-row'),text=node('div');
-        text.append(node('strong','',`${value.subscription_id?planName(value)+' · подписка':units(value.credits)} · ${rub(value.amount_kopecks)}`),node('span','small muted',`${stateNames[value.state]||'Проверяем'} · ${new Date(value.created_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})}${value.test_mode?' · Проверочная операция без списания денег':''}${value.refunded_kopecks?' · Возврат '+rub(value.refunded_kopecks):''}`));
-        row.append(text);
+        text.append(node('strong','',value.subscription_id?planName(value):units(value.credits)),node('span','small muted',new Date(value.created_at).toLocaleDateString('ru-RU',{timeZone:'Europe/Moscow'})+(value.test_mode?' · Проверочная операция':'')));
+        const meta=node('div','profile-payment-meta'),status=node('span','profile-payment-status',stateNames[value.state]||'Проверяем');status.dataset.state=value.state;
+        meta.append(node('strong','profile-payment-amount',rub(value.amount_kopecks)),status);
+        if(value.refunded_kopecks)text.append(node('span','small muted','Возврат '+rub(value.refunded_kopecks)));
+        row.append(text,meta);
         if(['creating','pending'].includes(value.state)){
           const button=node('button','text-button','Проверить');button.type='button';button.addEventListener('click',()=>{if(!dialog.open)dialog.showModal();showOrder(value);poll();});row.append(button);
         }
         list.append(row);
       }
-      if(!data.orders.length)list.append(node('p','small muted','Покупок пока нет. Разборы появятся после подтверждения оплаты.'));
+      if(!data.orders.length)list.append(empty('Здесь будет история оплат',demonstration()?'В демонстрации реальные покупки не отображаются.':'Все покупки и продления появятся здесь после оформления заказа.'));
       if(!config.test_checkout_allowed&&data.orders.some(value=>value.test_mode)){
         $('account-payment-mode').hidden=false;$('account-payment-mode').textContent='В истории есть проверочные операции без списания денег. Они не являются покупками по коммерческой оферте.';
       }
@@ -81,11 +84,16 @@ window.Credits=(()=>{
   }
   async function loadOpened(reset=false){
     if(!Account.user||!config?.enabled)return;
-    const serial=epoch,data=await Account.api('/api/billing/unlocks?offset='+(reset?0:openedOffset)+'&limit=20');if(serial!==epoch)return;
+    const serial=epoch,data=await Account.api('/api/billing/unlocks?offset='+(reset?0:openedOffset)+'&limit=5');if(serial!==epoch)return;
     const target=$('account-open-analyses');if(reset)target.replaceChildren();
-    for(const item of data.items){const link=node('a','credit-opened',item.title);link.href=item.route;link.append(node('span','small muted','Открыто · повторный просмотр бесплатно'));target.append(link);}
+    for(const item of data.items){const link=node('a','credit-opened',item.title);link.href=item.route;link.append(node('span','small muted','Открыто · повторный просмотр бесплатно'),ProductUX.icon('arrow'));target.append(link);}
     openedOffset=data.offset+data.items.length;$('account-open-more').hidden=openedOffset>=data.total;
-    if(!data.total)target.append(node('p','small muted','Здесь будут сохранены разблокированные ответы ИИ.'));
+    $('profile-open-count').hidden=!data.total;$('profile-open-count').textContent=String(data.total);
+    if(!data.total)target.append(empty('Первый разбор — впереди','Выберите интересующий матч. Открытый ответ сохранится здесь.',true));
+  }
+  function empty(title,description,link=false){
+    const box=node('div','profile-empty'),text=node('div');const symbol=node('span','profile-empty-symbol');symbol.append(ProductUX.icon('history'));box.append(symbol);text.append(node('strong','',title),node('p','',description));
+    if(link){const a=node('a','','Выбрать матч');a.href='#matches';a.append(ProductUX.icon('arrow'));text.append(a);}box.append(text);return box;
   }
   function packages(){
     $('credits-packages').replaceChildren(...config.packages.map((p,i)=>{
@@ -202,23 +210,31 @@ window.Credits=(()=>{
     $('subscription-email').focus();
   }
   function renderSubscription(){
-    const s=currentSubscription;$('account-subscription').hidden=!s;
-    if(!s)return;
+    const s=currentSubscription,area=$('subscription-summary'),confirmation=area.querySelector('.subscription-cancel-confirm');
+    $('account-subscription').hidden=!Account.user||!config?.enabled;$('account-subscription').dataset.state=s?.state||'none';area.replaceChildren();
+    $('subscription-cancel').hidden=!s?.auto_renew;$('subscription-choose').hidden=!!s;$('profile-subscription-terms').hidden=!s;
+    if(!s){
+      $('subscription-name').textContent='Нет активной подписки';$('subscription-state').textContent='Не подключена';$('subscription-state').dataset.state='none';
+      area.append(node('p','',config?.subscriptions_enabled?'Выберите ежедневный тариф или безлимит. Накопленные разборы не сгорают.':'Подписки скоро откроются. Накопленные разборы доступны без ограничений по сроку.'));
+      $('subscription-choose').textContent='Тарифы';$('subscription-choose').setAttribute('aria-label','Посмотреть тарифы');return;
+    }
     $('subscription-name').textContent=planName(s);
-    const status={creating:'Ожидаем первый платёж',active:'Подписка действует',canceled:'Автопродление отключено',past_due:'Оплата не прошла. Автопродление остановлено',review:'Платёж требует проверки поддержки'};
-    $('subscription-state').textContent=status[s.state]||'Проверяем подписку';
-    const area=$('subscription-summary');area.replaceChildren();
+    const status={creating:'Ожидаем первый платёж',active:'Подписка действует',canceled:'Автопродление отключено',past_due:'Оплата не прошла',review:'Требуется проверка'};
+    $('subscription-state').textContent=status[s.state]||'Проверяем';$('subscription-state').dataset.state=s.state;
     if(demonstration())area.append(node('p','notice','Демонстрация интерфейса: настоящая карта не привязана, платежи не выполняются.'));
-    area.append(node('strong','',rub(s.amount_kopecks)+' каждые 24 часа'));
-    area.append(node('p','',s.auto_renew&&s.period_end_at?'Следующее списание: '+when(s.period_end_at):s.period_end_at?'Оплаченный период до '+when(s.period_end_at)+'. Новых списаний не будет.':'Начисления появятся после подтверждения оплаты.'));
-    if(s.credits)area.append(node('p','',`Каждая успешная оплата добавляет ${units(s.credits)} на постоянный баланс. Сейчас: ${units(balance)}.`));
-    if(s.error_code==='payment_refunded')area.append(node('p','notice','По оплате оформлен возврат. Продление отключено; остальные накопленные разборы сохраняются.'));
+    const facts=node('dl','profile-subscription-facts');
+    const fact=(label,value)=>{const d=node('div');d.append(node('dt','',label),node('dd','',value));facts.append(d);};
+    fact('Стоимость',rub(s.amount_kopecks)+' / 24 ч');
+    fact(s.auto_renew?'Следующее списание':'Оплаченный период до',s.period_end_at?when(s.period_end_at):'После подтверждения оплаты');
+    area.append(facts,node('p','small muted',s.credits?`При каждой оплате +${units(s.credits)} на баланс. Разборы не сгорают.`:'Безлимит действует в оплаченном периоде. Накопленные разборы не тратятся.'));
+    if(!s.auto_renew)area.append(node('p','small muted','Новых автоматических списаний не будет.'));
+    if(s.error_code==='payment_refunded')area.append(node('p','notice','По оплате оформлен возврат. Остальные накопленные разборы сохраняются.'));
     if(s.error_code==='payment_method_not_saved')area.append(node('p','notice','ЮKassa не сохранила способ оплаты. Оплаченный доступ предоставлен, повторных списаний не будет.'));
-    if(s.state==='review')area.append(node('p','notice','Не оформляйте повторную оплату. Напишите m@krichigin.ru; уже начисленные разборы остаются доступны.'));
-    if(s.auto_renew&&s.state==='active')area.append(node('p','small muted','Карта подключена для ежедневных автоплатежей. Вы можете самостоятельно отвязать её кнопкой ниже — обращение в поддержку не требуется.'));
-    if(s.canceled_at)area.append(node('p','credit-rule','Карта отвязана от автоплатежей сервиса. Новых автоматических списаний не будет.'));
-    $('subscription-cancel').hidden=!s.auto_renew;
+    if(s.state==='review')area.append(node('p','notice','Не оплачивайте повторно. Напишите m@krichigin.ru — проверим исходный платёж. Накопленные разборы доступны.'));
+    if(s.canceled_at)area.append(node('p','credit-rule','Карта отвязана от автоплатежей сервиса.'));
+    if(confirmation&&s.auto_renew&&confirmation.dataset.subscriptionId===s.id)area.append(confirmation);
   }
+  $('subscription-choose').addEventListener('click',()=>open());
   $('subscription-back').addEventListener('click',()=>{
     selectedPlan=null;subscriptionKey=null;$('subscription-checkout').hidden=true;$('subscription-plans-area').hidden=false;$('credits-one-time').hidden=false;$('credits-message').textContent='';
   });
@@ -240,7 +256,7 @@ window.Credits=(()=>{
   $('subscription-cancel').addEventListener('click',()=>{
     const area=$('subscription-summary');
     if(area.querySelector('.subscription-cancel-confirm'))return;
-    const box=node('div','subscription-cancel-confirm');box.append(node('strong','','Отвязать карту и отключить автоплатежи?'),node('p','','Удалим привязку способа оплаты к подписке и остановим новые автоплатежи. Накопленные разборы и открытые ответы сохранятся; оплаченный безлимит действует до конца периода. Уже переданный банку платёж проверим отдельно — он не подключит подписку заново.'));
+    const box=node('div','subscription-cancel-confirm');box.dataset.subscriptionId=currentSubscription.id;box.append(node('strong','','Отвязать карту и отключить автоплатежи?'),node('p','','Удалим привязку способа оплаты к подписке и остановим новые автоплатежи. Накопленные разборы и открытые ответы сохранятся; оплаченный безлимит действует до конца периода. Уже переданный банку платёж проверим отдельно — он не подключит подписку заново.'));
     const yes=node('button','secondary-button','Да, отвязать карту'),no=node('button','text-button','Оставить карту и подписку');yes.type=no.type='button';
     no.addEventListener('click',()=>box.remove());yes.addEventListener('click',async()=>{
       yes.disabled=true;const serial=epoch,id=currentSubscription?.id;
@@ -257,7 +273,7 @@ window.Credits=(()=>{
     epoch++;clearTimeout(pollTimer);checking=false;order=null;owner=Account.user?.id||null;balance=0;unlimited=false;currentSubscription=null;selectedPlan=null;subscriptionKey=null;
     $('account-subscription').hidden=true;$('subscription-email').value='';$('subscription-offer').checked=false;$('subscription-recurring').checked=false;$('subscription-message').textContent='';
     $('credits-email').value='';
-    openedOffset=0;$('account-open-analyses').replaceChildren();$('account-credit-orders').replaceChildren();$('account-open-more').hidden=true;
+    openedOffset=0;$('profile-open-count').hidden=true;$('profile-open-count').textContent='';$('account-open-analyses').replaceChildren();$('account-credit-orders').replaceChildren();$('account-open-more').hidden=true;
     $('credits-message').textContent='';$('credits-order-title').textContent='';$('credits-order-description').textContent='';
     if(dialog.open)dialog.close();header();await loadConfig();await refresh();
     if(!owner||!config?.enabled||demonstration())return;

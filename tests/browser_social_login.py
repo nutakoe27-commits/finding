@@ -47,6 +47,7 @@ async def exercise(base):
                 await expect(page.locator('#auth-dialog')).to_be_hidden()
                 await expect(page.locator('#account-button')).to_have_text('Михаил')
                 await page.goto(base+'/#account')
+                await page.locator('[data-profile-tab="settings"]').click()
                 await expect(page.locator('#account-password-card')).to_be_hidden()
                 await expect(page.locator('#account-social-card')).to_be_visible()
                 await page.locator('#account-logout').click()
@@ -72,7 +73,7 @@ async def exercise(base):
                 await page.locator('#auth-submit').click();await expect(page.locator('#auth-dialog')).to_be_hidden()
                 before=(await (await context.request.get(base+'/api/auth/me')).json())['user']['id']
                 await page.goto(base+'/#account');await page.evaluate("Account.api('/fixture/bonus',{method:'POST',body:'{}'}).then(()=>Account.refresh())")
-                await page.goto(base+'/#account');await page.locator('#social-link-password').fill('native-browser-password-123')
+                await page.goto(base+'/#account');await page.locator('[data-profile-tab="settings"]').click();await page.locator('#account-social-card > summary').click();await page.locator('#social-link-password').fill('native-browser-password-123')
                 subject=str(2000000+width)
                 await page.get_by_role('button',name='Подключить Яндекс',exact=True).click()
                 await expect(page.locator('#account-social-connections')).to_contain_text('Подключён')

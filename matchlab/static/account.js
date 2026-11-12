@@ -104,6 +104,7 @@ window.Account = (() => {
     byId("account-guest").hidden=!!user;byId("account-content").hidden=!user;
     if(!user)return;
     byId("account-name").textContent=user.display_name||user.username;
+    window.Profile?.identity(user);
     byId('account-password-card').hidden=!user.local_login_available;
     await window.SocialLogin?.connections();
     try {
@@ -125,16 +126,16 @@ window.Account = (() => {
     catch(error){byId("account-message").textContent=error.message;}
   });
   byId("account-password-form").addEventListener("submit",async event=>{
-    event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
+    event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;byId("profile-password-feedback").textContent="";
     try {
       const result=await api("/api/auth/password",{method:"POST",body:JSON.stringify({password:byId("account-old-password").value,new_password:byId("account-new-password").value})});
-      user=result.user;csrf=result.csrf;form.reset();sync();byId("account-message").textContent="Пароль изменён. Сеансы на других устройствах завершены.";
-    }catch(error){byId("account-message").textContent=error.message;}finally{button.disabled=false;}
+      user=result.user;csrf=result.csrf;form.reset();sync();byId("profile-password-feedback").textContent="Пароль изменён. На других устройствах потребуется войти заново.";byId("profile-password-feedback").classList.remove("is-error");
+    }catch(error){byId("profile-password-feedback").textContent=error.message;byId("profile-password-feedback").classList.add("is-error");}finally{button.disabled=false;}
   });
   byId("promo-redeem-form").addEventListener("submit",async event=>{
     event.preventDefault();const form=event.currentTarget,button=form.querySelector("button");button.disabled=true;
-    try{const result=await api("/api/account/promo",{method:"POST",body:JSON.stringify({code:byId("promo-code").value})});window.ProductAnalytics?.goal('promo_redeemed');byId("account-message").textContent=`Промокод активирован. Начислено бонусных разборов: ${result.bonus}.`;form.reset();await refresh();await renderPage();}
-    catch(error){byId("account-message").textContent=error.message;}finally{button.disabled=false;}
+    try{const result=await api("/api/account/promo",{method:"POST",body:JSON.stringify({code:byId("promo-code").value})});window.ProductAnalytics?.goal('promo_redeemed');byId("profile-promo-feedback").textContent=`Промокод применён. +${result.bonus} разборов на баланс.`;byId("profile-promo-feedback").classList.remove("is-error");form.reset();await refresh();await renderPage();}
+    catch(error){byId("profile-promo-feedback").textContent=error.message;byId("profile-promo-feedback").classList.add("is-error");}finally{button.disabled=false;}
   });
   function bytes(value){const raw=atob(value.replace(/-/g,"+").replace(/_/g,"/")+"=".repeat((4-value.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
   byId("push-enable").addEventListener("click",async()=>{
