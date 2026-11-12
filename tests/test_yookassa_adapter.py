@@ -31,6 +31,46 @@ class AdapterTests(unittest.TestCase):
         with patch('matchlab.yookassa.httpx.request',side_effect=AssertionError('network')):
             with self.assertRaises(ProviderUnavailable):YooKassa(replace(self.settings,yookassa_secret_key='live_secret')).request('GET','/payments')
 
+    def test_explicit_live_mode_adds_prepayment_receipt_with_no_vat(self):
+        settings=replace(self.settings,billing_mode='live',billing_receipts_enabled=True,yookassa_secret_key='live_fixture',yookassa_tax_system_code=2)
+        order={'id':'a'*32,'amount_kopecks':409000,'credits':10,'user_id':'owner','receipt_email':'buyer@example.ru'}
+        response=httpx.Response(200,json={'id':'payment-id'},request=httpx.Request('POST','https://api.yookassa.ru/v3/payments'))
+        with patch('matchlab.yookassa.httpx.request',return_value=response) as request:YooKassa(settings).create(order,'https://prognozich.online')
+        body=request.call_args.kwargs['json'];item=body['receipt']['items'][0]
+        self.assertEqual(body['receipt']['tax_system_code'],2)
+        self.assertEqual((item['quantity'],item['amount']['value'],item['vat_code'],item['payment_mode']),('10.00','409.00',1,'full_prepayment'))
+        self.assertNotIn('тест',body['description'])
+
+    def test_live_configuration_checks_api_and_cash_register_before_writing_private_settings(self):
+        import scripts.configure_yookassa as configure
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'.env').write_text('QWEN_MODEL=original\n')
+            output=io.StringIO();previous=os.umask(0o077)
+            try:
+                with patch.object(configure,'ROOT',root),patch.dict(os.environ,{'MATCHLAB_DATA_DIR':str(root/'.local')}),patch('builtins.input',return_value='100500'),patch('getpass.getpass',return_value='live_hidden_fixture'),patch('matchlab.yookassa.YooKassa.request',return_value={'account_id':'100500','test':False,'fiscalization':{'enabled':True}}),redirect_stdout(output):configure.main(live=True)
+            finally:os.umask(previous)
+            text=(root/'.env').read_text();self.assertIn("BILLING_MODE='live'",text);self.assertIn("BILLING_RECEIPTS_ENABLED='true'",text)
+            self.assertIn('QWEN_MODEL=original',text);self.assertNotIn('live_hidden_fixture',output.getvalue())
+            self.assertEqual((root/'.env').stat().st_mode&0o777,0o600)
+
+    def test_live_environment_rejects_mixed_store_key_and_disabled_receipts(self):
+        env={'BILLING_ENABLED':'true','BILLING_MODE':'live','BILLING_RECEIPTS_ENABLED':'true',
+            'YOOKASSA_SHOP_ID':'100500','YOOKASSA_SECRET_KEY':'live_fixture'}
+        with patch('matchlab.config.load_dotenv'),patch.dict(os.environ,env,clear=True):
+            self.assertEqual(Settings.from_env().billing_mode,'live')
+            for field,value in (('YOOKASSA_SECRET_KEY','test_fixture'),('BILLING_RECEIPTS_ENABLED','false'),('YOOKASSA_TAX_SYSTEM_CODE','1')):
+                with patch.dict(os.environ,{field:value}),self.assertRaises(ValueError):Settings.from_env()
+
+    def test_unconfirmed_cash_register_does_not_change_live_configuration(self):
+        import scripts.configure_yookassa as configure
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);p=root/'.env';p.write_text('QWEN_MODEL=original\n')
+            previous=os.umask(0o077)
+            try:
+                with patch.object(configure,'ROOT',root),patch('builtins.input',return_value='100500'),patch('getpass.getpass',return_value='live_hidden_fixture'),patch('matchlab.yookassa.YooKassa.request',return_value={'account_id':'100500','test':False,'fiscalization':{'enabled':False}}),self.assertRaises(SystemExit):configure.main(live=True)
+            finally:os.umask(previous)
+            self.assertEqual(p.read_text(),'QWEN_MODEL=original\n')
+
     def test_provider_errors_log_only_status_and_field_name_and_honor_retry_after(self):
         response=httpx.Response(400,json={'parameter':'receipt','description':'SECRET_PROVIDER_TEXT'},request=httpx.Request('POST','https://api.yookassa.ru/v3/payments'))
         with patch('matchlab.yookassa.httpx.request',return_value=response),self.assertLogs('uvicorn.error',level='WARNING') as logs:

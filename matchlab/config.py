@@ -38,6 +38,9 @@ class Settings:
     yookassa_shop_id: str = ''
     yookassa_secret_key: str = field(default='',repr=False)
     database_url: str = field(default='',repr=False)
+    billing_mode: str = 'test'
+    billing_receipts_enabled: bool = False
+    yookassa_tax_system_code: int = 0
 
     @property
     def database(self):
@@ -103,8 +106,15 @@ class Settings:
         public_testing=os.getenv('BILLING_PUBLIC_TESTING','false').strip().lower()
         if public_testing not in ('true','false'):raise ValueError('BILLING_PUBLIC_TESTING: true или false.')
         shop=os.getenv('YOOKASSA_SHOP_ID','').strip();secret=os.getenv('YOOKASSA_SECRET_KEY','').strip()
-        if billing=='true' and (not shop.isdigit() or not secret.startswith('test_')):
-            raise ValueError('Для тестовых платежей нужны Shop ID и тестовый ключ ЮKassa.')
+        billing_mode=os.getenv('BILLING_MODE','test').strip()
+        receipts=os.getenv('BILLING_RECEIPTS_ENABLED','false').strip().lower()
+        tax_code=int(os.getenv('YOOKASSA_TAX_SYSTEM_CODE','0'))
+        if billing_mode not in ('test','live') or receipts not in ('true','false') or tax_code not in (0,2,3):
+            raise ValueError('Проверьте BILLING_MODE, BILLING_RECEIPTS_ENABLED и код УСН (0 — настройка кассы, 2 — доходы, 3 — доходы минус расходы).')
+        if billing=='true' and (not shop.isdigit() or not secret.startswith(billing_mode+'_')):
+            raise ValueError('Shop ID и секретный ключ ЮKassa должны соответствовать BILLING_MODE.')
+        if billing=='true' and billing_mode=='live' and receipts!='true':
+            raise ValueError('Для рабочего магазина включите передачу чеков в подключённую к ЮKassa кассу: BILLING_RECEIPTS_ENABLED=true.')
         return cls(
             data_dir=Path(os.getenv("MATCHLAB_DATA_DIR", str(ROOT / ".local"))),
             database_url=os.getenv('MATCHLAB_DATABASE_URL','').strip(),
@@ -128,4 +138,5 @@ class Settings:
             qwen_market_limit=market_limit,
             event_analysis_mode=analysis_mode,verdict_max_stake_pct=stake_limit,
             billing_enabled=billing=='true',billing_public_testing=public_testing=='true',yookassa_shop_id=shop,yookassa_secret_key=secret,
+            billing_mode=billing_mode,billing_receipts_enabled=receipts=='true',yookassa_tax_system_code=tax_code,
         )

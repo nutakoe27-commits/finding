@@ -47,6 +47,7 @@ window.AdminBilling=(()=>{
       metric('Средний чек',money(m.average_check_kopecks),'По оплаченным заказам, до возвратов'),
       metric('Заказов',num(m.orders),`Ожидают: ${num(m.pending)} · отменены: ${num(m.canceled)} · ошибки: ${num(m.failed)}`),
       metric('Оплачено заказов',m.payment_rate==null?'—':(m.payment_rate*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%',`Начислено за оплаты: ${num(m.credited_units)} разборов, до возвратов`));
+    if(!test){const r=d.receipt_statuses||{};$('ab-metrics').append(metric('Кассовые чеки',num(r.succeeded||0),`Ожидают: ${(r.pending||0)+(r.processing||0)} · требуют проверки: ${r.review||0}`));}
     chart(d.daily);
     $('ab-packages').replaceChildren(table(['Пакет','Оплачено / заказов','Сумма оплат','Возвраты'],d.packages.map(p=>[units(p.units),`${p.paid} / ${p.orders}`,money(p.gross_kopecks),money(p.refunded_kopecks)])));
     $('ab-statuses').replaceChildren(...Object.entries(d.statuses).map(([state,count])=>{const e=node('div');e.append(badge(state),node('strong','',num(count)));return e;}));
@@ -77,6 +78,16 @@ window.AdminBilling=(()=>{
       const fields=node('dl','ab-detail-fields');
       for(const [label,value] of [['Покупатель',o.username||o.user_id],['Пакет',units(o.credits)],['Сумма',money(o.amount_kopecks)],['Возвращено',money(o.refunded_kopecks)],['Создан',when(o.created_at)+' МСК'],['Запись обновлена',when(o.updated_at)+' МСК'],['ID заказа',o.id],['ID платежа ЮKassa',o.payment_id||'Ещё не получен'],['Редакция условий',o.offer_version],['Ошибка',o.error_code||'Не записана'],['ID связанного разбора',o.analysis_id||'Не указан']])fields.append(node('dt','',label),node('dd','',value));
       content.append(fields,node('p','small muted','Время обновления записи не равно времени оплаты. Историческая дата фактической оплаты отдельно не сохранялась.'));
+      if(o.mode==='live'){
+        const unit=o.amount_kopecks/o.credits;
+        content.append(node('p','notice',`Неиспользованный остаток пакета: ${units(d.refundable_units)} · ${money(d.refundable_units*unit)}. Возврат оформляется по первоначальному платежу в кабинете ЮKassa.`));
+        const receiptTable=node('div','admin-table-wrap');receiptTable.append(table(['Операция','Состояние','ID чека','Проверка'],(d.receipts||[]).map(r=>[
+          r.kind==='prepayment'?'Предоплата пакета':'Зачёт за разбор',({succeeded:'Зарегистрирован',pending:'Ожидает',processing:'Проверяется',review:'Требует внимания'})[r.state]||r.state,
+          r.provider_receipt_id||'В составе платежа',r.error_code||'—'])));
+        content.append(node('h3','','Чеки и зачёт предоплаты'),receiptTable);
+        const allocationTable=node('div','admin-table-wrap');allocationTable.append(table(['Разбор','Стоимость','Открыт · МСК'],(d.allocations||[]).map(a=>[a.analysis_id,money(a.unit_kopecks),when(a.at)])));
+        content.append(node('h3','','Оплаченные открытия из этого пакета'),allocationTable);
+      }
       const metrics=node('div','ab-wallet');metrics.append(metric('Баланс аккаунта',num(d.wallet.balance),'Включая бонусы'),metric('Бонусный остаток',num(d.wallet.bonus_units),'Показан отдельно от оплаченных единиц'),metric('Открыто ответов',num(d.wallet.opened_answers),'В выбранном режиме'));content.append(metrics);
       const refundTable=node('div','admin-table-wrap');refundTable.append(table(['Дата · МСК','Сумма','ID возврата'],d.refunds.map(r=>[when(r.at),money(r.amount_kopecks),r.id])));
       content.append(node('h3','','Возвраты по заказу'),refundTable);

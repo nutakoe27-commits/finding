@@ -38,9 +38,18 @@ async def exercise(base):
                 await expect(page.locator('#credits-packages .credit-package')).to_have_count(3)
                 await expect(page.locator('#credits-packages')).to_contain_text('490 ₽')
                 await expect(page.locator('#credits-packages')).to_contain_text('2\u00a0190 ₽')
+                if os.getenv('LIVE_BILLING_FIXTURE')=='true':
+                    await expect(page.locator('#credits-dialog')).not_to_contain_text('тестов')
+                    await expect(page.locator('#credits-launch-note')).to_be_hidden()
+                    await page.locator('#credits-email').fill('browser@example.ru')
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),width
                 await page.screenshot(path=f'/workspace/outputs/billing-packages-{width}.png',full_page=True)
+                if os.getenv('LIVE_BILLING_FIXTURE')=='true':await context.request.post(base+'/fixture/revoke-agreements')
                 await page.locator('#credits-consent').check();await page.locator('#credits-pay').click()
+                if os.getenv('LIVE_BILLING_FIXTURE')=='true':
+                    await expect(page.locator('#legal-renewal')).to_be_visible()
+                    for field in ('legal-terms','legal-data','legal-age'):await page.locator('#'+field).check()
+                    await page.locator('#legal-submit').click()
                 await page.wait_for_url('https://yoomoney.ru/**')
                 from urllib.parse import urlsplit,parse_qs
                 order_id=parse_qs(urlsplit(page.url).query)['orderId'][0]

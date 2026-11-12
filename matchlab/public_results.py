@@ -67,7 +67,7 @@ def detail(repo,analysis_id,*,settings=None,user=None):
         return {**row,**answer_blocks(repo,analysis_id)}
     if settings:
         from .billing import active,entitled,ready
-        if active(repo,settings) and entitled(repo,user,analysis_id):
+        if active(repo,settings) and entitled(repo,user,analysis_id,settings):
             with repo.connection() as db:stored=db.execute('SELECT user_id,payload FROM event_analyses WHERE id=?',(analysis_id,)).fetchone()
             if stored and stored['user_id'] in (user['id'],'__system_featured__'):
                 payload=json.loads(stored['payload']);v=payload.get('context',{}).get('neural_verdict') or {};e=payload.get('event') or {}

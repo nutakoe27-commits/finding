@@ -9,7 +9,7 @@ from .bookmakers import instant
 
 STATES=('creating','pending','succeeded','canceled','refunded','failed')
 ORDER_FIELDS=('id','user_id','package_id','credits','amount_kopecks','state','created_at','updated_at',
-              'payment_id','analysis_id','offer_version','refunded_kopecks','error_code','mode','username')
+              'payment_id','analysis_id','offer_version','refunded_kopecks','error_code','mode','username','receipt_email')
 MSK=timezone(timedelta(hours=3))
 
 
@@ -28,6 +28,11 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
     needle=query.strip().casefold()
     rows=[dict(r) for r in rows]
     rows=[r for r in rows if (not state or r['state']==state) and (not needle or any(needle in str(r.get(k) or '').casefold() for k in ('id','username','user_id','payment_id')))]
+    receipts=Counter()
+    with repo.connection() as db:
+        for offset_ids in range(0,len(rows),100):
+            ids=[r['id'] for r in rows[offset_ids:offset_ids+100]]
+            for r in db.execute('SELECT state,count(*) total FROM billing_receipt_jobs WHERE order_id IN ('+','.join('?' for _ in ids)+') GROUP BY state',ids):receipts[r['state']]+=r['total']
     counts=Counter(r['state'] for r in rows)
     paid=[r for r in rows if r['state'] in ('succeeded','refunded')]
     gross=sum(r['amount_kopecks'] for r in paid);refunds=sum(r['refunded_kopecks'] for r in rows)
@@ -47,11 +52,11 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
             'gross_kopecks':gross,'refunded_kopecks':refunds,'net_kopecks':gross-refunds,
             'average_check_kopecks':round(gross/len(paid)) if paid else None,
             'payment_rate':len(paid)/len(rows) if rows else None,'credited_units':sum(r['credits'] for r in paid)},
-        'statuses':dict(counts),'daily':[{'day':k,**v} for k,v in sorted(daily.items())],
+        'statuses':dict(counts),'receipt_statuses':dict(receipts),'daily':[{'day':k,**v} for k,v in sorted(daily.items())],
         'packages':[{'id':k[0],'units':k[1],**v} for k,v in sorted(packages.items())],
         'orders':[{k:r.get(k) for k in ORDER_FIELDS} for r in rows[offset:offset+limit]],
         'offset':offset,'limit':limit,'total':len(rows),
-        'notice':'Тестовые операции. Реальные деньги не списывались.' if mode=='test' else 'Только реальные платежи. Боевой приём оплаты пока не открыт.',
+        'notice':'Тестовые операции. Реальные деньги не списывались.' if mode=='test' else 'Подтверждённые операции рабочего магазина ЮKassa.',
         'methodology':'Отбор по дате создания заказа. Показан его текущий подтверждённый статус; возвраты относятся к выбранным заказам. Сумма после возвратов не является прибылью. Историческое время фактической оплаты отдельно не записывалось; updated_at — время обновления записи, не дата оплаты.'}
 
 
@@ -69,16 +74,20 @@ def detail(repo,identifier,offset=0,limit=30):
         bonus=db.execute('SELECT bonus_analyses FROM users WHERE id=?',(row['user_id'],)).fetchone()
         total=db.execute('SELECT count(*) FROM analysis_credit_ledger WHERE user_id=? AND mode=?',(row['user_id'],row['mode'])).fetchone()[0]
         opens=db.execute('SELECT count(*) FROM analysis_unlocks WHERE user_id=? AND mode=?',(row['user_id'],row['mode'])).fetchone()[0]
+        allocations=[dict(r) for r in db.execute('SELECT analysis_id,unit_kopecks,at FROM analysis_credit_allocations WHERE order_id=? ORDER BY at',(identifier,))]
+        receipts=[dict(r) for r in db.execute('SELECT id,kind,state,provider_receipt_id,attempts,error_code,updated_at FROM billing_receipt_jobs WHERE order_id=? ORDER BY created_at,id',(identifier,))]
     return {'order':{k:row.get(k) for k in ORDER_FIELDS},'refunds':refunds,'ledger':ledger,'ledger_total':total,'offset':offset,'limit':limit,
+        'allocations':allocations,'receipts':receipts,
+        'refundable_units':max(0,row['credits']-len(allocations)-(row['refunded_kopecks']*row['credits']+row['amount_kopecks']-1)//row['amount_kopecks']) if row['mode']=='live' and row['state']=='succeeded' else 0,
         'wallet':{'ledger_units':paid,'bonus_units':bonus[0] if bonus else 0,'balance':paid+(bonus[0] if bonus else 0),'opened_answers':opens},
         'ledger_notice':'Операции всего аккаунта в выбранном режиме. Единицы разных пакетов объединены; списания не приписываются конкретному заказу. Бонусный остаток показан отдельно.'}
 
 
-def install(app,repo):
+def install(app,repo,settings=None):
     @app.get('/api/admin/billing')
-    def summary(request:Request,days:int=30,mode:str='test',state:str='',query:str='',offset:int=0,limit:int=25):
+    def summary(request:Request,days:int=30,mode:str='',state:str='',query:str='',offset:int=0,limit:int=25):
         accounts.admin_user(request)
-        return report(repo,days=days,mode=mode,state=state,query=query,offset=offset,limit=limit)
+        return report(repo,days=days,mode=mode or (settings.billing_mode if settings else 'test'),state=state,query=query,offset=offset,limit=limit)
 
     @app.get('/api/admin/billing/orders/{identifier}')
     def order(request:Request,identifier:str,offset:int=0,limit:int=30):

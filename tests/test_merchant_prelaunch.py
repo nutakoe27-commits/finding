@@ -41,7 +41,8 @@ class MerchantPrelaunchTests(unittest.TestCase):
         for value in ('490 ₽','2 190 ₽','4 090 ₽','438 ₽','409 ₽','1 314 ₽','не имеют срока действия','НДС не предъявляется','статьёй 32'):
             self.assertIn(value,offer)
         self.assertIn('№ 46 по г. Москве',self.client.get('/static/legal/contacts.html').text)
-        self.assertIn('Приём оплаты ещё не открыт',offer)
+        self.assertNotIn('Приём оплаты ещё не открыт',offer)
+        self.assertIn('Разовый платёж через ЮKassa',offer)
 
     def test_guest_and_regular_account_cannot_create_payments_even_with_forged_flags(self):
         config=self.client.get('/api/billing/config')

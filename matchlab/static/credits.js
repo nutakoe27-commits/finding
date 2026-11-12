@@ -6,23 +6,26 @@ window.Credits=(()=>{
   const rules=new Intl.PluralRules('ru'),units=n=>`${n} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[rules.select(n)]}`;
   let config=null,balance=0,owner=null,epoch=0,order=null,intent=null,pollTimer=null,checking=false,requestKey=null,openedOffset=0;
   const stateNames={creating:'Создаём платёж',pending:'Ожидаем оплату',checking:'Проверяем оплату',succeeded:'Оплачено',canceled:'Отменено',refunded:'Возврат',failed:'Платёж не создан'};
-  const key=()=>owner?'matchlab:test-payment:'+owner:null;
+  const key=()=>owner?'matchlab:payment:'+(config?.test_mode?'test':'live')+':'+owner:null;
   function remember(){try{if(key())order?sessionStorage.setItem(key(),JSON.stringify({id:order.id,analysis_id:order.analysis_id})):sessionStorage.removeItem(key());}catch{}}
   function header(){
-    const testing=!!config?.test_checkout_allowed,preview=config?.sales_state==='prelaunch';
+    const testing=!!config?.test_checkout_allowed,preview=config?.sales_state==='prelaunch',available=!!config?.checkout_enabled;
     $('credits-open').hidden=!config?.enabled&&!preview;
-    $('credits-open').textContent=Account.user&&config?.enabled?`Разборы: ${balance}`:testing?'Купить разборы':'Тарифы';
+    $('credits-open').textContent=Account.user&&config?.enabled?`Разборы: ${balance}`:available?'Купить разборы':'Тарифы';
     $('account-wallet').hidden=!config?.enabled||!Account.user;
     $('credits-balance').textContent=String(balance);$('account-credit-balance').textContent=units(balance);
     $('credits-mode').textContent=testing?'Проверка интеграции · тестовый магазин':'Пакеты разборов';
-    $('credits-launch-note').hidden=testing;
-    $('credits-consent-row').hidden=!testing;
+    $('credits-launch-note').hidden=available;
+    $('credits-launch-note').textContent='Оплата временно недоступна. Купленные разборы можно использовать.';
+    $('credits-consent-row').hidden=!available;
+    $('credits-email-row').hidden=!config?.receipt_email_required;
+    $('credits-email').required=!!config?.receipt_email_required;
     $('credits-offer-link').href=config?.offer_url||'/static/legal/offer.html';
     $('credits-offer-link').textContent=testing?'условия проверки оплаты':'публичную оферту';
     $('credits-consent-comment').textContent=testing?'Реальные деньги в тестовом магазине не списываются.':'';
     $('credits-pay').disabled=!config?.checkout_enabled;
-    $('credits-pay').textContent=testing?'Перейти к тестовой оплате':'Приём оплаты ещё не открыт';
-    $('account-credit-buy').textContent=testing?'Купить разборы':'Тарифы и условия';
+    $('credits-pay').textContent=available?'Перейти к оплате':'Оплата временно недоступна';
+    $('account-credit-buy').textContent=available?'Купить разборы':'Тарифы и условия';
     $('account-payment-mode').hidden=!testing;
     $('account-payment-mode').textContent=testing?'Проверка интеграции · тестовый магазин, реальные деньги не списываются.':'';
     if(config?.enabled){$('account-bonus-note').textContent='Бонусные разборы входят в доступный баланс. За подготовку ответа баланс не списывается.';}
@@ -39,7 +42,7 @@ window.Credits=(()=>{
     $('credits-new-purchase').hidden=!['succeeded','canceled','refunded','failed'].includes(value.state);
     if(value.state==='succeeded')$('credits-message').textContent=`Покупка подтверждена: ${units(value.credits)}. Баланс: ${units(balance)}. Один ответ открывается за 1 разбор.`;
     if(value.state==='canceled')$('credits-message').textContent='Оплата отменена. Разборы не начислены.';
-    if(value.state==='failed')$('credits-message').textContent='Тестовый платёж не создан. Проверьте настройки магазина или обратитесь в поддержку. Баланс не изменён.';
+    if(value.state==='failed')$('credits-message').textContent='Платёж не создан. Повторите попытку позже или обратитесь в поддержку. Баланс не изменён.';
   }
   async function refresh(){
     await ready;await Account.ready;const serial=epoch;
@@ -47,6 +50,7 @@ window.Credits=(()=>{
     try{
       const data=await Account.api('/api/billing/wallet');if(serial!==epoch)return;
       balance=data.balance;header();
+      if(config.receipt_email_required&&!$('credits-email').value&&data.receipt_email)$('credits-email').value=data.receipt_email;
       $('account-bonus').textContent=`Бонусных разборов: ${data.bonus_balance}`;
       const list=$('account-credit-orders');list.replaceChildren();
       for(const value of data.orders){
@@ -83,7 +87,7 @@ window.Credits=(()=>{
   }
   async function open(identifier=null){
     await ready;await Account.ready;if(!config)return;
-    if(config.test_checkout_allowed&&!await Account.ensure(()=>open(identifier)))return;
+    if(config.checkout_enabled&&!await Account.ensure(()=>open(identifier)))return;
     const serial=epoch;
     intent=identifier;await refresh();
     if(serial!==epoch)return;
@@ -92,7 +96,7 @@ window.Credits=(()=>{
     if(order&&['creating','pending','checking'].includes(order.state)){showOrder(order);poll();return;}
     order=null;requestKey=null;$('credits-order').hidden=true;$('credits-packages-area').hidden=false;packages();
     $('credits-pay').disabled=!config.checkout_enabled;
-    if(!config.checkout_enabled)$('credits-message').textContent='Приём оплаты ещё не открыт. Здесь можно ознакомиться с тарифами и условиями. Доступные единицы на балансе можно использовать.';
+    if(!config.checkout_enabled)$('credits-message').textContent='Оплата временно недоступна. Здесь можно ознакомиться с тарифами и условиями. Доступные разборы на балансе можно использовать.';
   }
   async function poll(){
     if(checking||!order||!Account.user)return;clearTimeout(pollTimer);const serial=epoch,id=order.id;checking=true;
@@ -105,15 +109,16 @@ window.Credits=(()=>{
     finally{checking=false;}
   }
   $('credits-pay').addEventListener('click',async()=>{
-    if(!config?.checkout_enabled){$('credits-message').textContent='Приём оплаты ещё не открыт.';return;}
-    if(!$('credits-consent').checked){$('credits-message').textContent='Подтвердите условия тестовой покупки.';return;}
+    if(!config?.checkout_enabled){$('credits-message').textContent='Оплата временно недоступна.';return;}
+    if(!$('credits-consent').checked){$('credits-message').textContent='Подтвердите условия приобретения разборов.';return;}
+    if(config.receipt_email_required&&!$('credits-email').reportValidity())return;
     const button=$('credits-pay');button.disabled=true;const serial=epoch;
     const selected=dialog.querySelector('input[name="credit-package"]:checked');
     if(!selected){button.disabled=false;return;}
     requestKey=requestKey||crypto.randomUUID().replaceAll('-','');
     try{
       const value=await Account.api('/api/billing/orders',{method:'POST',body:JSON.stringify({package_id:selected.value,request_key:requestKey,
-        analysis_id:intent,offer_accepted:true,offer_version:config.offer_version})});
+        analysis_id:intent,offer_accepted:true,offer_version:config.offer_version,receipt_email:config.receipt_email_required?$('credits-email').value.trim():undefined})});
       if(serial!==epoch)return;showOrder(value);
       if(value.confirmation_url&&value.state==='pending'&&dialog.open)location.assign(value.confirmation_url);
       else poll();
@@ -143,7 +148,7 @@ window.Credits=(()=>{
       const preview=!config?.checkout_enabled&&!(payload.unlock.balance>=1);
       const button=node('button','primary-button',preview?'Посмотреть тарифы':'Разблокировать за 1 разбор');button.type='button';
       button.addEventListener('click',async()=>{button.disabled=true;message.textContent='';try{if(preview)await open(payload.id);else await spend(payload.id,callback);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
-      root.append(button,node('p','small muted','Повторное открытие этого ответа — бесплатно. '+(config?.checkout_enabled?'При нулевом балансе можно купить пакет разборов.':'Приём новых оплат ещё не открыт; тарифы и условия доступны для ознакомления.')));
+      root.append(button,node('p','small muted','Повторное открытие этого ответа — бесплатно. '+(config?.checkout_enabled?'При нулевом балансе можно купить пакет разборов.':'Оплата временно недоступна; доступные разборы можно использовать.')));
     }else root.append(node('p','notice','Подтверждённого разбора ИИ пока нет. Разборы не списаны; платная разблокировка недоступна.'));
     root.append(message);target.replaceChildren(root);
   }
@@ -161,6 +166,7 @@ window.Credits=(()=>{
   const ready=loadConfig();
   document.addEventListener('accountchange',async()=>{
     epoch++;clearTimeout(pollTimer);checking=false;order=null;owner=Account.user?.id||null;balance=0;
+    $('credits-email').value='';
     openedOffset=0;$('account-open-analyses').replaceChildren();$('account-credit-orders').replaceChildren();$('account-open-more').hidden=true;
     $('credits-message').textContent='';$('credits-order-title').textContent='';$('credits-order-description').textContent='';
     if(dialog.open)dialog.close();header();await loadConfig();await refresh();

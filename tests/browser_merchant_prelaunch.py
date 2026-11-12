@@ -23,7 +23,7 @@ async def exercise(base,repo):
                 await page.locator('#credits-open').click()
                 await expect(page.locator('#credits-dialog')).to_be_visible()
                 await expect(page.locator('#auth-dialog')).not_to_be_visible()
-                await expect(page.locator('#credits-launch-note')).to_contain_text('Приём оплаты ещё не открыт')
+                await expect(page.locator('#credits-launch-note')).to_contain_text('Оплата временно недоступна')
                 await expect(page.locator('#credits-pay')).to_be_disabled()
                 await expect(page.locator('#credits-consent-row')).to_be_hidden()
                 await expect(page.locator('#credits-mode')).to_have_text('Пакеты разборов')

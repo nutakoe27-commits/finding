@@ -99,15 +99,18 @@ def generation_details(payload,cached=False):
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     repo = Repository(settings.database)
+    from .billing_fiscal import Worker as ReceiptWorker
+    receipt_worker=ReceiptWorker(repo,settings)
 
     @asynccontextmanager
     async def lifespan(app):
         repo.initialize()
         billing.initialize(repo,settings)
+        receipt_worker.start()
         jobs.start()
         automation.start()
         try:yield
-        finally:automation.stop();jobs.stop()
+        finally:receipt_worker.stop();automation.stop();jobs.stop()
 
     app = FastAPI(title="prognozich ai", version="0.2.0", lifespan=lifespan,docs_url=None,redoc_url=None)
     app.state.settings = settings

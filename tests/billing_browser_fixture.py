@@ -13,8 +13,13 @@ from matchlab.config import Settings
 from matchlab.storage import Repository
 from outcome_helpers import forecast
 
-settings=Settings(Path(os.environ['MATCHLAB_DATA_DIR']),'','',billing_enabled=True,billing_public_testing=True,
-    yookassa_shop_id='100500',yookassa_secret_key='test_browser',public_origin=os.environ['PUBLIC_ORIGIN'])
+LIVE=os.getenv('LIVE_BILLING_FIXTURE')=='true'
+settings=Settings(Path(os.environ['MATCHLAB_DATA_DIR']),'','',billing_enabled=True,billing_public_testing=not LIVE,
+    billing_mode='live' if LIVE else 'test',billing_receipts_enabled=LIVE,
+    yookassa_shop_id='100500',yookassa_secret_key='live_browser' if LIVE else 'test_browser',public_origin=os.environ['PUBLIC_ORIGIN'])
+if LIVE:
+    from matchlab.billing_fiscal import Worker
+    Worker.start=lambda self:None
 repo=Repository(settings.database);repo.initialize()
 
 
@@ -26,7 +31,7 @@ class FakeProvider:
             db.execute('CREATE TABLE IF NOT EXISTS browser_payments (id TEXT PRIMARY KEY,payload TEXT NOT NULL)')
             old=db.execute('SELECT payload FROM browser_payments WHERE id=?',(pid,)).fetchone()
             if old:return json.loads(old[0])
-            value={'id':pid,'status':'pending','paid':False,'test':True,'recipient':{'account_id':'100500'},
+            value={'id':pid,'status':'pending','paid':False,'test':not LIVE,'recipient':{'account_id':'100500'},
                 'metadata':{'order_id':order['id'],'user_id':order['user_id']},
                 'amount':{'currency':'RUB','value':f"{order['amount_kopecks']/100:.2f}"},
                 'confirmation':{'confirmation_url':'https://yoomoney.ru/checkout/payments/v2/contract?orderId='+order['id']}}
@@ -56,6 +61,13 @@ def seed(request:Request):
         with repo.connection() as db:db.execute('UPDATE event_analyses SET payload=?,user_id=? WHERE id=?',(json.dumps(item),owner,item['id']))
         result[key]=item['id']
     return result
+
+
+@app.post('/fixture/revoke-agreements')
+def revoke_agreements(request:Request):
+    user=accounts.current_user(request)
+    with repo.connection() as db:db.execute('DELETE FROM registration_agreements WHERE user_id=?',(user['id'],))
+    return {'ok':True}
 
 
 @app.post('/fixture/succeed/{order_id}')

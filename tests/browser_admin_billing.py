@@ -20,6 +20,13 @@ def seed(repo):
                 rid='refund-'+uuid4().hex
                 db.execute('INSERT INTO payment_refunds VALUES (?,?,?,?)',(rid,oid,returned,accounts.now()))
                 db.execute('INSERT INTO analysis_credit_ledger VALUES (?,?,?,?,?,?,?)',(uuid4().hex,uid,'test',-1,'refund',rid,accounts.now()))
+        oid=uuid4().hex;at=accounts.now();analysis=uuid4().hex
+        db.execute('''INSERT INTO payment_orders(id,user_id,request_key,mode,package_id,credits,amount_kopecks,state,created_at,updated_at,payment_id,offer_version)
+            VALUES (?,?,?,'live','five',5,219000,'succeeded',?,?,?,?)''',(oid,uid,uuid4().hex,at,at,'payment-'+oid,billing.PUBLIC_OFFER_VERSION))
+        db.execute('INSERT INTO analysis_credit_allocations VALUES (?,?,?,?,?,?)',(uid,analysis,'live',oid,43800,at))
+        for kind,state in (('prepayment','succeeded'),('settlement','review')):
+            db.execute('''INSERT INTO billing_receipt_jobs(id,order_id,analysis_id,kind,amount_kopecks,state,created_at,updated_at,next_attempt_at,error_code)
+                VALUES (?,?,?,?,?,?,?,?,?,?)''',(uuid4().hex,oid,analysis if kind=='settlement' else None,kind,43800,state,at,at,at,'receipt_requires_review' if state=='review' else None))
 
 
 async def exercise(base,repo):
@@ -36,6 +43,7 @@ async def exercise(base,repo):
                 if await page.locator('#age-gate').is_visible():await page.locator('#age-accept').click()
                 if await page.locator('#privacy-banner').is_visible():await page.locator('#privacy-reject').click()
                 await page.locator('[data-admin-tab="billing"]').click()
+                await page.locator('#ab-mode').select_option('test')
                 await expect(page.locator('#ab-metrics .ar-metric')).to_have_count(6)
                 await expect(page.locator('#ab-orders tbody tr')).to_have_count(4)
                 await expect(page.locator('#ab-notice')).to_contain_text('Тестовые операции')
@@ -53,15 +61,23 @@ async def exercise(base,repo):
                 await page.screenshot(path=f'/workspace/outputs/admin-billing-detail-{width}.png',full_page=True)
                 await page.keyboard.press('Escape');await expect(page.locator('#ab-detail')).to_be_hidden()
                 await page.locator('#ab-mode').select_option('live')
-                await expect(page.locator('#ab-page')).to_have_text('Заказов нет')
-                await expect(page.locator('#ab-notice')).to_contain_text('Боевой приём оплаты пока не открыт')
+                await expect(page.locator('#ab-orders tbody tr')).to_have_count(1)
+                await expect(page.locator('#ab-metrics .ar-metric')).to_have_count(7)
+                await expect(page.locator('#ab-notice')).to_contain_text('рабочего магазина')
+                await page.locator('#ab-orders button').click()
+                await expect(page.locator('#ab-detail-content')).to_contain_text('Чеки и зачёт предоплаты')
+                await expect(page.locator('#ab-detail-content')).to_contain_text('Требует внимания')
+                await expect(page.locator('#ab-detail-content')).to_contain_text('4 разбора')
+                assert not await page.locator('#ab-detail').evaluate('(e)=>e.scrollWidth>e.clientWidth+1'),(width,'live receipt dialog overflow')
+                await page.screenshot(path=f'/workspace/outputs/admin-live-billing-detail-{width}.png',full_page=True)
+                await page.keyboard.press('Escape')
                 await page.evaluate("Account.api('/api/auth/logout',{method:'POST',body:'{}'}).then(()=>Account.refresh())")
                 await expect(page.locator('#ab-metrics')).to_be_empty()
                 assert (await context.request.get(base+'/api/admin/billing')).status==401
                 assert not errors,errors
                 await context.close()
         finally:await browser.close()
-    print('PASS: admin payment metrics/filters/charts/details/empty-live/logout; 1440/390/320; no payment/model calls')
+    print('PASS: admin payment metrics/filters/charts/details/live receipts and allocations/logout; 1440/390/320; no payment/model calls')
 
 
 if __name__=='__main__':fixture.exercise=exercise;fixture.main()

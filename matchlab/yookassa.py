@@ -1,4 +1,4 @@
-"""Small test-store adapter. Credentials and provider errors never reach clients/logs."""
+"""YooKassa adapter. Credentials and provider errors never reach clients/logs."""
 from decimal import Decimal,InvalidOperation
 import logging
 import re
@@ -28,7 +28,7 @@ class YooKassa:
     def __init__(self,settings):self.settings=settings
 
     def request(self,method,path,*,data=None,key=None):
-        if not self.settings.yookassa_shop_id.isdigit() or not self.settings.yookassa_secret_key.startswith('test_'):
+        if not self.settings.yookassa_shop_id.isdigit() or not self.settings.yookassa_secret_key.startswith(self.settings.billing_mode+'_'):
             raise ProviderUnavailable('configuration',definitive=True)
         try:
             response=httpx.request(method,API+path,auth=(self.settings.yookassa_shop_id,self.settings.yookassa_secret_key),
@@ -51,11 +51,17 @@ class YooKassa:
             raise ProviderUnavailable('provider_unavailable') from None
 
     def create(self,order,origin):
-        return self.request('POST','/payments',key=order['id'],data={
+        n=order['credits'];label='разбор' if n%10==1 and n%100!=11 else 'разбора' if n%10 in (2,3,4) and n%100 not in (12,13,14) else 'разборов'
+        data={
             'amount':{'value':f"{order['amount_kopecks']//100}.{order['amount_kopecks']%100:02d}",'currency':'RUB'},'capture':True,
             'confirmation':{'type':'redirect','return_url':origin+'/#account'},
-            'description':f"prognozich: {order['credits']} разборов (тест)",
-            'metadata':{'order_id':order['id'],'user_id':order['user_id']}})
+            'description':f'prognozich: {n} {label}',
+            'metadata':{'order_id':order['id'],'user_id':order['user_id']}}
+        if self.settings.billing_mode=='live':
+            if not self.settings.billing_receipts_enabled:raise ProviderUnavailable('receipt_configuration',definitive=True)
+            from .billing_fiscal import receipt
+            data['receipt']=receipt(self.settings,order)
+        return self.request('POST','/payments',key=order['id'],data=data)
 
     def payment(self,identifier):
         if not re.fullmatch(r'[a-zA-Z0-9-]{10,80}',identifier):raise ProviderMismatch('payment_id')
