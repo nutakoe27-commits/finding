@@ -7,13 +7,16 @@ window.Credits=(()=>{
   let config=null,balance=0,owner=null,epoch=0,order=null,intent=null,pollTimer=null,checking=false,requestKey=null,openedOffset=0;
   let unlimited=false,currentSubscription=null,selectedPlan=null,subscriptionKey=null;
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+' МСК':'после подтверждения оплаты';
+  const demonstration=()=>new URLSearchParams(location.search).get('billing_demo')==='1'&&Account.user?.role==='admin';
   const planName=p=>p.credits===0?'Безлимитные разборы':units(p.credits)+' каждый день';
   const stateNames={creating:'Создаём платёж',pending:'Ожидаем оплату',checking:'Проверяем оплату',succeeded:'Оплачено',canceled:'Отменено',refunded:'Возврат',failed:'Платёж не создан',review:'Платёж требует проверки'};
   const key=()=>owner?'matchlab:payment:'+(config?.test_mode?'test':'live')+':'+owner:null;
   function remember(){try{if(key())order?sessionStorage.setItem(key(),JSON.stringify({id:order.id,analysis_id:order.analysis_id})):sessionStorage.removeItem(key());}catch{}}
   function header(){
+    const demo=demonstration();$('billing-demo-banner').hidden=!demo;$('account-credit-buy').disabled=demo;
     const testing=!!config?.test_checkout_allowed,preview=config?.sales_state==='prelaunch',available=!!config?.checkout_enabled;
     $('credits-open').hidden=!config?.enabled&&!preview;
+    $('credits-open').disabled=demo;
     $('credits-open').textContent=Account.user&&config?.enabled?(unlimited?'Безлимит активен':`Разборы: ${balance}`):'Тарифы';
     $('account-wallet').hidden=!config?.enabled||!Account.user;
     $('credits-balance').textContent=String(balance);$('account-credit-balance').textContent=units(balance)+(unlimited?' · безлимит активен':'');
@@ -31,6 +34,7 @@ window.Credits=(()=>{
     $('account-credit-buy').textContent=available?'Купить разборы':'Тарифы и условия';
     $('account-payment-mode').hidden=!testing;
     $('account-payment-mode').textContent=testing?'Проверка интеграции · тестовый магазин, реальные деньги не списываются.':'';
+    if(demo){$('credits-open').textContent='Демо · 5 разборов';$('account-credit-buy').textContent='Покупки отключены в демонстрации';}
     if(config?.enabled){$('account-bonus-note').textContent='Разбор списывается ТОЛЬКО за открытие решения «Ставить». «Пропустить» и подготовка ответа бесплатны. Бонусы входят в доступный баланс.';}
   }
   function showOrder(value){
@@ -53,7 +57,7 @@ window.Credits=(()=>{
     await ready;await Account.ready;const serial=epoch;
     if(!config?.enabled||!Account.user){balance=0;header();return;}
     try{
-      const data=await Account.api('/api/billing/wallet');if(serial!==epoch)return;
+      const data=await Account.api(demonstration()?'/api/admin/billing/subscription-demo':'/api/billing/wallet');if(serial!==epoch)return;
       balance=data.balance;unlimited=!!data.subscription?.unlimited_active;currentSubscription=data.subscription?.current||null;header();renderSubscription();
       if(config.receipt_email_required&&!$('credits-email').value&&data.receipt_email)$('credits-email').value=data.receipt_email;
       $('account-bonus').textContent=`Бонусных разборов: ${data.bonus_balance}`;
@@ -72,7 +76,7 @@ window.Credits=(()=>{
         $('account-payment-mode').hidden=false;$('account-payment-mode').textContent='В истории есть проверочные операции без списания денег. Они не являются покупками по коммерческой оферте.';
       }
       $('account-credit-adjustment').textContent=data.adjustment_due?'Баланс скорректирован после возврата. Вопросы: m@krichigin.ru.':'';
-      await loadOpened(true);
+      if(demonstration()){$('account-open-analyses').replaceChildren(node('p','small muted','Демонстрация не меняет доступ к сохранённым ответам.'));$('account-open-more').hidden=true;}else await loadOpened(true);
     }catch(error){if(serial===epoch)$('credits-message').textContent=error.message;}
   }
   async function loadOpened(reset=false){
@@ -92,6 +96,7 @@ window.Credits=(()=>{
   }
   async function open(identifier=null){
     await ready;await Account.ready;if(!config)return;
+    if(demonstration()){location.hash='#account';return;}
     await loadConfig();
     if(config.checkout_enabled&&!await Account.ensure(()=>open(identifier)))return;
     const serial=epoch;
@@ -133,6 +138,7 @@ window.Credits=(()=>{
     finally{button.disabled=false;}
   });
   async function spend(identifier,callback){
+    if(demonstration())throw new Error('Для работы с реальным балансом выйдите из демонстрации.');
     if(!await Account.ensure(()=>spend(identifier,callback)))return;
     const accountId=Account.user.id;let value;
     try{value=await Account.api('/api/billing/analyses/'+identifier+'/unlock',{method:'POST',body:'{}'});}
@@ -202,12 +208,15 @@ window.Credits=(()=>{
     const status={creating:'Ожидаем первый платёж',active:'Подписка действует',canceled:'Автопродление отключено',past_due:'Оплата не прошла. Автопродление остановлено',review:'Платёж требует проверки поддержки'};
     $('subscription-state').textContent=status[s.state]||'Проверяем подписку';
     const area=$('subscription-summary');area.replaceChildren();
+    if(demonstration())area.append(node('p','notice','Демонстрация интерфейса: настоящая карта не привязана, платежи не выполняются.'));
     area.append(node('strong','',rub(s.amount_kopecks)+' каждые 24 часа'));
     area.append(node('p','',s.auto_renew&&s.period_end_at?'Следующее списание: '+when(s.period_end_at):s.period_end_at?'Оплаченный период до '+when(s.period_end_at)+'. Новых списаний не будет.':'Начисления появятся после подтверждения оплаты.'));
     if(s.credits)area.append(node('p','',`Каждая успешная оплата добавляет ${units(s.credits)} на постоянный баланс. Сейчас: ${units(balance)}.`));
     if(s.error_code==='payment_refunded')area.append(node('p','notice','По оплате оформлен возврат. Продление отключено; остальные накопленные разборы сохраняются.'));
     if(s.error_code==='payment_method_not_saved')area.append(node('p','notice','ЮKassa не сохранила способ оплаты. Оплаченный доступ предоставлен, повторных списаний не будет.'));
     if(s.state==='review')area.append(node('p','notice','Не оформляйте повторную оплату. Напишите m@krichigin.ru; уже начисленные разборы остаются доступны.'));
+    if(s.auto_renew&&s.state==='active')area.append(node('p','small muted','Карта подключена для ежедневных автоплатежей. Вы можете самостоятельно отвязать её кнопкой ниже — обращение в поддержку не требуется.'));
+    if(s.canceled_at)area.append(node('p','credit-rule','Карта отвязана от автоплатежей сервиса. Новых автоматических списаний не будет.'));
     $('subscription-cancel').hidden=!s.auto_renew;
   }
   $('subscription-back').addEventListener('click',()=>{
@@ -231,16 +240,17 @@ window.Credits=(()=>{
   $('subscription-cancel').addEventListener('click',()=>{
     const area=$('subscription-summary');
     if(area.querySelector('.subscription-cancel-confirm'))return;
-    const box=node('div','subscription-cancel-confirm');box.append(node('strong','','Отключить следующие списания?'),node('p','','Накопленные разборы и открытые ответы сохранятся. Оплаченный безлимит действует до конца периода. Если банк уже обрабатывает платёж, проверим его результат; отмена не подключит подписку заново.'));
-    const yes=node('button','secondary-button','Да, отменить подписку'),no=node('button','text-button','Оставить подписку');yes.type=no.type='button';
+    const box=node('div','subscription-cancel-confirm');box.append(node('strong','','Отвязать карту и отключить автоплатежи?'),node('p','','Удалим привязку способа оплаты к подписке и остановим новые автоплатежи. Накопленные разборы и открытые ответы сохранятся; оплаченный безлимит действует до конца периода. Уже переданный банку платёж проверим отдельно — он не подключит подписку заново.'));
+    const yes=node('button','secondary-button','Да, отвязать карту'),no=node('button','text-button','Оставить карту и подписку');yes.type=no.type='button';
     no.addEventListener('click',()=>box.remove());yes.addEventListener('click',async()=>{
       yes.disabled=true;const serial=epoch,id=currentSubscription?.id;
-      try{await Account.api('/api/billing/subscriptions/'+id+'/cancel',{method:'POST',body:'{}'});if(serial!==epoch)return;
-        await refresh();$('subscription-message').textContent='Автопродление отключено. Накопленные разборы не сгорают.';
+      try{await Account.api(demonstration()?'/api/admin/billing/subscription-demo/cancel':'/api/billing/subscriptions/'+id+'/cancel',{method:'POST',body:'{}'});if(serial!==epoch)return;
+        await refresh();$('subscription-message').textContent='Карта отвязана. Автопродление отключено. Накопленные разборы не сгорают.';
       }catch(e){if(serial===epoch)$('subscription-message').textContent=e.message;}
       finally{yes.disabled=false;}
     });box.append(yes,no);area.append(box);yes.focus();
   });
+  $('billing-demo-reset').addEventListener('click',async()=>{const b=$('billing-demo-reset');b.disabled=true;try{await Account.api('/api/admin/billing/subscription-demo/reset',{method:'POST',body:'{}'});await refresh();$('subscription-message').textContent='';}catch(e){$('subscription-message').textContent=e.message;}finally{b.disabled=false;}});
   setInterval(()=>{if(Account.user&&location.hash==='#account'&&!document.hidden)refresh();},60000);
   const ready=loadConfig();
   document.addEventListener('accountchange',async()=>{
@@ -250,13 +260,13 @@ window.Credits=(()=>{
     openedOffset=0;$('account-open-analyses').replaceChildren();$('account-credit-orders').replaceChildren();$('account-open-more').hidden=true;
     $('credits-message').textContent='';$('credits-order-title').textContent='';$('credits-order-description').textContent='';
     if(dialog.open)dialog.close();header();await loadConfig();await refresh();
-    if(!owner||!config?.enabled)return;
+    if(!owner||!config?.enabled||demonstration())return;
     try{
       const saved=JSON.parse(sessionStorage.getItem(key())||'null');
       if(saved?.id){order=saved;if(!dialog.open)dialog.showModal();poll();}
     }catch{}
   });
-  Promise.all([ready,Account.ready]).then(()=>{owner=Account.user?.id||null;refresh();
+  Promise.all([ready,Account.ready]).then(()=>{owner=Account.user?.id||null;refresh();if(demonstration())return;
     try{const saved=owner?JSON.parse(sessionStorage.getItem(key())||'null'):null;if(saved?.id){order=saved;dialog.showModal();poll();}}catch{}
   });
   return {ready,open,refresh,renderLocked,get enabled(){return !!config?.enabled;}};

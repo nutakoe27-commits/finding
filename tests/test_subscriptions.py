@@ -287,6 +287,30 @@ class SubscriptionTests(unittest.TestCase):
         before=len(self.requests);result=subscriptions.reconcile(self.repo,self.settings,self.order_row(order))
         self.assertEqual(result['state'],'review');self.assertEqual(len(self.requests),before)
 
+    def test_unlink_demo_is_admin_only_and_requires_same_origin_csrf(self):
+        path='/api/admin/billing/subscription-demo'
+        self.assertEqual(self.client.get(path).status_code,403)
+        self.assertEqual(self.client.post(path+'/cancel',json={}).status_code,403)
+        with self.repo.connection() as db:db.execute("UPDATE users SET role='admin' WHERE id=?",(self.user,))
+        self.assertEqual(self.client.post(path+'/cancel',json={},headers={'Origin':'https://attacker.example'}).status_code,403)
+        self.assertEqual(self.requests,[])
+
+    def test_unlink_demo_never_changes_real_subscriptions_balance_or_payments(self):
+        order,_=self.start();self.succeed(order)
+        with self.repo.connection() as db:
+            db.execute("UPDATE users SET role='admin',bonus_analyses=7 WHERE id=?",(self.user,))
+            before=dict(db.execute('SELECT * FROM billing_subscriptions WHERE id=?',(order['subscription_id'],)).fetchone())
+        calls=len(self.requests);path='/api/admin/billing/subscription-demo'
+        first=self.client.get(path);self.assertEqual(first.status_code,200,first.text)
+        self.assertTrue(first.json()['demonstration']);self.assertEqual(first.json()['balance'],5)
+        canceled=self.client.post(path+'/cancel',json={});self.assertEqual(canceled.json()['subscription']['current']['state'],'canceled')
+        self.assertTrue(self.client.post(path+'/reset',json={}).json()['subscription']['current']['auto_renew'])
+        self.assertEqual(self.wallet()['balance'],8);self.assertEqual(len(self.requests),calls)
+        with self.repo.connection() as db:
+            self.assertEqual(dict(db.execute('SELECT * FROM billing_subscriptions WHERE id=?',(order['subscription_id'],)).fetchone()),before)
+            self.assertEqual(db.execute('SELECT count(*) FROM payment_orders').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT count(*) FROM billing_subscription_periods').fetchone()[0],1)
+
     def order_row(self,order):
         with self.repo.connection() as db:return dict(db.execute('SELECT * FROM payment_orders WHERE id=?',(order['id'],)).fetchone())
 

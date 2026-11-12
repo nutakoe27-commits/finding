@@ -5,6 +5,7 @@ access expires; it never consumes that ledger. No scheduler runs money charges
 until the operator explicitly enables the recurring-payment feature.
 """
 from datetime import datetime, timedelta, timezone
+import json
 import re
 from threading import Event, Thread
 from uuid import uuid4
@@ -51,7 +52,7 @@ def consent_text(plan):
     quantity = 'безлимитный доступ' if plan['credits'] == 0 else ('1 разбор' if plan['credits']==1 else '5 разборов') + ' на постоянный баланс'
     return (f"Подключаю {quantity}. Разрешаю ЮKassa сохранить способ оплаты, а сервису списывать "
             f"{plan['amount_kopecks'] // 100} ₽ сейчас и далее каждые 24 часа до отмены. "
-            'Отмена: Личный кабинет → Подписка → Отменить подписку. '
+            'Отмена: Личный кабинет → Подписка → Отвязать карту и отменить подписку. '
             'Деньги за подписку списываются независимо от использования. '
             'Разбор расходуется только при открытии решения «Ставить»; «Пропустить» — бесплатно.')
 
@@ -327,6 +328,37 @@ class Worker:
 
 
 def install(app, repo, settings):
+    def demo_wallet(user):
+        with repo.connection() as db:
+            row=db.execute('SELECT value FROM site_settings WHERE key=?',('billing_unlink_demo:'+user['id'],)).fetchone()
+        saved=json.loads(row['value']) if row else {}
+        stamp=accounts.now();end=saved.get('ends_at') or (datetime.now(timezone.utc)+timedelta(days=1)).isoformat()
+        canceled=saved.get('canceled_at')
+        return {'demonstration':True,'balance':5,'bonus_balance':0,'adjustment_due':0,'receipt_email':None,
+            'test_mode':False,'orders':[],'subscription':{'current':{
+                'id':'demonstration','plan_id':'daily_five','credits':5,'amount_kopecks':219000,
+                'state':'canceled' if canceled else 'active','auto_renew':0 if canceled else 1,
+                'period_end_at':end,'created_at':stamp,'canceled_at':canceled,'error_code':None,'unlimited':False},
+                'history':[],'unlimited_active':False}}
+
+    @app.get('/api/admin/billing/subscription-demo')
+    def subscription_demo(request:Request):
+        return JSONResponse(demo_wallet(accounts.admin_user(request)),headers={'Cache-Control':'private, no-store'})
+
+    @app.post('/api/admin/billing/subscription-demo/{action}')
+    def change_demo(action:str,request:Request):
+        user=accounts.admin_user(request);accounts.mutation(request)
+        if action not in ('cancel','reset'):raise HTTPException(404,'Действие демонстрации не найдено.')
+        accounts.limited(repo,'billing-demo:'+user['id'],30,60)
+        # This isolated setting never creates a subscription, payment, token,
+        # credit or receipt. Actual cancellation uses the ordinary endpoint.
+        value={'ends_at':(datetime.now(timezone.utc)+timedelta(days=1)).isoformat(),
+               'canceled_at':accounts.now() if action=='cancel' else None}
+        with repo.connection() as db:
+            db.execute('INSERT OR REPLACE INTO site_settings VALUES (?,?,?)',
+                ('billing_unlink_demo:'+user['id'],json.dumps(value),accounts.now()))
+        return JSONResponse(demo_wallet(user),headers={'Cache-Control':'private, no-store'})
+
     @app.get('/api/billing/subscriptions')
     def subscriptions(request: Request):
         user=accounts.current_user(request)
