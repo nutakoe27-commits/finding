@@ -315,41 +315,16 @@ class AccountTests(unittest.TestCase):
         with self.repo.connection() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM ai_usage WHERE status='limited'").fetchone()[0], 1)
 
-    def test_referral_rule_uses_stored_event_and_does_not_accept_open_redirects(self):
-        self.admin()
-        self.elevate()
-        response = self.client.get(
-            "/go/winline/123?source=legacy&url=https://evil.example",
-            follow_redirects=False,
-        )
-        self.assertIn("winline.ru/stavki/", response.headers["location"])
-        template = "https://affiliate.example/click?target={url}&id={event_id}"
-        self.assertEqual(
-            self.client.put(
-                "/api/admin/links", json={"template": template}
-            ).status_code,
-            200,
-        )
-        result = self.client.get(
-            "/go/winline/123?source=legacy", follow_redirects=False
-        )
-        self.assertEqual(result.status_code, 302)
-        self.assertTrue(
-            result.headers["location"].startswith(
-                "https://affiliate.example/click?target=https%3A%2F%2Fwinline.ru"
-            )
-        )
-        for value in (
-            "javascript:alert(1)",
-            "https://x.example/{password}",
-            "http://x.example/click",
-        ):
-            self.assertEqual(
-                self.client.put(
-                    "/api/admin/links", json={"template": value}
-                ).status_code,
-                422,
-            )
+    def test_external_link_settings_are_disabled_and_old_links_stay_local(self):
+        self.admin();self.elevate()
+        response=self.client.get('/go/winline/123?source=legacy&url=https://evil.example',follow_redirects=False)
+        self.assertEqual(response.status_code,302)
+        self.assertTrue(response.headers['location'].startswith('/match/123/'))
+        self.assertFalse(self.client.get('/api/admin/links').json()['enabled'])
+        self.assertEqual(self.client.put('/api/admin/links',json={'template':'https://affiliate.example/{url}'}).status_code,410)
+        with self.repo.connection() as db:db.execute('INSERT OR REPLACE INTO site_settings VALUES (?,?,?)',('winline_referral','https://affiliate.example/click?url={url}',accounts.now()))
+        response=self.client.get('/go/winline/123?source=legacy',follow_redirects=False)
+        self.assertTrue(response.headers['location'].startswith('/match/123/'))
 
     def test_real_analytics_do_not_expose_passwords_or_private_notes(self):
         self.admin()

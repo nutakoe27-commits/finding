@@ -1,7 +1,7 @@
 "use strict";
 window.Credits=(()=>{
   const $=id=>document.getElementById(id),dialog=$('credits-dialog');
-  const node=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
+  const node=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=ServiceWording.text(text);return e;};
   const rub=kopecks=>(kopecks/100).toLocaleString('ru-RU',{maximumFractionDigits:2})+' ₽';
   const rules=new Intl.PluralRules('ru'),units=n=>`${n} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[rules.select(n)]}`;
   let config=null,balance=0,owner=null,epoch=0,order=null,intent=null,pollTimer=null,checking=false,requestKey=null,openedOffset=0;
@@ -38,7 +38,7 @@ window.Credits=(()=>{
     $('account-payment-mode').hidden=!testing;
     $('account-payment-mode').textContent=testing?'Проверка интеграции · тестовый магазин, реальные деньги не списываются.':'';
     if(demo){$('credits-open').textContent='Демо · '+(unlimited?'Безлимит':units(balance));$('account-credit-buy').textContent='Покупки отключены в демонстрации';}
-    if(config?.enabled){$('account-bonus-note').textContent='Разбор списывается ТОЛЬКО за открытие решения «Ставить». «Пропустить» и подготовка ответа бесплатны. Бонусы входят в доступный баланс.';}
+    if(config?.enabled){$('account-bonus-note').textContent='Разбор списывается ТОЛЬКО за открытие решения «Заходим». «Не заходим» и подготовка ответа бесплатны. Бонусы входят в доступный баланс.';}
   }
   function showOrder(value){
     order=value;remember();$('credits-order').hidden=false;$('credits-packages-area').hidden=true;
@@ -49,9 +49,9 @@ window.Credits=(()=>{
     $('credits-continue').hidden=!value.confirmation_url||!['pending','creating','checking'].includes(value.state);
     $('credits-continue').href=value.confirmation_url||'#';
     $('credits-order-open').hidden=value.state!=='succeeded'||!value.analysis_id;
-    $('credits-order-open').textContent='Открыть прогноз за 1 разбор';
+    $('credits-order-open').textContent='Открыть разбор за 1 разбор';
     $('credits-new-purchase').hidden=!['succeeded','canceled','refunded','failed'].includes(value.state);
-    if(value.state==='succeeded')$('credits-message').textContent=value.subscription_id&&value.credits===0?`Безлимит оплачен на ${period(value)}. Управление и отмена — в личном кабинете.`:`Начислено: ${units(value.credits)}. Баланс: ${units(balance)}. Разбор списывается ТОЛЬКО за «Ставить». «Пропустить» бесплатно.`;
+    if(value.state==='succeeded')$('credits-message').textContent=value.subscription_id&&value.credits===0?`Безлимит оплачен на ${period(value)}. Управление и отмена — в личном кабинете.`:`Начислено: ${units(value.credits)}. Баланс: ${units(balance)}. Разбор списывается ТОЛЬКО за «Заходим». «Не заходим» бесплатно.`;
     if(value.state==='canceled')$('credits-message').textContent='Оплата отменена. Разборы не начислены.';
     if(value.state==='review')$('credits-message').textContent='Статус оплаты требует проверки поддержки. Напишите m@krichigin.ru, повторно не оплачивайте.';
     if(value.state==='failed')$('credits-message').textContent='Платёж не создан. Повторите попытку позже или обратитесь в поддержку. Баланс не изменён.';
@@ -163,7 +163,7 @@ window.Credits=(()=>{
   function renderLocked(target,payload,callback){
     target.classList.remove('verdict-report','structured-report');
     const root=node('section','credit-gate');root.dataset.analysisId=payload.id;
-    if(payload.decision==='skip')root.append(node('h2','credit-skip','Рекомендуем пропустить матч'));
+    if(payload.decision==='skip')root.append(node('h2','credit-skip','Решение: не заходим'));
     else root.append(node('h2','','Разбор готов'));
     const skeleton=node('div','credit-skeleton');skeleton.setAttribute('aria-hidden','true');
     skeleton.append(node('strong','','Претендент на победу'),node('p','','Подробный ответ ИИ и аргументы по данным участников'),node('p','','Сравнение результатов, встречные доводы и итоговое решение'));
@@ -173,7 +173,7 @@ window.Credits=(()=>{
       const preview=!config?.checkout_enabled&&!(payload.unlock.balance>=1)&&!payload.unlock.unlimited;
       const button=node('button','primary-button',payload.unlock.unlimited?'Открыть по подписке':preview?'Посмотреть тарифы':'Разблокировать за 1 разбор');button.type='button';
       button.addEventListener('click',async()=>{button.disabled=true;message.textContent='';try{if(preview)await open(payload.id);else await spend(payload.id,callback);}catch(error){message.textContent=error.message;}finally{button.disabled=false;}});
-      root.append(button,node('p','credit-rule','Разбор списывается ТОЛЬКО за решение «Ставить». «Пропустить» бесплатно.'),node('p','small muted',payload.unlock.unlimited?'Безлимит активен: накопленный баланс не расходуется.':'Повторное открытие этого ответа — бесплатно. При нулевом балансе выберите тариф.'));
+      root.append(button,node('p','credit-rule','Разбор списывается ТОЛЬКО за решение «Заходим». «Не заходим» бесплатно.'),node('p','small muted',payload.unlock.unlimited?'Безлимит активен: накопленный баланс не расходуется.':'Повторное открытие этого ответа — бесплатно. При нулевом балансе выберите тариф.'));
     }else root.append(node('p','notice','Подтверждённого разбора ИИ пока нет. Разборы не списаны; платная разблокировка недоступна.'));
     root.append(message);target.replaceChildren(root);
   }
@@ -265,7 +265,7 @@ window.Credits=(()=>{
     const area=$('subscription-summary');
     if(area.querySelector('.subscription-cancel-confirm'))return;
     const box=node('div','subscription-cancel-confirm');box.dataset.subscriptionId=currentSubscription.id;box.append(node('strong','','Отвязать карту и отключить автоплатежи?'),node('p','','Удалим привязку способа оплаты к подписке и остановим новые автоплатежи. Накопленные разборы и открытые ответы сохранятся; оплаченный безлимит действует до конца периода. Уже переданный банку платёж проверим отдельно — он не подключит подписку заново.'));
-    const yes=node('button','secondary-button','Да, отвязать карту'),no=node('button','text-button','Оставить карту и подписку');yes.type=no.type='button';
+    const yes=node('button','secondary-button','Да, отвязать карту'),no=node('button','text-button','Озаходим карту и подписку');yes.type=no.type='button';
     no.addEventListener('click',()=>box.remove());yes.addEventListener('click',async()=>{
       yes.disabled=true;const serial=epoch,id=currentSubscription?.id;
       try{await Account.api(demonstration()?'/api/admin/billing/subscription-demo/cancel':'/api/billing/subscriptions/'+id+'/cancel',{method:'POST',body:'{}'});if(serial!==epoch)return;

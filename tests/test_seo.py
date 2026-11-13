@@ -53,7 +53,7 @@ class SeoTests(unittest.TestCase):
         path=self.url();response=self.client.get(path);self.assertEqual(response.status_code,200)
         html=response.text
         self.assertIn('<h1>Темпл Оулс — Чарльстон Кугарс</h1>',html)
-        self.assertIn('прогноз ИИ на ',html);self.assertIn(self.a['competition'],html)
+        self.assertIn('РАЗБОР ОТ ИИ',html);self.assertNotIn('ПРОГНОЗ',html);self.assertIn('разбор ИИ на ',html);self.assertIn(self.a['competition'],html)
         self.assertIn('МСК',html);self.assertIn('Готового вердикта на этой странице нет.',html)
         self.assertIn('href="/#stream/101"',html)
         parsed=Parsed(html)
@@ -63,7 +63,7 @@ class SeoTests(unittest.TestCase):
         self.assertEqual((event['@type'],breadcrumb['@type']),('SportsEvent','BreadcrumbList'))
         self.assertEqual([p['name'] for p in event['competitor']],self.a['members'])
         self.assertNotIn('location',event);self.assertNotIn('endDate',event)
-        self.assertIn('Снимок коэффициентов',html)
+        self.assertNotIn('Снимок коэффициентов',html);self.assertNotIn('Winline',html)
 
     def test_alias_wrong_slug_and_trailing_slash_redirect_to_one_canonical_without_host_poisoning(self):
         path=self.url()
@@ -77,7 +77,7 @@ class SeoTests(unittest.TestCase):
     def test_home_and_robots_link_the_real_server_rendered_directory_and_sitemap(self):
         html=self.client.get('/').text
         self.assertIn('href="/matches/"',html);self.assertIn('<link rel="canonical" href="https://prognozich.online/">',html)
-        self.assertIn('Прогнозы на спорт от ИИ',html);self.assertNotIn('<!-- SEO_HEAD -->',html)
+        self.assertIn('Спортивные разборы от ИИ',html);self.assertNotIn('<!-- SEO_HEAD -->',html)
         robots=self.client.get('/robots.txt')
         self.assertEqual(robots.status_code,200);self.assertIn('Disallow: /api/',robots.text)
         self.assertIn('Sitemap: https://prognozich.online/sitemap.xml',robots.text)
@@ -86,8 +86,7 @@ class SeoTests(unittest.TestCase):
         self.assertTrue(rules.can_fetch('Googlebot','https://prognozich.online/go/winline/101?source=stream'))
         self.assertFalse(rules.can_fetch('Googlebot','https://prognozich.online/api/analyses'))
         self.assertTrue(rules.can_fetch('Googlebot','https://prognozich.online'+self.url()))
-        source=next(attrs for tag,attrs in Parsed(html).tags if attrs.get('id')=='event-source')
-        self.assertTrue({'nofollow','sponsored'}<=set(source['rel'].split()))
+        self.assertFalse(any(attrs.get('id')=='event-source' for tag,attrs in Parsed(html).tags))
         head=self.client.head(self.url());self.assertEqual(head.status_code,200);self.assertEqual(head.content,b'')
 
     def test_split_xml_sitemaps_and_directory_pagination_are_complete_and_do_not_fake_lastmod(self):
@@ -152,7 +151,7 @@ class SeoTests(unittest.TestCase):
         self.assertIn('&lt;/script&gt;',html)
         event=self.schema(html)[0];self.assertEqual(event['competitor'][0]['name'],bad['members'][0])
         scripts=[a for t,a in Parsed(html).tags if t=='script']
-        self.assertTrue(all(a.get('type')=='application/ld+json' for a in scripts))
+        self.assertTrue(all(a.get('type')=='application/ld+json' or a.get('src','').startswith('/static/theme.js?') for a in scripts))
 
     def test_legacy_match_urls_and_index_deduplicate_source_ids_and_use_moscow_dates(self):
         d=event();d.update(kickoff_at='2026-12-31T21:30:00+00:00')

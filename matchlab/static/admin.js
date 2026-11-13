@@ -1,7 +1,7 @@
 "use strict";
 window.Admin = (() => {
   const $=id=>document.getElementById(id), api=Account.api;
-  const node=(tag,className="",text="")=>{const item=document.createElement(tag);item.className=className;item.textContent=text;return item;};
+  const node=(tag,className="",text="")=>{const item=document.createElement(tag);item.className=className;item.textContent=ServiceWording.text(text);return item;};
   const format=value=>Number(value||0).toLocaleString("ru-RU");
   const when=value=>value ? new Date(value).toLocaleString("ru-RU",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—";
   let tab="overview",userOffset=0,auditOffset=0,request=0,elevatedUntil=0,resolvePassword=null,pushPreview=null,lastOverview=null;
@@ -44,7 +44,7 @@ window.Admin = (() => {
   $("admin-password-dialog").addEventListener("cancel",cancelPassword);
   $("admin-confirm-access").addEventListener("click",()=>sensitive(async()=>message("Пароль подтверждён для этого сеанса.")).catch(e=>message(e.message,true)));
   function metrics(data){
-    const values=[["Пользователей",data.users,`Новых за период: ${format(data.new_users)}`],["Активных аккаунтов",data.active_users,"По входам за выбранный период"],["Посетителей",data.visitors,"Уникальные браузеры"],["Готовых разборов",data.ai.success,`Сбоев: ${format(data.ai.failed)} · Из кэша: ${format(data.ai.cached)}`],["Переходов в Winline",data.events.outbound_click||0,"Нажатия на ссылки событий"],["Подписчиков push",data.push_subscribers,"Аккаунты с активной подпиской"],["Принято push-службой",data.push_sent,"За выбранный период"],["Активаций промокодов",data.promo_activations,`Начислено бонусов: ${format(data.promo_credits)}`]];
+    const values=[["Пользователей",data.users,`Новых за период: ${format(data.new_users)}`],["Активных аккаунтов",data.active_users,"По входам за выбранный период"],["Посетителей",data.visitors,"Уникальные браузеры"],["Готовых разборов",data.ai.success,`Сбоев: ${format(data.ai.failed)} · Из кэша: ${format(data.ai.cached)}`],["Открытий матчей",data.events.outbound_click||0,"Открытия страниц событий"],["Подписчиков push",data.push_subscribers,"Аккаунты с активной подпиской"],["Принято push-службой",data.push_sent,"За выбранный период"],["Активаций промокодов",data.promo_activations,`Начислено бонусов: ${format(data.promo_credits)}`]];
     $("admin-metrics").replaceChildren(...values.map(([label,value,note])=>{const card=node("article","admin-metric");card.append(node("span","small muted",label),node("strong","",format(value)),node("small","muted",note));return card;}));
   }
   function traffic(data){
@@ -105,7 +105,6 @@ window.Admin = (() => {
       return [c.title,when(c.scheduled_at),badge(c.status),format(c.audience),`${format(c.sent)} / ${format(c.failed)}`,controls];
     })));
   }
-  async function loadLinks(){const data=await api("/api/admin/links");if(tab==="links")$("admin-link-template").value=data.template;}
   async function loadAutomation(){
     const data=await api('/api/admin/featured-automation');if(tab!=='automation')return;
     $('auto-analysis-enabled').checked=data.enabled;
@@ -124,22 +123,22 @@ window.Admin = (() => {
     try {
       const report=await api('/api/admin/forecast-quality?limit=10&mode='+mode);target.replaceChildren();
       const number=value=>(value*100).toLocaleString('ru-RU',{maximumFractionDigits:1})+'%';
-      target.append(node('h3','',mode==='saved'?'Сохранённые предматчевые прогнозы':'Ретроспективная реконструкция · не предматчевый тест'));
+      target.append(node('h3','',mode==='saved'?'Сохранённые предматчевые разборы':'Ретроспективная реконструкция · не предматчевый тест'));
       target.append(node('p','',`Оценено ${report.evaluated} из ${report.requested}. Выбрано: ${report.selected}. Ожидают однозначного результата: ${report.pending}.`));
       const metrics=report.metrics;
       if(metrics) target.append(node('p','',`Исход угадан: ${metrics.favorite_hits} из ${metrics.evaluated} (${number(metrics.accuracy)}). Интервал неопределённости доли попаданий: ${metrics.accuracy_wilson_95.map(number).join('–')}. Brier: ${metrics.brier_3way.toFixed(3)}, равномерный ориентир: ${metrics.uniform_baseline.brier_3way.toFixed(3)}. Log loss: ${metrics.log_loss.toFixed(3)}, ориентир: ${metrics.uniform_baseline.log_loss.toFixed(3)}. Для Brier и log loss меньше — лучше.`));
-      else target.append(node('p','notice','Подходящих прогнозов для проверки пока нет. Матчи с недостаточными данными не заменяются более удобными примерами.'));
+      else target.append(node('p','notice','Подходящих разборов для проверки пока нет. Матчи с недостаточными данными не заменяются более удобными примерами.'));
       const wrap=node('div','admin-table-wrap');wrap.append(table(['Матч','Начало','П1 / Х / П2','Счёт','Исход'],report.matches.map(row=>[
         `${row.home} — ${row.away}`,when(row.kickoff_at),row.probabilities?['home','draw','away'].map(k=>number(row.probabilities[k])).join(' / '):'Недостаточно истории',row.actual_score,row.favorite_hit===null?'Не оценён':row.favorite_hit?'Совпал':'Не совпал'])));target.append(wrap);
       const limitations=node('ul','small muted');report.limitations.forEach(text=>limitations.append(node('li','',text)));target.append(limitations);
-      if(report.excluded_forecasts.other_model_version) target.append(node('p','small muted',`Прогнозов других версий расчёта исключено: ${report.excluded_forecasts.other_model_version}.`));
-      target.append(button('Скачать JSON отчёта',()=>{const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=`winline-10-${mode}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+      if(report.excluded_forecasts.other_model_version) target.append(node('p','small muted',`Разборов других версий расчёта исключено: ${report.excluded_forecasts.other_model_version}.`));
+      target.append(button('Скачать JSON отчёта',()=>{const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=node('a');link.href=url;link.download=`analysis-10-${mode}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
     } catch(error) {target.replaceChildren(node('p','account-message is-error',error.message));}
     finally {$("quality-saved").disabled=false;$("quality-historical").disabled=false;}
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),pricing:()=>AdminPricing.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),pricing:()=>AdminPricing.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,audit:loadAudit};
   async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
@@ -173,12 +172,11 @@ window.Admin = (() => {
     const preview=pushPreview;if(!preview)return;$("push-confirm-dialog").close();
     sensitive(async()=>{await api(`/api/admin/push/${preview.id}/send`,{method:"POST",body:JSON.stringify({confirm_audience:preview.audience})});pushPreview=null;message("Кампания поставлена в очередь. Статусы доставки обновляются при нажатии «Обновить».");await loadPush();}).catch(e=>message(e.message,true));
   });
-  $("admin-link-form").addEventListener("submit",event=>{event.preventDefault();sensitive(async()=>{await api("/api/admin/links",{method:"PUT",body:JSON.stringify({template:$("admin-link-template").value})});message("Правило ссылок сохранено.");}).catch(e=>message(e.message,true));});
   $('auto-analysis-form').addEventListener('submit',event=>{event.preventDefault();sensitive(async()=>{
     await api('/api/admin/featured-automation',{method:'PUT',body:JSON.stringify({enabled:$('auto-analysis-enabled').checked})});message('Настройка системного анализа сохранена.');await loadAutomation();
   }).catch(e=>message(e.message,true));});
   $("admin-export").addEventListener("click",()=>{
-    if(!lastOverview)return;const d=lastOverview,rows=[["Период, дней",d.days],["Пользователи",d.users],["Регистрации",d.new_users],["Посетители",d.visitors],["Успешные ИИ-запросы",d.ai.success],["Ошибки ИИ",d.ai.failed],["Переходы Winline",d.events.outbound_click||0],["Активации промокодов",d.promo_activations]];
+    if(!lastOverview)return;const d=lastOverview,rows=[["Период, дней",d.days],["Пользователи",d.users],["Регистрации",d.new_users],["Посетители",d.visitors],["Успешные ИИ-запросы",d.ai.success],["Ошибки ИИ",d.ai.failed],["Открытия матчей",d.events.outbound_click||0],["Активации промокодов",d.promo_activations]];
     const blob=new Blob(["\ufeffПоказатель;Значение\n"+rows.map(r=>r.join(";")).join("\n")],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob),a=node("a");a.href=url;a.download="prognozich-analytics.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   document.addEventListener("accountchange",()=>{elevatedUntil=0;if(location.hash==="#admin")open();});

@@ -45,7 +45,7 @@ class VerdictRecoveryTests(unittest.TestCase):
         with patch('matchlab.qwen._completion',return_value=json.dumps(bad)) as model:v,g=generate(self.settings,p,historical=True)
         self.assertEqual(model.call_count,3);self.assertEqual(g['state'],'unavailable');self.assertEqual(g['reason'],'unsupported_number')
         self.assertEqual(v['engine'],'model_error');self.assertIsNone(v['preference']);self.assertEqual(v['decision'],'skip')
-        self.assertEqual(v['stake_percent'],0);self.assertIn('Претендент: Никто.',render(v));self.assertIn('Решение: Пропустить матч.',render(v))
+        self.assertEqual(v['stake_percent'],0);self.assertIn('Претендент: Никто.',render(v));self.assertIn('Решение: Не заходим.',render(v))
         self.assertNotIn('9999',render(v));self.assertTrue(all('rejected_response' not in a for a in g['attempts']))
 
     def test_no_evidence_returns_explicit_abstention_without_calling_or_retrying(self):

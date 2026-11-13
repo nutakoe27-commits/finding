@@ -54,16 +54,19 @@ async def exercise(base,repo):
                     await page.locator('#age-accept').click();await page.locator('#privacy-reject').click()
                     await signed_in_browser(page,base);await page.reload()
                     await expect(page.locator('#event-ai-button')).to_be_enabled()
+                    assert await page.locator('a[href*="/go/"]').count()==0
+                    assert await page.locator('#event-source').count()==0
                     await page.locator('#event-ai-button').click()
                     await expect(page.locator('#explanation')).to_be_visible(timeout=30000)
-                    await expect(page.locator('#explanation .verdict-choice')).to_have_text('Рассмотреть победу «Спартак»')
+                    await expect(page.locator('#explanation .verdict-choice')).to_have_text('Заходим: победа «Спартак»')
                     await expect(page.locator('#explanation .verdict-preference')).to_have_text('Спартак')
                     assert await page.locator('#explanation .report-facts li').count()==2
                     assert await page.locator('#explanation .verdict-counterargument').is_visible()
                     await expect(page.locator('#explanation .verdict-counterargument h3')).to_have_text('Что может помешать победе «Спартак»')
                     assert await page.locator('#explanation .verdict-market_context').is_visible()
                     assert await page.locator('#explanation .verdict-reason').is_visible()
-                    await expect(page.locator('#explanation .verdict-stake')).to_contain_text('0,25%')
+                    assert await page.locator('#explanation .verdict-stake').count()==0
+                    assert 'игрового банка' not in await page.locator('#explanation').inner_text()
                     assert await page.locator('#explanation .report-chance,#explanation .report-distribution').count()==0
                     assert '%' not in await page.locator('#explanation .report-facts').inner_text()
                     assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width)
@@ -82,7 +85,7 @@ async def exercise(base,repo):
                         verdict=deepcopy(analysis['context']['neural_verdict'])
                         verdict.update(decision='skip',selection=None,stake_percent=0,engine=engine)
                         await page.evaluate('v=>renderAnalysis(document.getElementById("saved-analysis-text"),"",null,{reason:"quote_expired"},v)',verdict)
-                        await expect(page.locator('#saved-analysis-text .verdict-choice')).to_have_text('Пропустить матч')
+                        await expect(page.locator('#saved-analysis-text .verdict-choice')).to_have_text('Не заходим')
                         assert await page.locator('#saved-analysis-text .verdict-stake').count()==0
                         await expect(page.locator('#saved-analysis-text .verdict-preference')).to_have_text('Спартак')
                     for side,label in [('away','Зенит'),(None,None)]:
@@ -107,7 +110,7 @@ async def exercise(base,repo):
         delivery.cancel();await asyncio.gather(delivery,return_exceptions=True)
     assert len(ModelFixture.packets)==3,len(ModelFixture.packets)
     assert all(p['policy']['scope']=='team_winner_90m' for p in ModelFixture.packets)
-    print('PASS: authenticated jobs, raw prices, bounded stakes, saved verdicts, skip labels, mobile themes and safe rendering (local model fixture)')
+    print('PASS: authenticated jobs, raw inputs, neutral decisions without money-size instructions, saved verdicts, skip labels, mobile themes and safe rendering (local model fixture)')
 
 
 def main():

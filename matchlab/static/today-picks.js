@@ -1,7 +1,7 @@
 "use strict";
 window.TodayPicks=(()=>{
   const $=id=>document.getElementById(id),root=$('today-picks');
-  const node=(tag,cls='',value='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=value;return e;};
+  const node=(tag,cls='',value='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=ServiceWording.text(value);return e;};
   const odds=value=>Number(value).toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
   const time=value=>new Date(value).toLocaleTimeString('ru-RU',{timeZone:'Europe/Moscow',hour:'2-digit',minute:'2-digit'});
   const when=value=>new Date(value).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -16,10 +16,10 @@ window.TodayPicks=(()=>{
     kickoff.setAttribute('aria-hidden','true');head.append(node('span','tp-sport',pick.sport_label),kickoff);
     const competition=node('p','tp-competition tp-competition-blurred','Название турнира');competition.setAttribute('aria-hidden','true');
     const match=node('h3','tp-match'),names=node('span','tp-match-blurred','Участник 1 — Участник 2');names.setAttribute('aria-hidden','true');
-    match.append(names,node('span','sr-only','Участники скрыты до открытия прогноза'));
-    const preview=node('div','tp-preview');preview.append(node('span','tp-ready-dot'),node('span','','Прогноз готов · команда и аргументы внутри'));
+    match.append(names,node('span','sr-only','Участники скрыты до открытия разбора'));
+    const preview=node('div','tp-preview');preview.append(node('span','tp-ready-dot'),node('span','','Разбор готов · команда и аргументы внутри'));
     const line=node('div','tp-line'),price=node('div','tp-price');price.append(node('span','tp-label','Коэффициент при разборе'),node('strong','',odds(pick.odds)));line.append(price);
-    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть прогноз');link.append(ProductUX.icon('arrow'));link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть прогноз: ${pick.sport_label}, коэффициент ${odds(pick.odds)}`);
+    const footer=node('div','tp-card-footer'),link=node('a','tp-open','Посмотреть разбор');link.append(ProductUX.icon('arrow'));link.href='#result/'+pick.id;link.setAttribute('aria-label',`Посмотреть разбор: ${pick.sport_label}, коэффициент ${odds(pick.odds)}`);
     footer.append(node('span','tp-observed','Разбор '+when(pick.forecast_at)+' МСК'),link);
     box.append(head,competition,match,preview,line,footer);return box;
   }
@@ -29,7 +29,7 @@ window.TodayPicks=(()=>{
     cards.replaceChildren(...picks.slice(0,shown).map(card));
     if(focused)[...cards.querySelectorAll('.tp-open')].find(link=>link.getAttribute('href')===focused)?.focus({preventScroll:true});
     if(!picks.length){
-      const box=node('div','tp-empty');box.append(node('strong','','На сегодня и завтра готовых прогнозов пока нет'),node('p','','Карточки появятся автоматически, когда системный анализ сохранит вердикт «Ставить» для матча на сегодня или завтра.'));
+      const box=node('div','tp-empty');box.append(node('strong','','На сегодня и завтра готовых разборов пока нет'),node('p','','Карточки появятся автоматически, когда системный анализ сохранит вердикт «Заходим» для матча на сегодня или завтра.'));
       cards.append(box);
     }
     $('tp-more').hidden=picks.length<=shown;$('tp-more').textContent='Показать ещё · осталось '+Math.max(0,picks.length-shown);

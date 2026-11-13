@@ -72,8 +72,8 @@ def shell(head,body):
     return ('<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+head+
         '<link rel="icon" href="/static/icon.svg" type="image/svg+xml"><script src="/static/theme.js?v=20261109-accounts1"></script><link rel="stylesheet" href="/static/seo.css?v=20261112-interface1"></head><body>'
         '<a class="seo-skip" href="#content">К содержимому</a><header class="seo-header seo-shell"><a class="seo-brand" href="/">prognozich <b>ai</b></a>'
-        '<nav aria-label="Основная навигация"><a href="/matches/">Матчи и прогнозы</a><a href="/#results">Результаты ИИ</a><span class="seo-age">18+</span></nav></header>'
-        '<main id="content" class="seo-shell">'+body+'</main><footer class="seo-footer seo-shell"><p>Спортивная аналитика. Сервис не принимает ставки. Прогноз ИИ может ошибаться.</p>'
+        '<nav aria-label="Основная навигация"><a href="/matches/">Матчи и разборы</a><a href="/#results">Результаты ИИ</a><span class="seo-age">18+</span></nav></header>'
+        '<main id="content" class="seo-shell">'+body+'</main><footer class="seo-footer seo-shell"><p>Спортивная аналитика и сравнение участников. Выводы ИИ могут быть ошибочными.</p>'
         '<nav aria-label="Документы"><a href="/static/legal/terms.html">Пользовательское соглашение</a><a href="/static/legal/privacy.html">Конфиденциальность</a><a href="/static/legal/pricing.html">Тарифы</a><a href="/static/legal/offer.html">Оферта</a><a href="/static/legal/payment-refund.html">Оплата и возвраты</a><a href="/static/legal/contacts.html">Реквизиты</a></nav></footer></body></html>')
 
 
@@ -137,7 +137,7 @@ def event_html(repo,event,origin,index):
     path=match_path(event);url=origin+path;pair=event['home']+' — '+event['away'];date=when(event['kickoff_at'],False)
     phase=event.get('phase');future=instant(event['kickoff_at'])>datetime.now(timezone.utc)
     can_analyze=supported(event) and phase=='prematch' and future and not event.get('is_stale') and event.get('source_present') is not False
-    title=pair+(' — прогноз ИИ на ' if can_analyze else ' — матч ')+date+' | prognozich ai'
+    title=pair+(' — разбор ИИ на ' if can_analyze else ' — матч ')+date+' | prognozich ai'
     competition=event['competition'];label=sport_label(event['sport'],event.get('sport_label'))
     description=f'{pair}, {competition}, {when(event["kickoff_at"])}. '+('Сведения о встрече и запрос разбора от ИИ: сравнение участников, аргументы и решение.' if can_analyze else 'Дата встречи, доступные сведения и подтверждённый результат при его наличии.')
     state='Матч завершён' if phase=='finished' else 'Сейчас в игре' if phase=='live' else 'Предстоящий матч' if can_analyze or phase=='prematch' and future else 'Сведения о матче уточняются'
@@ -148,7 +148,7 @@ def event_html(repo,event,origin,index):
     if phase=='prematch' and future:schema['eventStatus']='https://schema.org/EventScheduled'
     breadcrumb={'@context':'https://schema.org','@type':'BreadcrumbList','itemListElement':[
         {'@type':'ListItem','position':1,'name':'Главная','item':origin+'/'},
-        {'@type':'ListItem','position':2,'name':'Матчи и прогнозы','item':origin+'/matches/'},
+        {'@type':'ListItem','position':2,'name':'Матчи и разборы','item':origin+'/matches/'},
         {'@type':'ListItem','position':3,'name':pair,'item':url}]}
     body=(f'<nav class="seo-breadcrumb" aria-label="Хлебные крошки"><a href="/">Главная</a><span>/</span><a href="/matches/">Матчи</a><span>/</span><span>{escape(label)}</span></nav>'
         f'<section class="seo-hero"><p class="seo-eyebrow">{escape(label)} · {escape(state)}</p><h1>{escape(pair)}</h1><p class="seo-competition">{escape(competition)}</p>'
@@ -156,9 +156,9 @@ def event_html(repo,event,origin,index):
         +(f'<p class="seo-score">{escape(str(score))}</p>' if score else '')+'</section>')
     if can_analyze:
         target='/#'+('stream/' if event.get('source_kind')=='stream' else 'match/')+event['source_event_id']
-        body+=(f'<section class="seo-panel seo-analysis"><div><p class="seo-eyebrow">ПРОГНОЗ ОТ ИИ</p><h2>Кого выделит ИИ в этой встрече?</h2>'
-            f'<p>Запросите разбор матча «{escape(pair)}». ИИ сравнит доступную историю и показатели участников, учтёт коэффициенты и объяснит решение.</p>'
-            '<p class="seo-muted">Готового вердикта на этой странице нет. Разбор запускается в сервисе по вашему запросу; при недостатке данных или сомнениях ИИ может рекомендовать пропустить матч. Полный ответ открывается по условиям сервиса.</p></div>'
+        body+=(f'<section class="seo-panel seo-analysis"><div><p class="seo-eyebrow">РАЗБОР ОТ ИИ</p><h2>Кого выделит ИИ в этой встрече?</h2>'
+            f'<p>Запросите разбор матча «{escape(pair)}». ИИ сравнит доступную историю и показатели участников, объяснит значение фактов и принятое решение.</p>'
+            '<p class="seo-muted">Готового вердикта на этой странице нет. Разбор запускается в сервисе по вашему запросу; при недостатке данных или сомнениях ИИ может выбрать «Не заходим». Полный ответ открывается по условиям сервиса.</p></div>'
             f'<a class="seo-button" href="{target}">Открыть матч и запросить разбор →</a></section>')
     else:
         message=('Предматчевый разбор для завершившейся или начавшейся встречи недоступен.' if phase in ('finished','live') else
@@ -166,18 +166,9 @@ def event_html(repo,event,origin,index):
             'Предматчевый ИИ-разбор этой встречи сейчас недоступен. Доступность зависит от вида спорта и актуальности данных.')
         body+='<section class="seo-panel"><h2>Информация о встрече</h2><p>'+message+'</p><a class="seo-link" href="/#matches">Выбрать актуальный матч →</a></section>'
     body+=stats_table(repo,event)
-    headline=event.get('headline') or {}
-    if headline.get('outcomes') and event.get('observed_at'):
-        odds=[]
-        for item in headline['outcomes'][:3]:
-            value=item.get('odds')
-            if item.get('state')=='open' and type(value) in (int,float) and math.isfinite(value) and 1<value<=100000:
-                odds.append(f'<tr><th scope="row">{escape(str(item.get("name") or "Исход"))}</th><td>{value:.2f}</td></tr>')
-        if odds:
-            body+='<section class="seo-panel"><h2>Снимок коэффициентов</h2><p>'+escape(str(headline.get('name') or 'Рынок матча'))+'</p><table><thead><tr><th>Исход</th><th>Коэффициент</th></tr></thead><tbody>'+''.join(odds)+'</tbody></table><p class="seo-muted">Данные на '+escape(when(event['observed_at']))+'. Коэффициенты могли измениться; это цены источника, а не вероятности и не рекомендация ставки.</p></section>'
     related=[e for e in index.entries() if e['sport']==event['sport'] and e['source_event_id']!=event['source_event_id']][:6]
     if related:body+='<section class="seo-panel"><h2>Другие встречи</h2><div class="seo-grid">'+''.join(card(e) for e in related)+'</div></section>'
-    body+='<p class="seo-muted seo-note">Источник сведений о матче — Winline. Расписание и показатели могут обновляться. Прогнозы не гарантируют выигрыш. Только для пользователей 18+.</p>'
+    body+='<p class="seo-muted seo-note">Расписание и показатели могут обновляться. Выводы ИИ носят информационный характер и могут быть ошибочными. Только для пользователей 18+.</p>'
     return shell(meta(origin,path,title,description,schema=(schema,breadcrumb)),body)
 
 
@@ -231,9 +222,9 @@ def install(app,repo,settings):
         page=int(raw);rows=index.entries();batch=rows[(page-1)*PAGE_SIZE:page*PAGE_SIZE]
         if not batch and (rows or page!=1):return missing()
         path='/matches/'+(f'?page={page}' if page>1 else '')
-        title='Матчи и прогнозы от ИИ'+(f' — страница {page}' if page>1 else '')+' | prognozich ai'
+        title='Матчи и разборы от ИИ'+(f' — страница {page}' if page>1 else '')+' | prognozich ai'
         description='Каталог спортивных матчей: участники, турниры, время начала и страницы встреч. ИИ-разборы для поддерживаемых видов спорта доступны по запросу.'
-        body='<section class="seo-hero"><p class="seo-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1>Матчи и прогнозы от ИИ</h1><p>Найдите встречу и откройте её страницу: участники, турнир, дата и доступные сведения о матче. Время указано по Москве.</p><a class="seo-link" href="/#matches">Предстоящие матчи и поиск в сервисе →</a></section>'
+        body='<section class="seo-hero"><p class="seo-eyebrow">СПОРТИВНАЯ АНАЛИТИКА</p><h1>Матчи и разборы от ИИ</h1><p>Найдите встречу и откройте её страницу: участники, турнир, дата и доступные сведения о матче. Время указано по Москве.</p><a class="seo-link" href="/#matches">Предстоящие матчи и поиск в сервисе →</a></section>'
         body+='<div class="seo-grid">'+''.join(card(e) for e in batch)+'</div>' if batch else '<p>Матчи появятся после получения расписания.</p>'
         links=[]
         if page>1:links.append('<a rel="prev" href="/matches/'+(f'?page={page-1}' if page>2 else '')+'">← Назад</a>')

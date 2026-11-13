@@ -58,7 +58,7 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(verdict['decision'],'bet');self.assertEqual(verdict['stake_percent'],.25)
         self.assertEqual(generation['state'],'ready');self.assertEqual(generation['model_calls'],1)
         self.assertNotIn('%',' '.join(a['text'] for a in verdict['arguments']))
-        self.assertIn('0,25%',render(verdict));self.assertNotIn('вероятность',render(verdict))
+        self.assertIn('Заходим',render(verdict));self.assertNotIn('%',render(verdict));self.assertNotIn('игрового банка',render(verdict));self.assertNotIn('вероятность',render(verdict))
 
     def test_missing_or_stale_prices_force_skip_without_faking_a_bet(self):
         for change in ('missing','stale'):
@@ -239,7 +239,7 @@ class VerdictTests(unittest.TestCase):
         verdict,g=generate(self.settings,p,lambda opts,messages:json.dumps(reply(p,'skip')))
         self.assertEqual(verdict['preference'],'home');self.assertIsNone(verdict['selection'])
         self.assertEqual(verdict['stake_percent'],0);self.assertEqual(g['state'],'ready')
-        self.assertIn('Претендент:',render(verdict));self.assertIn('Пропустить матч',render(verdict))
+        self.assertIn('Претендент:',render(verdict));self.assertIn('Не заходим',render(verdict))
         value=reply(p,'skip',preference=None)
         self.assertIsNone(validate_reply(value,p)['preference'])
         value=reply(p,'bet',preference=None)

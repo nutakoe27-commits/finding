@@ -37,10 +37,10 @@ async def exercise(base,repo):
                 await expect(page.locator('#ar-metrics .ar-metric')).to_have_count(4)
                 await expect(page.locator('#ar-metrics .ar-metric strong').first).to_have_text('50%')
                 await expect(page.locator('#ar-matches tbody tr')).to_have_count(6)
-                await expect(page.locator('#ar-matches')).to_contain_text('Избежал проигрыша')
+                await expect(page.locator('#ar-matches')).to_contain_text('Не зашло — отказ оправдан')
                 await expect(page.locator('#ar-matches')).to_contain_text('Пропущена победа')
                 await expect(page.locator('#ar-message')).to_contain_text('автоматическое обновление')
-                assert await page.locator('#ar-accuracy-chart svg,#ar-bank-chart svg').count()==2
+                assert await page.locator('#ar-accuracy-chart svg').count()==1
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'page overflow')
                 svg=page.locator('#ar-accuracy-chart svg');await svg.focus()
                 before=await page.locator('#ar-accuracy-chart .ar-chart-readout').inner_text();await page.keyboard.press('ArrowLeft')

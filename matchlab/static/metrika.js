@@ -2,7 +2,7 @@
 // Yandex is loaded only after the visitor has explicitly enabled analytics.
 window.ProductAnalytics = (() => {
   const counter = 114139580;
-  const goals = new Set(['registration_success','login_success','match_view','ai_intent','ai_request_start','ai_model_result','ai_summary_result','ai_request_error','favorite_add','winline_click','promo_redeemed','push_subscribed']);
+  const goals = new Set(['registration_success','login_success','match_view','ai_intent','ai_request_start','ai_model_result','ai_summary_result','ai_request_error','favorite_add','promo_redeemed','push_subscribed']);
   let started = false, currentRoute = null;
   const fields = root => {
     if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
@@ -48,7 +48,6 @@ window.ProductAnalytics = (() => {
     if(/^#(?:match|stream)\/\d{1,20}$/.test(route)) goal('match_view');
   }
   document.addEventListener('click',event=>{
-    if(event.target instanceof Element && event.target.closest('a[href^="/go/winline/"]')) goal('winline_click');
   });
   return {start,goal,hit,get started(){return started;}};
 })();

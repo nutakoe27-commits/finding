@@ -40,7 +40,7 @@ class ForecastRequest(BaseModel):
         if self.home == self.away:
             raise ValueError("Выберите разные команды.")
         if self.quote_id and self.odds is not None:
-            raise ValueError("Выберите снимок букмекера или ручные коэффициенты.")
+            raise ValueError("Выберите снимок источник данных или ручные коэффициенты.")
         if self.odds is not None:
             if set(self.odds) != {"home", "draw", "away"}:
                 raise ValueError("Нужны три коэффициента: home, draw, away.")
@@ -230,7 +230,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/bookmakers")
     def bookmakers(include_started: bool = False, source: str | None = None):
         if source not in (None, "betboom", "winline"):
-            raise HTTPException(422, "Неизвестный букмекер.")
+            raise HTTPException(422, "Неизвестный источник данных.")
         current = datetime.now(timezone.utc)
         result = []
         for quote in repo.bookmaker_quotes(include_started=include_started, source=source):
@@ -525,7 +525,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         reason = "Модель пока поддерживает основной исход АПЛ. Рынки этой встречи доступны для просмотра."
         eligible, canonical = False, model_teams(document)
         if document["phase"] in ("live", "finished") or (document["kickoff_at"] and instant(document["kickoff_at"]) <= datetime.now(timezone.utc)):
-            reason = "Предматчевый прогноз для начавшейся встречи недоступен."
+            reason = "Предматчевый разбор для начавшейся встречи недоступен."
         elif document["phase"] != "prematch":
             reason = "В снимке не подтверждён предматчевый статус. Доступен ИИ-разбор сохранённых рынков."
         elif canonical:
@@ -760,7 +760,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(503, "Сервис ИИ ещё не подключён.")
         saved = repo.forecast(request.forecast_id)
         if saved is None:
-            raise HTTPException(404, "Прогноз не найден.")
+            raise HTTPException(404, "Разбор не найден.")
         try:
             if not analysis_lock.acquire(blocking=False):raise HTTPException(409,'Пользовательский поток занят. Дождитесь завершения разбора.')
             try:text = qwen.explain(settings, public_prediction(saved), request.notes)

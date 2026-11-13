@@ -51,7 +51,7 @@ Copy a quote from the cited record's data, never scope or another record. Do not
 Drop or correct unsupported claims; invent no sources, numbers or percentages. If none are supported return observations=[].'''
 FACT_DIRECT=RULES+'''
 Read ALL records and explain the strongest supporting and opposing evidence for the forecast.
-Return ONLY {"arguments":[{"fact_ids":["F1","F2"],"explanation":"Почему эти факты поддерживают или ограничивают прогноз."},{"fact_ids":["F1"],"market_keys":["existing market_key"],"explanation":"Почему эти факты важны именно для этого рынка."}]}.
+Return ONLY {"arguments":[{"fact_ids":["F1","F2"],"explanation":"Почему эти факты поддерживают или ограничивают разбор."},{"fact_ids":["F1"],"market_keys":["existing market_key"],"explanation":"Почему эти факты важны именно для этого рынка."}]}.
 Write one balanced overall argument and one explanation for EACH selected market in forecast.markets (up to 4 arguments total).
 Each explanation must be 120-300 Russian characters, citing 1-3 existing fact IDs. Use market_keys ONLY from forecast.markets for market explanations; omit it for the overall argument.
 Explain WHY the evidence matters: attack/defence, expected scoring, alternatives and reliability of the sample.

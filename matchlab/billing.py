@@ -127,13 +127,14 @@ def locked(repo,settings,payload,user=None):
         from .subscriptions import unlimited
         has_unlimited=bool(user and unlimited(db,user['id'],payment_mode(settings)))
     return {'id':payload['id'],'generated_at':payload.get('generated_at'),'analysis_type':'locked',
-        'locked':True,'decision':'skip' if skip else None,'text':'Рекомендуем пропустить матч' if skip else '',
+        'locked':True,'decision':'skip' if skip else None,'text':'Решение: не заходим' if skip else '',
         'unlock':{'cost':0 if has_unlimited else 1,'unlimited':has_unlimited,'available':ready(payload),'authenticated':bool(user),
             'balance':wallet(repo,user['id'],settings)['balance'] if user else 0,'test_mode':payment_mode(settings)=='test'}}
 
 
 def protect(repo,settings,payload,user):
-    return locked(repo,settings,payload,user) or payload
+    from .vocabulary import analysis
+    return locked(repo,settings,payload,user) or analysis(payload)
 
 
 def unlock(repo,settings,user,identifier):

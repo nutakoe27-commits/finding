@@ -1,7 +1,7 @@
 "use strict";
 window.AdminResults = (() => {
   const $=id=>document.getElementById(id), root=$('admin-results');
-  const node=(tag,cls='',value='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=value;return n;};
+  const node=(tag,cls='',value='')=>{const n=document.createElement(tag);n.className=cls;n.textContent=ServiceWording.text(value);return n;};
   const fmt=(n,digits=0)=>Number(n||0).toLocaleString('ru-RU',{maximumFractionDigits:digits});
   const pct=n=>n==null?'—':fmt(n*100,1)+'%';
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
@@ -17,30 +17,27 @@ window.AdminResults = (() => {
     const m=d.metrics;
     $('ar-metrics').replaceChildren(
       metric('Попадания в победителя',pct(m.accuracy),`${fmt(m.hits)} из ${fmt(m.preferences)} проверенных предпочтений`),
-      metric('Рекомендации ставить',fmt(m.bets),`${fmt(m.bet_wins)} выигрышных · ${fmt(m.bet_losses)} проигрышных`),
-      metric('Решения пропустить',fmt(m.skips),`${fmt(m.skip_avoided_loss)} избежали проигрыша · ${fmt(m.skip_missed_win)} пропущенных побед`),
+      metric('Решения «Заходим»',fmt(m.bets),`${fmt(m.bet_wins)} зашло · ${fmt(m.bet_losses)} не зашло`),
+      metric('Решения не заходим',fmt(m.skips),`${fmt(m.skip_avoided_loss)} отказались от неподтвердившегося выбора · ${fmt(m.skip_missed_win)} пропущенных побед`),
       metric('Ожидают подтверждения',fmt(m.pending+m.unresolved),`${fmt(m.settled)} разборов проверено · ${fmt(d.unique_fixtures??m.fixtures)} матчей · ${fmt(m.fixtures)} разборов`));
     $('ar-accuracy-value').textContent=pct(m.accuracy);
-    $('ar-bank-value').textContent=m.priced_bets?fmt(m.paper_bank,3)+' ед.':'—';
   }
   function chart(target,data,field,{percentage=false,hasData=false}={}){
     target.replaceChildren();
-    if(!hasData){target.append(node('div','ar-chart-empty',percentage?'Пока нет подтверждённых предпочтений. Здесь появится история попаданий.':'Пока нет завершённых ставок с сохранённой ценой. Виртуальный результат не рассчитан.'));return;}
+    if(!hasData){target.append(node('div','ar-chart-empty','Пока нет подтверждённых предпочтений. Здесь появится история попаданий.'));return;}
     const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
     const width=target.clientWidth<480?360:680,right=width-16;
     svg.setAttribute('viewBox',`0 0 ${width} 225`);svg.setAttribute('role','img');svg.setAttribute('tabindex','0');
-    svg.setAttribute('aria-label',percentage?'Накопленная точность по дням. Стрелки влево и вправо выбирают дату.':'Виртуальный банк по дням. Стрелки влево и вправо выбирают дату.');
+    svg.setAttribute('aria-label','Накопленная точность по дням. Стрелки влево и вправо выбирают дату.');
     const points=data.map((d,i)=>({d,i,value:d[field]})).filter(p=>p.value!=null);
     let lo=0,hi=1;
-    if(!percentage){lo=Math.min(100,...points.map(p=>p.value));hi=Math.max(100,...points.map(p=>p.value));const pad=Math.max(.1,(hi-lo)*.15);lo-=pad;hi+=pad;}
     const x=i=>52+i*(right-52)/Math.max(1,data.length-1),y=v=>174-(v-lo)/(hi-lo)*150;
     const shape=(tag,attrs,cls)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,String(v));if(cls)n.setAttribute('class',cls);svg.append(n);return n;};
     for(let i=0;i<=3;i++){
       const v=lo+(hi-lo)*i/3,py=y(v);
       shape('line',{x1:52,x2:right,y1:py,y2:py},'ar-plot-grid');
-      const label=shape('text',{x:43,y:py+4,'text-anchor':'end'},'ar-plot-label');label.textContent=percentage?fmt(v*100)+'%':fmt(v,2);
+      const label=shape('text',{x:43,y:py+4,'text-anchor':'end'},'ar-plot-label');label.textContent=fmt(v*100)+'%';
     }
-    if(!percentage)shape('line',{x1:52,x2:right,y1:y(100),y2:y(100)},'ar-plot-baseline');
     const coords=points.map(p=>`${x(p.i)},${y(p.value)}`).join(' ');
     shape('polygon',{points:`${x(points[0].i)},174 ${coords} ${x(points.at(-1).i)},174`},'ar-plot-area');
     shape('polyline',{points:coords},'ar-plot-path');
@@ -50,7 +47,7 @@ window.AdminResults = (() => {
     const marker=shape('circle',{cx:0,cy:0,r:4},'ar-plot-marker');
     const readout=node('p','ar-chart-readout');readout.setAttribute('aria-live','polite');let selected=points.length-1;
     function show(i){selected=Math.max(0,Math.min(points.length-1,i));const p=points[selected];marker.setAttribute('cx',String(x(p.i)));marker.setAttribute('cy',String(y(p.value)));
-      readout.textContent=`${p.d.day.slice(8,10)}.${p.d.day.slice(5,7)} · `+(percentage?`${pct(p.value)} · проверено предпочтений: ${fmt(p.d.cumulative_preferences)}`:`банк ${fmt(p.value,3)} ед. · результат за день ${p.d.paper_profit>0?'+':''}${fmt(p.d.paper_profit,3)} ед.`);}
+      readout.textContent=`${p.d.day.slice(8,10)}.${p.d.day.slice(5,7)} · `+`${pct(p.value)} · проверено предпочтений: ${fmt(p.d.cumulative_preferences)}`;}
     svg.addEventListener('pointermove',e=>{const rect=svg.getBoundingClientRect(),px=(e.clientX-rect.left)/rect.width*width;
       show(points.reduce((best,p,i)=>Math.abs(x(p.i)-px)<Math.abs(x(points[best].i)-px)?i:best,0));});
     svg.addEventListener('pointerleave',()=>show(points.length-1));
@@ -59,9 +56,9 @@ window.AdminResults = (() => {
   }
   function decisions(m){
     const container=$('ar-decisions');container.replaceChildren();
-    if(!m.settled){container.append(node('div','ar-chart-empty','После подтверждения итогов здесь появится распределение ставок и пропусков.'));return;}
-    const items=[['Ставка выиграла',m.bet_wins,'win'],['Ставка проиграла',m.bet_losses,'loss'],
-      ['Избежал проигрыша',m.skip_avoided_loss,'avoid'],['Пропущена победа',m.skip_missed_win,'missed'],['Без предпочтения',m.skip_unassessed,'neutral']];
+    if(!m.settled){container.append(node('div','ar-chart-empty','После подтверждения итогов здесь появится распределение решений и пропусков.'));return;}
+    const items=[['Зашло',m.bet_wins,'win'],['Не зашло',m.bet_losses,'loss'],
+      ['Не зашло — отказ оправдан',m.skip_avoided_loss,'avoid'],['Пропущена победа',m.skip_missed_win,'missed'],['Без предпочтения',m.skip_unassessed,'neutral']];
     const layout=node('div','ar-ring-layout'),ring=node('div','ar-ring'),legend=node('ul','ar-legend');
     let position=0;const parts=[];
     for(const [label,count,tone] of items){
@@ -73,7 +70,7 @@ window.AdminResults = (() => {
     const center=node('div','ar-ring-center');center.append(node('strong','',fmt(m.settled)),node('small','','матчей'));ring.append(center);layout.append(ring,legend);
     container.append(layout,node('p','ar-decisions-note','Оценка пропусков — по известному итогу. Пропущенная победа не доказывает ошибку исходного решения.'));
   }
-  const results={bet_won:['Ставка выиграла','win'],bet_lost:['Ставка проиграла','loss'],avoided_loss:['Избежал проигрыша','avoid'],
+  const results={bet_won:['Зашло','win'],bet_lost:['Не зашло','loss'],avoided_loss:['Не зашло — отказ оправдан','avoid'],
     missed_win:['Пропущена победа','missed'],no_preference:['Без предпочтения','neutral'],pending:['Ожидаем итог','neutral'],
     ambiguous_result:['Неоднозначный итог','neutral'],unsupported_result_scope:['Условия итога не подтверждены','neutral'],forecast_after_actual_kickoff:['Ответ после начала','neutral']};
   function pill(text,tone='neutral'){return node('span','ar-pill ar-tone-'+tone,text);}
@@ -93,10 +90,8 @@ window.AdminResults = (() => {
         cells[2].append(node('strong','ar-score',c.actual_score||'—'));
         if(c.state==='pending')cells[2].append(node('small','ar-sub',c.pending_reason==='fixture_not_started'?'Ожидаем начало матча':c.pending_reason==='archive_delivery_stopped'?'Нет обновлений архива':c.pending_reason==='archive_source_stale'?'Данные источника устарели':'Итог ещё не получен'));
         cells[3].append(c.preference_hit===null?pill(c.state==='settled'?'Не оценено':c.state==='unresolved'?'Не удалось сверить':c.pending_reason==='fixture_not_started'?'Ожидаем начало':'Ожидаем итог'):pill(c.preference_hit?'Совпало':'Не совпало',c.preference_hit?'win':'loss'));
-        cells[4].append(pill(c.decision==='bet'?'Ставить':'Пропустить',c.decision==='bet'?'avoid':'neutral'));
-        if(c.decision==='bet')cells[4].append(node('small','ar-sub',c.paper_stake==null?'Виртуальный расчёт недоступен':`${fmt(c.paper_stake,3)} ед. · кф. ${fmt(c.odds,3)}`));
+        cells[4].append(pill(c.decision==='bet'?'Заходим':'Не заходим',c.decision==='bet'?'avoid':'neutral'));
         const [label,tone]=results[c.decision_result]||['Не удалось сверить','neutral'];cells[5].append(pill(label,tone));
-        if(c.paper_profit!=null)cells[5].append(node('span','ar-sub',`${c.paper_profit>0?'+':''}${fmt(c.paper_profit,3)} ед. к виртуальному банку`));
         const detail=node('details','ar-row-details');detail.append(node('summary','','Причина решения'));
         detail.append(node('p','ar-sub',(d.diagnostic_only?'Снимок: ':'Ответ ИИ: ')+when(c.forecast_at)+' МСК'));
         if(c.token_usage?.total_tokens!=null)detail.append(node('p','ar-sub',`Токены модели: ${c.token_usage.complete?'':'≥ '}${fmt(c.token_usage.total_tokens)} · пик входа ${fmt(c.token_usage.peak_prompt_tokens)}`));
@@ -128,14 +123,14 @@ window.AdminResults = (() => {
       $('ar-report-field').hidden=d.source!=='trials';options($('ar-report'),d.reports.map(r=>[r.id,r.id]),d.report_id);
       $('ar-diagnostic').hidden=!d.diagnostic_only;$('ar-updated').textContent='Отчёт пересчитан '+when(d.checked_at)+' МСК';
       const activity=d.system_activity||{};$('ar-system-activity').hidden=!(activity.recorded>0);
-      $('ar-system-activity').textContent=`Системный анализ: сохранено ${activity.recorded||0}; ИИ ответил ${activity.ready||0}; без подтверждённого прогноза ${activity.without_forecast||0}. Начала матча ожидают ${d.awaiting_start||0} разборов по выбранным фильтрам. Ошибки и ответы без данных не участвуют в эффективности.`;
+      $('ar-system-activity').textContent=`Системный анализ: сохранено ${activity.recorded||0}; ИИ ответил ${activity.ready||0}; без подтверждённого разбора ${activity.without_forecast||0}. Начала матча ожидают ${d.awaiting_start||0} разборов по выбранным фильтрам. Ошибки и ответы без данных не участвуют в эффективности.`;
       const health=d.archive_health||{},notice=$('ar-sync-health');root.dataset.archiveState=health.state||'unknown';
       notice.hidden=health.state==='ready'||!health.state;
       const delivery=health.last_delivery_at?' Последняя доставка: '+when(health.last_delivery_at)+' МСК.':'';
       notice.textContent=health.state==='disconnected'?'Нет свежего отчёта о доставке архива.'+delivery+' Итоги ожидающих матчей пока не подтверждены. Проверьте синхронизацию результатов.':health.state==='source_stale'?'Отчёт о доставке получен, но данные источника устарели.'+delivery:health.state==='catching_up'?'Передача накопленных результатов ещё продолжается.'+delivery:'Статус доставки архива ещё не получен. Показаны только сохранённые итоги.';
       metrics(d);chart($('ar-accuracy-chart'),d.daily,'cumulative_accuracy',{percentage:true,hasData:d.metrics.preferences>0});
-      chart($('ar-bank-chart'),d.daily,'cumulative_bank',{hasData:d.metrics.priced_bets>0});decisions(d.metrics);matches(d);exclusions(d);
-      $('ar-message').textContent=d.diagnostic_only?'Архивный тест · результаты пересверены с текущим архивом Winline.':'Реальные разборы сайта · автоматическое обновление раз в минуту.';
+      decisions(d.metrics);matches(d);exclusions(d);
+      $('ar-message').textContent=d.diagnostic_only?'Архивный тест · результаты пересверены с текущим архивом результатов.':'Реальные разборы сайта · автоматическое обновление раз в минуту.';
       $('ar-export').disabled=false;
     } catch(error){if(epoch===serial&&error.name!=='AbortError'){$('ar-message').textContent=error.message;$('ar-message').classList.add('is-error');}}
     finally {if(epoch===serial){root.removeAttribute('aria-busy');if(visible()&&!document.hidden)timer=setTimeout(()=>load(),60000);}}
@@ -148,8 +143,8 @@ window.AdminResults = (() => {
     const a=node('a');a.href=url;a.download=`verdict-outcomes-${last.source}-${last.daily.at(-1).day}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   document.addEventListener('accountchange',()=>{stop();last=null;offset=0;
-    for(const id of ['ar-metrics','ar-accuracy-chart','ar-bank-chart','ar-decisions','ar-matches','ar-page','ar-exclusions'])$(id).replaceChildren();
-    $('ar-accuracy-value').textContent='—';$('ar-bank-value').textContent='—';$('ar-updated').textContent='Ожидаем проверку';
+    for(const id of ['ar-metrics','ar-accuracy-chart','ar-decisions','ar-matches','ar-page','ar-exclusions'])$(id).replaceChildren();
+    $('ar-accuracy-value').textContent='—';$('ar-updated').textContent='Ожидаем проверку';
     $('ar-message').textContent='';$('ar-system-activity').hidden=true;$('ar-system-activity').textContent='';$('ar-sync-health').hidden=true;$('ar-sync-health').textContent='';delete root.dataset.archiveState;$('ar-export').disabled=true;options($('ar-version'),[['','Все версии']],'');$('ar-report').replaceChildren();
   });
   window.addEventListener('hashchange',()=>{if(!visible())stop();});

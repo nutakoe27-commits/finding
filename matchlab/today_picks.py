@@ -64,7 +64,7 @@ def collection(repo,*,min_odds=None,max_odds=None,now=None,include_started=False
 
 
 def detail(repo,analysis_id,*,now=None):
-    if not re.fullmatch(r'[a-f0-9]{32}',analysis_id):raise HTTPException(404,'Прогноз не найден.')
+    if not re.fullmatch(r'[a-f0-9]{32}',analysis_id):raise HTTPException(404,'Разбор не найден.')
     row=next((item for item in collection(repo,now=now,include_started=True)['picks'] if item['id']==analysis_id),None)
     if row is None:raise HTTPException(404,'Этот ответ не входит в публичную историю или подборку на сегодня и завтра.')
     from .public_results import answer_blocks

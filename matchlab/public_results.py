@@ -5,12 +5,13 @@ import re
 from fastapi import HTTPException,Request
 
 from .verdict_outcomes import run
+from .vocabulary import text as display_text
 
 METHODOLOGY=[
-    'Только предматчевые ответы ИИ с решением «Ставить» и подтверждёнными коэффициентами. Претенденты и пропуски не входят в показатели.',
+    'Только предматчевые ответы ИИ с решением «Заходим» и подтверждёнными коэффициентами. Претенденты и пропуски не входят в показатели.',
     'Изменение линии даёт отдельное решение. Одинаковые рекомендации по тому же матчу и линии учитываются один раз; связанные решения не являются независимыми матчами.',
-    'Процент верных прогнозов и счётчик «Решение ИИ верно / не верно» используют только подтверждённые исходы рекомендаций «Ставить». Ожидающие и неподтверждённые итоги не считаются верными или неверными.',
-    'Средний коэффициент — среднее арифметическое сохранённых коэффициентов всех учтённых рекомендаций «Ставить», включая ожидающие итога. Он не зависит от размера ставки или страницы списка. Коэффициенты зафиксированы при разборе.',
+    'Процент верных разборов и счётчик «Решение ИИ верно / не верно» используют только подтверждённые исходы рекомендаций «Заходим». Ожидающие и неподтверждённые итоги не считаются верными или неверными.',
+    'Средний коэффициент — среднее арифметическое сохранённых коэффициентов всех учтённых рекомендаций «Заходим», включая ожидающие итога. Он рассчитан по всей выборке и не зависит от страницы списка. Коэффициенты зафиксированы при разборе.',
 ]
 
 
@@ -39,24 +40,24 @@ def answer_blocks(repo,analysis_id):
         row=db.execute('''SELECT json_extract(payload,'$.context.neural_verdict') verdict,
             json_extract(payload,'$.context.neural_input.unverified_user_notes','$.context.unverified_user_notes','$.context.notes') notes
             FROM event_analyses WHERE id=?''',(analysis_id,)).fetchone()
-    if row is None:raise HTTPException(404,'Прогноз не найден.')
+    if row is None:raise HTTPException(404,'Разбор не найден.')
     verdict=json.loads(row['verdict']);notes=json.loads(row['notes'])
     redacted=any(bool(value) for value in notes)
     blocks=[]
     if not redacted:
         for key,label in [('home','Первый участник'),('away','Второй участник')]:
             value=(verdict.get('comparison') or {}).get(key)
-            if isinstance(value,dict) and isinstance(value.get('text'),str):blocks.append({'label':label,'text':value['text'][:600]})
+            if isinstance(value,dict) and isinstance(value.get('text'),str):blocks.append({'label':label,'text':display_text(value['text'][:600])})
         for key,label in [('counterargument','Что может помешать'),('market_context','Коэффициенты и решение'),('reason','Почему ИИ принял это решение')]:
             value=verdict.get(key)
-            if isinstance(value,dict) and isinstance(value.get('text'),str):blocks.append({'label':label,'text':value['text'][:600]})
+            if isinstance(value,dict) and isinstance(value.get('text'),str):blocks.append({'label':label,'text':display_text(value['text'][:600])})
     return {'blocks':blocks,'explanation_redacted':redacted,
         'notice':'Текст этого ответа закрыт, поскольку разбор использовал личные заметки. Публично доступны данные матча и сохранённое решение.' if redacted else
-                 'Сохранённый ответ ИИ до начала матча. Текст не переписан с учётом результата.'}
+                 'Сохранённый ответ ИИ до начала матча. Подписи приведены к текущему интерфейсу; решение и основания не изменены.'}
 
 
 def detail(repo,analysis_id,*,settings=None,user=None):
-    if not re.fullmatch(r'[a-f0-9]{32}',analysis_id):raise HTTPException(404,'Прогноз не найден.')
+    if not re.fullmatch(r'[a-f0-9]{32}',analysis_id):raise HTTPException(404,'Разбор не найден.')
     rows=report(repo,analysis_id=analysis_id,limit=1)['matches']
     if rows:
         row=rows[0]
@@ -123,7 +124,7 @@ def install(app,repo):
                 value=report(repo,sport=sport,offset=offset,limit=limit)
                 from .billing import active
                 if active(repo,app.state.settings):
-                    value={**value,'matches':[{**row,'selection_label':'Прогноз закрыт'} if row['state']!='settled' else row for row in value['matches']]}
+                    value={**value,'matches':[{**row,'selection_label':'Разбор закрыт'} if row['state']!='settled' else row for row in value['matches']]}
                 if len(cache)>=32:cache.clear()
                 cache[key]=(time.monotonic(),value)
                 return value

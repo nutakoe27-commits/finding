@@ -38,7 +38,7 @@ async def exercise(base):
                 await expect(page.locator('.subscription-quantity strong')).to_have_text(['3','15','∞'])
                 await expect(page.locator('.subscription-quantity small')).to_have_text(['/3 дня']*3)
                 await expect(page.locator('.subscription-price strong')).to_have_text(['490 ₽','2 290 ₽','6 090 ₽'])
-                await expect(page.locator('#credits-dialog')).to_contain_text('ТОЛЬКО когда ИИ рекомендует «Ставить»')
+                await expect(page.locator('#credits-dialog')).to_contain_text('ТОЛЬКО когда ИИ рекомендует «Заходим»')
                 assert not await page.locator('#credits-one-time').evaluate('(e)=>e.open')
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),width
                 await page.locator('#credits-dialog').screenshot(path=f'/workspace/outputs/subscription-plans-{width}.png')
@@ -70,7 +70,7 @@ async def exercise(base):
                 assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==15
                 await page.goto(base+'/#analysis/'+seeded['skip'])
                 await expect(page.locator('#saved-analysis-text')).to_contain_text('СЕКРЕТНОЕ ОБОСНОВАНИЕ')
-                await expect(page.locator('#saved-analysis-text')).to_contain_text('«Пропустить» — бесплатно')
+                await expect(page.locator('#saved-analysis-text')).to_contain_text('«Не заходим» — бесплатно')
                 assert await page.locator('#saved-analysis-text .credit-gate').count()==0
                 assert (await (await ctx.request.get(base+'/api/billing/wallet')).json())['balance']==15
                 await page.goto(base+'/#analysis/'+seeded['private'])

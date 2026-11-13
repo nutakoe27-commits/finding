@@ -4,7 +4,6 @@ import re
 import json
 import secrets
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 from fastapi import HTTPException, Request
@@ -123,42 +122,9 @@ def outbound(repo, event_id, source="stream"):
     )
     if not doc:
         raise HTTPException(404, "Событие не найдено.")
-    from .sports import match_url
-    url = match_url(doc)
-    if not url:raise HTTPException(404,'Ссылка на этот матч пока не подтверждена.')
-    template = setting(repo, "winline_referral")
-    return (
-        template.replace("{url}", quote(url, safe="")).replace("{event_id}", event_id)
-        if template and any(marker in template for marker in ('{url}','{event_id}'))
-        else url
-    )
-
-
-def referral_template(value):
-    value = text(value, 2000, True)
-    if not value:
-        return ""
-    if not any(marker in value for marker in ('{url}','{event_id}')):
-        raise HTTPException(422,'Для перехода на матч добавьте {url} или {event_id} в партнёрскую ссылку.')
-    unknown = re.findall(r"\{([^}]+)\}", value)
-    if any(k not in ("url", "event_id") for k in unknown) or "{" in re.sub(
-        r"\{(?:url|event_id)\}", "", value
-    ):
-        raise HTTPException(422, "Доступны подстановки {url} и {event_id}.")
-    parsed = urlsplit(
-        value.replace("{url}", "https%3A%2F%2Fwinline.ru").replace("{event_id}", "123")
-    )
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.fragment
-        or any(c in value for c in ("\r", "\n", "\\"))
-        or "." not in parsed.hostname
-    ):
-        raise HTTPException(422, "Нужна HTTPS-ссылка партнёрской программы.")
-    return value
+    from .seo import eligible,match_path
+    if not eligible(doc):raise HTTPException(404,'Страница матча недоступна.')
+    return match_path(doc)
 
 
 def usage_details(db,row):
@@ -609,29 +575,14 @@ def install(app, repo, settings):
         return {"ok": True}
 
     @app.get("/api/admin/links")
-    def links(request: Request):
+    def links(request:Request):
         accounts.admin_user(request)
-        return {
-            "template": setting(repo, "winline_referral"),
-            "example": "https://winline.ru/stavki/sport/xokkej/17130653",
-            "placeholders": ["{url}", "{event_id}"],
-        }
+        return {'enabled':False,'template':'','placeholders':[]}
 
     @app.put("/api/admin/links")
-    async def save_links(request: Request):
-        actor = accounts.admin_user(request, True)
-        accounts.mutation(request)
-        data = await accounts.body(request)
-        value = referral_template(data.get("template"))
-        with repo.connection() as db:
-            db.execute(
-                "INSERT OR REPLACE INTO site_settings VALUES (?,?,?)",
-                ("winline_referral", value, accounts.now()),
-            )
-            accounts.audit(
-                db, actor["id"], "links.updated", "winline", {"enabled": bool(value)}
-            )
-        return {"ok": True}
+    async def save_links(request:Request):
+        accounts.admin_user(request,True);accounts.mutation(request)
+        raise HTTPException(410,'Внешние переходы отключены.')
 
     @app.get("/api/admin/audit")
     def audit_log(request: Request, offset: int = 0):
