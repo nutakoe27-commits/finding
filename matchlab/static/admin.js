@@ -139,7 +139,7 @@ window.Admin = (() => {
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
+  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),pricing:()=>AdminPricing.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,links:loadLinks,audit:loadAudit};
   async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
@@ -183,5 +183,5 @@ window.Admin = (() => {
   });
   document.addEventListener("accountchange",()=>{elevatedUntil=0;if(location.hash==="#admin")open();});
   if(location.hash==="#admin")open();
-  return {open};
+  return {open,sensitive};
 })();

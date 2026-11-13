@@ -239,10 +239,12 @@ def reconcile(repo,settings,order):
 
 def create_order(repo,settings,user,body):
     if not checkout_allowed(settings,user):raise HTTPException(503,'Приём оплаты временно недоступен. Попробуйте позже.')
-    package=next((p for p in PACKAGES if p['id']==body.get('package_id')),None)
+    from .pricing import checkout
+    catalogue=checkout(repo,settings)
+    package=next((p for p in catalogue['packages'] if p['id']==body.get('package_id')),None)
     key=body.get('request_key');analysis_id=body.get('analysis_id')
     if not package or not isinstance(key,str) or not re.fullmatch(r'[a-f0-9]{32}',key):raise HTTPException(422,'Выберите пакет и повторите оплату.')
-    if body.get('offer_accepted') is not True or body.get('offer_version')!=offer_version(settings):raise HTTPException(422,'Примите условия приобретения разборов.')
+    if body.get('offer_accepted') is not True or body.get('offer_version')!=catalogue['offer_version']:raise HTTPException(422,'Условия обновились. Откройте тарифы заново и подтвердите актуальную оферту.')
     email=None
     if payment_mode(settings)=='live':
         from .billing_fiscal import receipt_email
@@ -261,7 +263,7 @@ def create_order(repo,settings,user,body):
             identifier=uuid4().hex;stamp=accounts.now()
             db.execute('''INSERT INTO payment_orders(id,user_id,request_key,mode,package_id,credits,amount_kopecks,state,
                 created_at,updated_at,analysis_id,offer_version,receipt_email) VALUES (?,?,?,?,?,?,?,'creating',?,?,?,?,?)''',
-                (identifier,user['id'],key,payment_mode(settings),package['id'],package['credits'],package['amount_kopecks'],stamp,stamp,analysis_id,offer_version(settings),email))
+                (identifier,user['id'],key,payment_mode(settings),package['id'],package['credits'],package['amount_kopecks'],stamp,stamp,analysis_id,catalogue['offer_version'],email))
             order=dict(db.execute('SELECT * FROM payment_orders WHERE id=?',(identifier,)).fetchone())
     if order['state'] in ('succeeded','canceled','refunded','failed'):return public_order(order)
     try:return reconcile(repo,settings,order)
@@ -322,14 +324,16 @@ def install(app,repo,settings):
     subscriptions.install(app,repo,settings)
     @app.get('/api/billing/config')
     def config(request:Request):
+        from .pricing import checkout
+        catalogue=checkout(repo,settings)
         allowed=checkout_allowed(settings,accounts.current_user(request,False));testing=payment_mode(settings)=='test'
         return JSONResponse({'enabled':active(repo,settings),'checkout_enabled':allowed,'test_checkout_allowed':allowed and testing,
-            'sales_state':'prelaunch' if testing else 'open','test_mode':testing,'packages':PACKAGES,'offer_version':offer_version(settings),'unlock_cost':1,
+            'sales_state':'prelaunch' if testing else 'open','test_mode':testing,'packages':catalogue['packages'],'offer_version':catalogue['offer_version'],'unlock_cost':1,
             'receipt_email_required':not testing,
             'offer_url':'/static/legal/test-purchase.html' if allowed and testing else '/static/legal/offer.html',
-            'public_offer_version':PUBLIC_OFFER_VERSION,'public_offer_url':'/static/legal/offer.html',
-            'subscriptions_enabled':subscriptions.enabled(settings) and allowed,'subscription_plans':subscriptions.plans(),
-            'recurring_version':subscriptions.VERSION,'credit_rule':'bet_only','skip_cost':0},
+            'public_offer_version':PUBLIC_OFFER_VERSION if catalogue['revision']=='builtin' else catalogue['offer_version'].removesuffix('.test'),'public_offer_url':'/static/legal/offer.html',
+            'subscriptions_enabled':subscriptions.enabled(settings) and allowed,'subscription_plans':catalogue['subscription_plans'],
+            'pricing_revision':catalogue['revision'],'recurring_version':catalogue['recurring_version'],'credit_rule':'bet_only','skip_cost':0},
             headers={'Cache-Control':'private, no-store'})
 
     @app.get('/api/billing/wallet')

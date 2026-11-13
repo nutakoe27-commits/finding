@@ -48,7 +48,7 @@ async def exercise(base):
                 assert not await page.locator('#subscription-offer').is_checked()
                 assert not await page.locator('#subscription-recurring').is_checked()
                 await page.locator('#subscription-pay').click()
-                await expect(page.locator('#credits-message')).to_contain_text('автоматические списания раз в 3 дня')
+                await expect(page.locator('#credits-message')).to_contain_text('автоматические списания по периоду выбранного тарифа')
                 await page.locator('#subscription-email').fill('buyer@example.ru')
                 await page.locator('#subscription-offer').check();await page.locator('#subscription-recurring').check()
                 await page.locator('#subscription-pay').click();await page.wait_for_url('https://yoomoney.ru/**')

@@ -58,9 +58,11 @@ def receipt(settings,order,*,mode='full_prepayment',quantity=None,description=No
 
 
 def subscription_receipt(settings,order):
-    from .subscriptions import period_hours
+    from .subscriptions import period_hours,period_label
+    # Keep the exact request body of legacy orders for provider idempotence.
+    duration=period_label(order) if str(order['package_id']).startswith('sub_') else f'{period_hours(order)} часа'
     value={'customer':{'email':receipt_email(order.get('receipt_email'))},'items':[{
-        'description':f'Безлимитный доступ к ИИ-разборам на {period_hours(order)} часа','quantity':'1.00',
+        'description':f'Безлимитный доступ к ИИ-разборам на {duration}','quantity':'1.00',
         'amount':money(order['amount_kopecks']),'vat_code':1,'payment_mode':'full_payment','payment_subject':'service'}]}
     if settings.yookassa_tax_system_code:value['tax_system_code']=settings.yookassa_tax_system_code
     return value

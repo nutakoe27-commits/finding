@@ -6,7 +6,7 @@ import re
 from fastapi import HTTPException,Request
 from . import accounts
 from .bookmakers import instant
-from .subscriptions import PLAN_PERIODS,period_hours
+from .subscriptions import period_for_id,period_hours
 from .billing_fiscal import refunded_units
 
 STATES=('creating','pending','succeeded','canceled','refunded','failed')
@@ -59,7 +59,7 @@ def report(repo,*,days=30,mode='test',state='',query='',offset=0,limit=25):
             'average_check_kopecks':round(gross/len(paid)) if paid else None,
             'payment_rate':len(paid)/len(rows) if rows else None,'credited_units':sum(r['credits'] for r in paid)},
         'statuses':dict(counts),'receipt_statuses':dict(receipts),'daily':[{'day':k,**v} for k,v in sorted(daily.items())],
-        'packages':[{'id':k[0],'units':k[1],'period_hours':PLAN_PERIODS.get(k[0]),**v} for k,v in sorted(packages.items())],
+        'packages':[{'id':k[0],'units':k[1],'period_hours':period_for_id(k[0]),**v} for k,v in sorted(packages.items())],
         'orders':[{k:r.get(k) for k in ORDER_FIELDS}|{'period_hours':period_hours(r) if r['subscription_id'] else None} for r in rows[offset:offset+limit]],
         'offset':offset,'limit':limit,'total':len(rows),'subscriptions':subscription_rows,
         'notice':'Тестовые операции. Реальные деньги не списывались.' if mode=='test' else 'Подтверждённые операции рабочего магазина ЮKassa.',

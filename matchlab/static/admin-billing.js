@@ -6,7 +6,7 @@ window.AdminBilling=(()=>{
   const num=n=>Number(n||0).toLocaleString('ru-RU');
   const unitRules=new Intl.PluralRules('ru'),units=n=>`${num(n)} ${{one:'разбор',few:'разбора',many:'разборов',other:'разбора'}[unitRules.select(n)]}`;
   const when=s=>s?new Date(s).toLocaleString('ru-RU',{timeZone:'Europe/Moscow',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
-  const period=o=>Number(o.period_hours)===72?'3 дня':'1 день';
+  const period=o=>{const n=(Number(o.period_hours)||24)/24;return n+' '+({one:'день',few:'дня',many:'дней',other:'дня'}[unitRules.select(n)]);};
   const subName=o=>(o.credits===0?'Безлимит':units(o.credits))+(o.subscription_id?' / '+period(o):'');
   const names={creating:'Создаётся',pending:'Ожидает оплаты',succeeded:'Оплачен',canceled:'Отменён',refunded:'Возвращён',failed:'Ошибка создания'};
   const kinds={payment:'Начисление за оплату',unlock:'Открытие разбора',bonus_unlock:'Открытие за бонус',refund:'Корректировка после возврата'};

@@ -29,12 +29,19 @@ PLAN_PERIODS = {'daily_one':24, 'daily_five':24, 'daily_unlimited':24,
 def period_hours(value):
     row=dict(value)
     identifier=row.get('plan_id') or row.get('package_id') or row.get('id')
+    dynamic=re.fullmatch(r'sub_([0-9]{2,4})_[a-f0-9]{32}_[a-f0-9]{12}_[dr]',str(identifier))
+    if dynamic and 24<=int(dynamic[1])<=8760 and int(dynamic[1])%24==0:return int(dynamic[1])
     try:return PLAN_PERIODS[identifier]
     except KeyError:raise ProviderMismatch('subscription_plan') from None
 
 
 def period_label(value):
-    return '3 дня' if period_hours(value)==72 else '1 день'
+    n=period_hours(value)//24
+    return str(n)+' '+('день' if n%10==1 and n%100!=11 else 'дня' if n%10 in (2,3,4) and n%100 not in (12,13,14) else 'дней')
+
+
+def period_for_id(identifier):
+    return period_hours({'id':identifier}) if identifier in PLAN_PERIODS or str(identifier).startswith('sub_') else None
 
 
 def credit_label(n):
@@ -69,8 +76,12 @@ def enabled(settings):
 
 def consent_text(plan):
     quantity = 'безлимитный доступ' if plan['credits'] == 0 else credit_label(plan['credits']) + ' на постоянный баланс'
+    def rub(n):return str(n//100)+(f',{n%100:02d}' if n%100 else '')+' ₽'
+    first=plan['amount_kopecks'];regular=plan.get('renewal_amount_kopecks',first);hours=period_hours(plan)
+    unit='часа' if hours%10 in (2,3,4) and hours%100 not in (12,13,14) else 'часов'
+    price=(rub(first)+' сейчас, затем '+rub(regular)) if first!=regular else rub(first)+' сейчас и далее'
     return (f"Подключаю {quantity}. Разрешаю ЮKassa сохранить способ оплаты, а сервису списывать "
-            f"{plan['amount_kopecks'] // 100} ₽ сейчас и далее раз в {period_label(plan)} (каждые {period_hours(plan)} часа) до отмены. "
+            f"{price} раз в {period_label(plan)} (каждые {hours} {unit}) до отмены. "
             'Отмена: Личный кабинет → Подписка → Отвязать карту и отменить подписку. '
             'Деньги за подписку списываются независимо от использования. '
             'Разбор расходуется только при открытии решения «Ставить»; «Пропустить» — бесплатно.')
@@ -81,8 +92,9 @@ def plans():
 
 
 def public(row):
+    from .pricing import document_url
     return {k: row[k] for k in ('id', 'plan_id', 'credits', 'amount_kopecks', 'state', 'auto_renew',
-                                'period_end_at', 'created_at', 'canceled_at', 'error_code')} | {'unlimited': row['credits'] == 0,'period_hours':period_hours(row)}
+                                'period_end_at', 'created_at', 'canceled_at', 'error_code')} | {'unlimited': row['credits'] == 0,'period_hours':period_hours(row),'recurring_url':document_url(row['offer_version'],'recurring')}
 
 
 def unlimited(db, user_id, mode, stamp=None):
@@ -98,13 +110,13 @@ def summary(db, user_id, mode):
             'unlimited_active': unlimited(db, user_id, mode)}
 
 
-def _order(db, settings, sub, period, request_key=None):
+def _order(db, settings, sub, period, request_key=None,first_amount=None):
     identifier = uuid4().hex; stamp = accounts.now()
     db.execute('''INSERT INTO payment_orders(id,user_id,request_key,mode,package_id,credits,amount_kopecks,state,
         created_at,updated_at,offer_version,receipt_email,subscription_id)
         VALUES (?,?,?,?,?,?,?,'creating',?,?,?,?,?)''',
         (identifier, sub['user_id'], request_key or uuid4().hex, sub['mode'], sub['plan_id'], sub['credits'],
-         sub['amount_kopecks'], stamp, stamp, sub['offer_version'], sub['receipt_email'], sub['id']))
+         first_amount if period==1 and first_amount is not None else sub['amount_kopecks'], stamp, stamp, sub['offer_version'], sub['receipt_email'], sub['id']))
     db.execute('''INSERT INTO billing_subscription_charges(order_id,subscription_id,period_number,payment_method_id,next_attempt_at)
         VALUES (?,?,?,?,?)''', (identifier, sub['id'], period, sub['payment_method_id'] if period > 1 else None, stamp))
     return dict(db.execute('SELECT * FROM payment_orders WHERE id=?', (identifier,)).fetchone())
@@ -115,14 +127,16 @@ def create(repo, settings, user, body):
     from .billing_fiscal import receipt_email
     if not enabled(settings) or not billing.checkout_allowed(settings, user):
         raise HTTPException(503, 'Подписки пока недоступны. Действующие разборы сохраняются.')
-    plan = next((p for p in PLANS if p['id'] == body.get('plan_id')), None)
+    from .pricing import checkout
+    catalogue=checkout(repo,settings)
+    plan = next((p for p in catalogue['subscription_plans'] if p['id'] == body.get('plan_id')), None)
     key = body.get('request_key')
     if not plan or not isinstance(key, str) or not re.fullmatch('[a-f0-9]{32}', key):
-        raise HTTPException(422, 'Выберите тариф подписки.')
-    if body.get('offer_version') != billing.offer_version(settings) or body.get('recurring_version') != VERSION:
+        raise HTTPException(422, 'Тариф недоступен или условия обновились. Закройте и снова откройте тарифы перед оплатой.')
+    if body.get('offer_version') != catalogue['offer_version'] or body.get('recurring_version') != catalogue['recurring_version']:
         raise HTTPException(422,'Условия обновились. Закройте и снова откройте тарифы, затем подтвердите новые условия.')
     if body.get('offer_accepted') is not True or body.get('recurring_accepted') is not True:
-        raise HTTPException(422, 'Отдельно подтвердите оферту и автоматические списания раз в 3 дня.')
+        raise HTTPException(422, 'Отдельно подтвердите оферту и автоматические списания по периоду выбранного тарифа.')
     email = receipt_email(body.get('receipt_email'))
     with repo.connection() as db:
         db.execute('BEGIN IMMEDIATE')
@@ -144,12 +158,12 @@ def create(repo, settings, user, body):
             db.execute('''INSERT INTO billing_subscriptions(id,user_id,mode,plan_id,credits,amount_kopecks,state,
                 receipt_email,created_at,updated_at,consent_at,consent_text,offer_version,recurring_version)
                 VALUES (?,?,?,?,?,?,'creating',?,?,?,?,?,?,?)''',
-                (identifier, user['id'], settings.billing_mode, plan['id'], plan['credits'], plan['amount_kopecks'],
-                 email, stamp, stamp, stamp, consent_text(plan), billing.offer_version(settings), VERSION))
+                (identifier, user['id'], settings.billing_mode, plan['id'], plan['credits'], plan['renewal_amount_kopecks'],
+                 email, stamp, stamp, stamp, consent_text(plan), catalogue['offer_version'], catalogue['recurring_version']))
             sub = dict(db.execute('SELECT * FROM billing_subscriptions WHERE id=?', (identifier,)).fetchone())
-            order = _order(db, settings, sub, 1, key)
+            order = _order(db, settings, sub, 1, key,first_amount=plan['amount_kopecks'])
             accounts.audit(db, user['id'], 'subscription.consent', identifier,
-                           {'plan': plan['id'], 'version': VERSION, 'amount_kopecks': plan['amount_kopecks'], 'period_hours': period_hours(plan)})
+                           {'plan': plan['id'], 'version': catalogue['recurring_version'], 'first_amount_kopecks': plan['amount_kopecks'], 'amount_kopecks': plan['renewal_amount_kopecks'], 'period_hours': period_hours(plan)})
     if order['state'] not in ('succeeded', 'refunded', 'canceled', 'failed'):
         return reconcile(repo, settings, order)
     return billing.public_order(order)
@@ -347,18 +361,25 @@ class Worker:
 
 
 def install(app, repo, settings):
+    def demo_plan():
+        from .pricing import checkout
+        plans=checkout(repo,settings)['subscription_plans']
+        if not plans:raise HTTPException(422,'Для демонстрации нужен хотя бы один доступный тариф подписки.')
+        return plans[min(1,len(plans)-1)]
+
     def demo_wallet(user):
         with repo.connection() as db:
             row=db.execute('SELECT value FROM site_settings WHERE key=?',('billing_unlink_demo:'+user['id'],)).fetchone()
         saved=json.loads(row['value']) if row else {}
-        stamp=accounts.now();end=(saved.get('ends_at') if saved.get('plan_version')==VERSION else None) or (datetime.now(timezone.utc)+timedelta(hours=72)).isoformat()
+        plan=demo_plan();hours=period_hours(plan)
+        stamp=accounts.now();end=(saved.get('ends_at') if saved.get('plan_version')==plan['id'] else None) or (datetime.now(timezone.utc)+timedelta(hours=hours)).isoformat()
         canceled=saved.get('canceled_at')
-        return {'demonstration':True,'balance':15,'bonus_balance':0,'adjustment_due':0,'receipt_email':None,
+        return {'demonstration':True,'balance':plan['credits'],'bonus_balance':0,'adjustment_due':0,'receipt_email':None,
             'test_mode':False,'orders':[],'subscription':{'current':{
-                'id':'demonstration','plan_id':'three_days_fifteen','credits':15,'amount_kopecks':229000,'period_hours':72,
+                'id':'demonstration','plan_id':plan['id'],'credits':plan['credits'],'amount_kopecks':plan['renewal_amount_kopecks'],'period_hours':hours,
                 'state':'canceled' if canceled else 'active','auto_renew':0 if canceled else 1,
-                'period_end_at':end,'created_at':stamp,'canceled_at':canceled,'error_code':None,'unlimited':False},
-                'history':[],'unlimited_active':False}}
+                'period_end_at':end,'created_at':stamp,'canceled_at':canceled,'error_code':None,'unlimited':plan['unlimited']},
+                'history':[],'unlimited_active':plan['unlimited']}}
 
     @app.get('/api/admin/billing/subscription-demo')
     def subscription_demo(request:Request):
@@ -371,7 +392,8 @@ def install(app, repo, settings):
         accounts.limited(repo,'billing-demo:'+user['id'],30,60)
         # This isolated setting never creates a subscription, payment, token,
         # credit or receipt. Actual cancellation uses the ordinary endpoint.
-        value={'ends_at':(datetime.now(timezone.utc)+timedelta(hours=72)).isoformat(),'plan_version':VERSION,
+        plan=demo_plan()
+        value={'ends_at':(datetime.now(timezone.utc)+timedelta(hours=period_hours(plan))).isoformat(),'plan_version':plan['id'],
                'canceled_at':accounts.now() if action=='cancel' else None}
         with repo.connection() as db:
             db.execute('INSERT OR REPLACE INTO site_settings VALUES (?,?,?)',

@@ -128,6 +128,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     billing.install(app,repo,settings)
     from . import seo
     seo.install(app,repo,settings)
+    from . import pricing,pricing_documents
+    pricing.install(app,repo,settings)
+    pricing_documents.install(app,repo)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     models = OrderedDict()
