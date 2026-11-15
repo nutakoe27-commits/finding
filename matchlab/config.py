@@ -45,6 +45,7 @@ class Settings:
     yandex_client_secret: str = field(default='',repr=False)
     vkid_client_id: str = ''
     billing_recurring_enabled: bool = False
+    participant_model_report: str = ""
 
     @property
     def database(self):
@@ -154,4 +155,5 @@ class Settings:
             billing_mode=billing_mode,billing_receipts_enabled=receipts=='true',yookassa_tax_system_code=tax_code,
             yandex_client_id=yandex_id,yandex_client_secret=yandex_secret,vkid_client_id=vkid_id,
             billing_recurring_enabled=recurring=='true',
+            participant_model_report=os.getenv('PARTICIPANT_MODEL_REPORT', '').strip(),
         )

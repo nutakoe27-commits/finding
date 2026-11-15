@@ -1,8 +1,8 @@
 # CPU inference on VPS-2
 
-This installs only inference infrastructure. It does not modify the website,
-its database, the collector database, payments, current Qwen answers, or public
-probabilities. The first intended consumer is the admin interface.
+The server and tunnel installers provide isolated inference infrastructure.
+The optional worker below connects it to the admin interface. The collector
+database, payments, current Qwen answers and public probabilities remain unchanged.
 
 VPS-2: `89.111.184.88`, SSH 22, Ubuntu 26.04/Python 3.14. VPS-1:
 `89.111.143.45`. The server binds **only** `127.0.0.1:8090`; VPS-1 reaches it
@@ -96,4 +96,83 @@ prognozich-model.service` on VPS-2. Source datasets and the website are untouche
 Targeted verification:
 ```bash
 PARTICIPANT_MODEL_BUNDLE=/path/to/bundle /path/to/catboost-venv/bin/python -m unittest discover -s tests -p test_participant_model_server.py
+```
+
+## Prospective admin experiment (after the successful feature audit)
+
+The site now has an **«Обученная модель»** admin tab. It reads a small report;
+model inference is performed by a separate timer on VPS-1 through the existing
+SSH tunnel. Current Qwen answers, public results and billing are unchanged.
+The report endpoint requires an authenticated admin, is not cached, and does
+not return raw features or credentials.
+
+On **VPS-1**, after `all_exported_features_match`:
+
+```bash
+cd /root/matchlab
+git pull --ff-only origin main
+bash deploy/participant_model/install-worker.sh
+systemctl restart matchlab.service
+journalctl -u prognozich-model-worker.service -n 5 --no-pager -o cat
+```
+
+Stop if any command fails. The installer starts the worker and its timer, and
+adds only `PARTICIPANT_MODEL_REPORT` to a dedicated `matchlab.service` drop-in.
+It does not change the site database or the collector. It uses system Python
+stdlib on VPS-1; CatBoost remains in its isolated environment on VPS-2.
+
+Storage and resource boundaries:
+
+- Collector `/var/lib/doscbot-collector/data/dataset.sqlite3`: SQLite `mode=ro`,
+  `query_only=ON`; systemd additionally mounts the collector directory read-only.
+- Exact feature preparation is vendored from doscbot revision
+  `e64e355ad7a76ad2f04a666fad6b82c9c2f45080` (see `preparation-source.json`).
+  All vendored files are checked against `vendor/SHA256.json` before use.
+- Model and original training export remain in
+  `/var/lib/doscbot-models/all-20261115-1`. The worker checks their hashes and
+  training population. The verified version has **1,030 labelled training
+  events / 2,060 rows**; the full export has 1,696 events including unlabelled ones.
+- Worker code: `/opt/prognozich-model-client/app`. Credentials remain root-only;
+  the site never receives the inference token.
+- Immutable prediction files: `/var/lib/prognozich-model-client/frozen/` (private).
+  Back up this directory: losing it loses the prospective evidence.
+- Admin summary: `/var/lib/prognozich-model-client/report.json` (atomic replacement).
+- `prognozich-model-worker.timer`: a run 60 seconds after the previous run ends.
+  At most 10 new events per run, two sequential CPU inferences each. Worker cap
+  50% CPU / 1 GiB RAM. Does not use Qwen slots, GPU, or the old finding database.
+
+Only new snapshots after model readiness are eligible. Training events and
+aliases with the same statistics ID are excluded. A fresh native schedule
+observation (within five minutes), unchanged participants/start time, supported
+market, and at least the training horizon (60 minutes) remaining are required.
+An already observed outcome blocks prediction. Network calls occur after the
+collector read transaction closes. Partial pairs and late completions are not
+saved. One frozen pair per event and model version; subsequent runs only score it.
+
+Scoring uses the pinned preparation code's conservative result matching and
+normal-period rules. Unsupported overtime/retirements, ambiguous identities,
+changed start times or missing outcomes remain unscored with a reason. This can
+bias coverage, so the UI exposes pending counts and diagnostics. It shows Brier,
+log loss, a same-sample odds baseline, calibration bins and per-sport metrics.
+Two participant rows from one match are correlated; event count is the sample
+size. Probabilities are not renormalised into a two-way/three-way distribution.
+Training fit is not presented as future accuracy; no threshold automatically
+marks the model as validated. Compare versions only on appropriately held-out
+new fixtures, not by retraining on these outcomes and reusing the same test.
+
+No records immediately after installation is normal if fresh eligible snapshots
+are missing; check the admin diagnostics. A worker error prints only its type
+in the journal (no tokens/payloads). A report older than five minutes is visibly
+marked stale. To pause collection while preserving data:
+
+```bash
+systemctl disable --now prognozich-model-worker.timer
+systemctl stop prognozich-model-worker.service
+```
+
+Targeted verification:
+
+```bash
+PYTHONPATH=tests .venv/bin/python -m unittest test_participant_model_worker test_participant_model_admin
+PYTHONPATH=tests .venv/bin/python tests/browser_participant_model.py
 ```

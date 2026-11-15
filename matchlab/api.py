@@ -125,6 +125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     push.install(app,repo,settings)
     from . import public_results
     public_results.install(app,repo)
+    from . import participant_model_admin
+    participant_model_admin.install(app,repo,settings)
     billing.install(app,repo,settings)
     from . import seo
     seo.install(app,repo,settings)

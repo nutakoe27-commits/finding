@@ -138,13 +138,13 @@ window.Admin = (() => {
   }
   $("quality-saved").addEventListener('click',()=>loadQuality('saved'));
   $("quality-historical").addEventListener('click',()=>loadQuality('historical-results'));
-  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),pricing:()=>AdminPricing.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,audit:loadAudit};
+  const loaders={overview:loadOverview,automation:loadAutomation,results:()=>AdminResults.load(),model:()=>AdminModel.load(),tokens:()=>AdminTokens.load(),billing:()=>AdminBilling.load(),pricing:()=>AdminPricing.load(),quality:async()=>{},users:loadUsers,push:loadPush,promos:loadPromos,audit:loadAudit};
   async function load(){const id=++request;$("breadcrumb").textContent="Управление / "+document.querySelector(`[data-admin-tab="${tab}"]`).textContent;$("admin-refresh").disabled=true;try{await loaders[tab]();}catch(error){if(id===request)message(error.message,true);}finally{if(id===request)$("admin-refresh").disabled=false;}}
   async function open(){
     await Account.ready;const allowed=Account.user?.role==="admin";$("admin-denied").hidden=allowed;$("admin-content").hidden=!allowed;$("admin-refresh").hidden=!allowed;
     if(allowed)await load();
   }
-  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminTokens.stop();AdminBilling.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
+  document.querySelectorAll("[data-admin-tab]").forEach(b=>b.addEventListener("click",()=>{AdminResults.stop();AdminModel.stop();AdminTokens.stop();AdminBilling.stop();tab=b.dataset.adminTab;document.querySelectorAll("[data-admin-tab]").forEach(i=>{i.classList.toggle("active",i===b);i.setAttribute("aria-current",i===b?"page":"false");});document.querySelectorAll("[data-admin-panel]").forEach(p=>{p.hidden=p.dataset.adminPanel!==tab;});message("");load();}));
   document.querySelector('.admin-tabs').addEventListener('keydown',event=>{
     const tabs=[...document.querySelectorAll('[data-admin-tab]')],index=tabs.indexOf(event.target);
     if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
