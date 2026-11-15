@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import sqlite3
 from urllib.request import Request, urlopen
 
 
@@ -20,6 +21,15 @@ def canonical(value):
 
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def error_details(error):
+    """Diagnostics without SQL, parameters, payloads, paths or credentials."""
+    result = {'error_type': type(error).__name__}
+    if isinstance(error, sqlite3.Error):
+        result.update(sqlite_code=getattr(error, 'sqlite_errorcode', None),
+                      sqlite_name=getattr(error, 'sqlite_errorname', None))
+    return result
 
 
 def load_source():
@@ -236,9 +246,11 @@ def main():
             result=cycle(args.bundle,args.database,args.state,args.token_file)
         except Exception as error:
             result={'format':'prognozich.model-admin.v1','state':'error',
-                'checked_at':datetime.now(timezone.utc).isoformat(),'error_type':type(error).__name__}
+                'checked_at':datetime.now(timezone.utc).isoformat(),**error_details(error)}
         atomic_report(args.state/'report.json',result)
-        print(json.dumps({k:result.get(k) for k in ('state','recorded_events','scored_events','pending_events','error_type')}))
+        print(json.dumps({k:result.get(k) for k in ('state','recorded_events','scored_events','pending_events','error_type','sqlite_code','sqlite_name')}))
+        if result['state'] == 'error':
+            raise SystemExit(1)
 
 
 if __name__ == '__main__': main()

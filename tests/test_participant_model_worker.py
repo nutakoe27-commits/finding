@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -119,3 +120,67 @@ class WorkerTests(unittest.TestCase):
                 if delta:
                     with self.assertRaises(ValueError):w.remote_predict(features,'model','schema','secret')
                 else:self.assertEqual(w.remote_predict(features,'model','schema','secret'),.7)
+
+
+class WalReaderTests(unittest.TestCase):
+    @unittest.skipIf(os.geteuid() == 0, 'Permission reproduction requires an unprivileged user')
+    def test_checkpointed_wal_reader_needs_sidecars_but_does_not_change_database(self):
+        from contextlib import closing
+        from collector.monitor_data import readonly
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);p=root/'dataset.sqlite3'
+            with closing(sqlite3.connect(p)) as writer:
+                writer.execute('PRAGMA journal_mode=WAL')
+                writer.execute('CREATE TABLE metadata (key TEXT, value TEXT)')
+                writer.execute("INSERT INTO metadata VALUES ('owner','doscbot.fresh-collector.v1')")
+                writer.commit()
+            self.assertFalse(Path(str(p)+'-wal').exists())
+            self.assertFalse(Path(str(p)+'-shm').exists())
+            before=p.read_bytes();p.chmod(0o444);root.chmod(0o555)
+            try:
+                with closing(readonly(p)) as reader:
+                    with self.assertRaises(sqlite3.OperationalError) as raised:
+                        reader.execute('SELECT * FROM metadata').fetchall()
+                self.assertIn(raised.exception.sqlite_errorname,('SQLITE_CANTOPEN','SQLITE_READONLY_DIRECTORY'))
+            finally:root.chmod(0o755)
+            # Only directory permissions change; the source file remains read-only.
+            with closing(readonly(p)) as reader:
+                self.assertEqual(reader.execute('SELECT value FROM metadata').fetchone()[0],'doscbot.fresh-collector.v1')
+                with self.assertRaises(sqlite3.OperationalError):reader.execute('DELETE FROM metadata')
+            self.assertEqual(p.read_bytes(),before)
+            self.assertEqual(p.stat().st_mode & 0o777,0o444)
+
+    def test_read_only_connections_observe_new_collector_wal_commits(self):
+        from contextlib import closing
+        from collector.monitor_data import readonly
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'dataset.sqlite3'
+            with closing(sqlite3.connect(p)) as writer:
+                writer.execute('PRAGMA journal_mode=WAL');writer.execute('CREATE TABLE samples (id INTEGER)')
+                writer.execute('INSERT INTO samples VALUES (1)');writer.commit()
+                with closing(readonly(p)) as reader:
+                    self.assertEqual(reader.execute('SELECT count(*) FROM samples').fetchone()[0],1)
+                    writer.execute('INSERT INTO samples VALUES (2)');writer.commit()
+                    self.assertEqual(reader.execute('SELECT count(*) FROM samples').fetchone()[0],1)
+                with closing(readonly(p)) as reader:
+                    self.assertEqual(reader.execute('SELECT count(*) FROM samples').fetchone()[0],2)
+                    with self.assertRaises(sqlite3.OperationalError):reader.execute('INSERT INTO samples VALUES (3)')
+                self.assertEqual(writer.execute('SELECT count(*) FROM samples').fetchone()[0],2)
+
+    def test_main_records_safe_sqlite_code_and_exits_unsuccessfully(self):
+        from contextlib import redirect_stdout
+        import io
+        with tempfile.TemporaryDirectory() as folder:
+            with sqlite3.connect(':memory:') as db:
+                try:db.execute('SELECT private_diagnostic_fixture')
+                except sqlite3.Error as error:failure=error
+            output=io.StringIO()
+            with patch.object(w,'cycle',side_effect=failure),patch.object(w.sys,'argv',['worker','--state',folder]),redirect_stdout(output):
+                with self.assertRaises(SystemExit) as exited:w.main()
+            self.assertEqual(exited.exception.code,1)
+            result=json.loads((Path(folder)/'report.json').read_text())
+            self.assertEqual(result['sqlite_name'],'SQLITE_ERROR')
+            self.assertEqual(result['sqlite_code'],1)
+            self.assertEqual(json.loads(output.getvalue())['state'],'error')
+            self.assertNotIn('private_diagnostic_fixture',output.getvalue())
+            self.assertNotIn('private_diagnostic_fixture',json.dumps(result))

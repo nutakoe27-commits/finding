@@ -124,7 +124,12 @@ stdlib on VPS-1; CatBoost remains in its isolated environment on VPS-2.
 Storage and resource boundaries:
 
 - Collector `/var/lib/doscbot-collector/data/dataset.sqlite3`: SQLite `mode=ro`,
-  `query_only=ON`; systemd additionally mounts the collector directory read-only.
+  `query_only=ON`; systemd additionally mounts the database file read-only.
+  Its directory is writable so SQLite can create WAL/SHM coordination files,
+  including when a checkpointed WAL database has no sidecars yet. The reader
+  does not modify table contents or checkpoint the source. Individual sidecars
+  are not bind-mounted because the collector may recreate them. Do not use
+  `immutable=1`: it would ignore the collector's new WAL commits.
 - Exact feature preparation is vendored from doscbot revision
   `e64e355ad7a76ad2f04a666fad6b82c9c2f45080` (see `preparation-source.json`).
   All vendored files are checked against `vendor/SHA256.json` before use.
@@ -161,8 +166,10 @@ marks the model as validated. Compare versions only on appropriately held-out
 new fixtures, not by retraining on these outcomes and reusing the same test.
 
 No records immediately after installation is normal if fresh eligible snapshots
-are missing; check the admin diagnostics. A worker error prints only its type
-in the journal (no tokens/payloads). A report older than five minutes is visibly
+are missing; check the admin diagnostics. A worker error prints its type and,
+for SQLite failures, its numeric/symbolic code in the journal (no SQL, tokens or
+payloads); the service exits unsuccessfully instead of reporting success.
+A report older than five minutes is visibly
 marked stale. To pause collection while preserving data:
 
 ```bash

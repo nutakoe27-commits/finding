@@ -34,8 +34,11 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadOnlyPaths=/var/lib/doscbot-collector/data /var/lib/doscbot-models
-ReadWritePaths=/var/lib/prognozich-model-client
+# A read-only WAL reader may still need to create -wal/-shm sidecars.
+# Protect the database file, not the whole directory. SQL remains mode=ro/query_only.
+# Do not bind individual sidecars: SQLite can remove/recreate them between reads.
+ReadOnlyPaths=/var/lib/doscbot-collector/data/dataset.sqlite3 /var/lib/doscbot-models
+ReadWritePaths=/var/lib/prognozich-model-client /var/lib/doscbot-collector/data
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
