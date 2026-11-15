@@ -122,6 +122,62 @@ class WorkerTests(unittest.TestCase):
                 else:self.assertEqual(w.remote_predict(features,'model','schema','secret'),.7)
 
 
+    def catalog(self, *, at=None, changes=None, present=True, corrupt=False, owned=True):
+        path=self.root/'source/winline.sqlite3';path.parent.mkdir(exist_ok=True)
+        observed=(at or self.now).isoformat()
+        raw={'id':99,'idSport':1,'isLive':False,'date':self.new['event']['kickoff_at'],'members':['A','B'],'idRadar':'new'}
+        raw.update(changes or {})
+        with sqlite3.connect(path) as db:
+            db.execute('CREATE TABLE IF NOT EXISTS snapshots(id INTEGER,observed_at TEXT)')
+            db.execute('CREATE TABLE IF NOT EXISTS events(id INTEGER,last_seen TEXT,raw_json TEXT,content_hash TEXT,snapshot_id INTEGER)')
+            db.execute('DELETE FROM snapshots');db.execute('DELETE FROM events')
+            db.execute('INSERT INTO snapshots VALUES(1,?)',(observed,))
+            if present:db.execute('INSERT INTO events VALUES(99,?,?,?,1)',(observed,w.canonical(raw).decode(),'bad' if corrupt else w.digest(raw)))
+        with sqlite3.connect(self.db) as db:
+            db.execute("DELETE FROM metadata WHERE key='source_archive'")
+            db.execute("INSERT INTO metadata VALUES('source_archive',?)",(str(path.resolve()) if owned else '/not-this-archive',))
+
+    def test_fresh_catalog_accepts_unchanged_event_with_old_change_history(self):
+        with sqlite3.connect(self.db) as db:
+            old=(self.now-timedelta(hours=6)).isoformat()
+            db.execute("UPDATE observations SET observed_at=?,received_at=? WHERE kind='event'",(old,old))
+        self.catalog();before=self.db.read_bytes();source=self.root/'source/winline.sqlite3';source_before=source.read_bytes()
+        r=self.cycle()
+        self.assertEqual(r['recorded_events'],1,r)
+        self.assertEqual(self.db.read_bytes(),before);self.assertEqual(source.read_bytes(),source_before)
+        item=json.loads(next((self.state/'frozen').rglob('*.json')).read_text())['data']
+        self.assertEqual(item['schedule_evidence']['kind'],'current_catalog')
+        self.assertEqual(item['schedule_evidence']['observed_at'],self.now.isoformat())
+        self.assertEqual(self.predict.call_count,2)
+
+    def test_catalog_cannot_fall_back_to_old_history_when_event_missing_or_changed(self):
+        for kw,reason in [({'present':False},'not_in_verified_current_catalog'),
+                          ({'corrupt':True},'not_in_verified_current_catalog'),
+                          ({'changes':{'isLive':True}},'schedule_or_identity_changed'),
+                          ({'changes':{'members':['B','A']}},'schedule_or_identity_changed'),
+                          ({'changes':{'date':(self.now+timedelta(hours=4)).isoformat()}},'schedule_or_identity_changed')]:
+            with self.subTest(kw=kw):
+                self.catalog(**kw);r=self.cycle()
+                self.assertEqual(r['recorded_events'],0);self.assertEqual(r['skipped'][reason],1)
+        self.predict.assert_not_called()
+
+    def test_stale_future_or_unowned_catalog_rejected(self):
+        for kw,reason in [({'at':self.now-timedelta(minutes=6)},'current_catalog_stale_or_future'),
+                          ({'at':self.now+timedelta(seconds=1)},'current_catalog_stale_or_future'),
+                          ({'owned':False},'current_catalog_unverified')]:
+            with self.subTest(kw=kw):
+                self.catalog(**kw);r=self.cycle();self.assertEqual(r['recorded_events'],0)
+                self.assertEqual(r['skipped'][reason],1)
+        self.predict.assert_not_called()
+
+    def test_schedule_expiring_during_inference_not_frozen(self):
+        self.catalog(at=self.now-timedelta(minutes=4,seconds=59))
+        def delayed(*args):Clock.value=self.now+timedelta(seconds=2);return .4
+        self.predict.side_effect=delayed
+        r=self.cycle();self.assertEqual(r['recorded_events'],0)
+        self.assertEqual(r['skipped']['schedule_expired_during_inference'],1)
+
+
 class WalReaderTests(unittest.TestCase):
     @unittest.skipIf(os.geteuid() == 0, 'Permission reproduction requires an unprivileged user')
     def test_checkpointed_wal_reader_needs_sidecars_but_does_not_change_database(self):

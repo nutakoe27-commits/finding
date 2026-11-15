@@ -38,6 +38,7 @@ PrivateTmp=true
 # Protect the database file, not the whole directory. SQL remains mode=ro/query_only.
 # Do not bind individual sidecars: SQLite can remove/recreate them between reads.
 ReadOnlyPaths=/var/lib/doscbot-collector/data/dataset.sqlite3 /var/lib/doscbot-models
+ReadOnlyPaths=-/var/lib/doscbot-collector/data/source/winline.sqlite3
 ReadWritePaths=/var/lib/prognozich-model-client /var/lib/doscbot-collector/data
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any

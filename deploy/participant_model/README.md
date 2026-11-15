@@ -147,9 +147,20 @@ Storage and resource boundaries:
   50% CPU / 1 GiB RAM. Does not use Qwen slots, GPU, or the old finding database.
 
 Only new snapshots after model readiness are eligible. Training events and
-aliases with the same statistics ID are excluded. A fresh native schedule
-observation (within five minutes), unchanged participants/start time, supported
-market, and at least the training horizon (60 minutes) remaining are required.
+aliases with the same statistics ID are excluded. Schedule freshness comes from
+the latest snapshot in this collector's own `source/winline.sqlite3`, whose path
+must match the dataset's `source_archive` ownership metadata. The event must be
+present in that snapshot, with a matching `last_seen` and raw-content checksum.
+Change history alone is not a freshness clock: unchanged events retain their
+old history timestamp despite being observed again. Only when that source archive
+is absent can a native observation less than five minutes old be used instead.
+A stale/untrusted catalogue or a missing event cannot fall back to old history.
+The source database is also opened read-only and its file is protected by systemd;
+SQLite can create its WAL/SHM sidecars as described above. The saved prediction
+includes schedule provenance (snapshot/time/content hash), separate from features.
+Unchanged participants/start time, a supported market, a schedule observation
+within five minutes through inference completion, and at least the training
+horizon (60 minutes) remaining are required.
 An already observed outcome blocks prediction. Network calls occur after the
 collector read transaction closes. Partial pairs and late completions are not
 saved. One frozen pair per event and model version; subsequent runs only score it.

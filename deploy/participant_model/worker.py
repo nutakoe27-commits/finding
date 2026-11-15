@@ -59,6 +59,34 @@ def read_packets(directory):
     return result
 
 
+def current_catalog(database, db, cutoff):
+    """Read latest presence, not change-history timestamps, from the owned archive."""
+    from collector.monitor_data import readonly
+    from collector.store import instant
+    path = database.parent/'source/winline.sqlite3'
+    if not path.is_file():
+        return None, {'state': 'not_available'}
+    owner = db.execute("SELECT value FROM metadata WHERE key='source_archive'").fetchone()
+    if (path.is_symlink() or not path.resolve().is_relative_to(database.parent.resolve()) or
+            not owner or owner[0] != str(path.resolve())):
+        return {}, {'state': 'unverified'}
+    with closing(readonly(path)) as source:
+        snapshot = source.execute('SELECT id,observed_at FROM snapshots ORDER BY id DESC LIMIT 1').fetchone()
+        if not snapshot:
+            return {}, {'state': 'empty'}
+        info = {'state': 'ready', 'observed_at': snapshot['observed_at'], 'snapshot_id': snapshot['id']}
+        age = (cutoff-instant(snapshot['observed_at'])).total_seconds()
+        if not 0 <= age <= 300:
+            return {}, {**info, 'state': 'stale_or_future'}
+        result = {}
+        for row in source.execute('SELECT id,last_seen,raw_json,content_hash FROM events WHERE snapshot_id=?', (snapshot['id'],)):
+            if (instant(row['last_seen']) != instant(snapshot['observed_at']) or
+                    hashlib.sha256(row['raw_json'].encode()).hexdigest() != row['content_hash']):
+                continue
+            result[str(row['id'])] = (json.loads(row['raw_json']), row['content_hash'])
+        return result, info
+
+
 def remote_predict(features, model_sha, schema_sha, token):
     request = Request('http://127.0.0.1:18090/predict',
         data=canonical({'features': features, 'model_sha256': model_sha}),
@@ -113,6 +141,8 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         if db.execute("SELECT value FROM metadata WHERE key='owner'").fetchone()[0] != 'doscbot.fresh-collector.v1':
             raise ValueError('Wrong collector database')
         protected = ev.training_statistics_ids(db, trained)
+        current = datetime.now(timezone.utc)
+        catalogue, catalogue_info = current_catalog(database, db, current)
         rows = db.execute('''WITH ranked AS (
             SELECT id,row_number() OVER(PARTITION BY event_id ORDER BY julianday(as_of) DESC,id DESC) n
             FROM samples WHERE julianday(as_of)>=julianday(?) AND julianday(as_of)<=julianday(?)
@@ -136,10 +166,21 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                 market, reason = tr.winner_market(e)
                 if reason:
                     skipped[reason] += 1; continue
-                native = native_at(db, e['source_event_id'], current)
-                if not native or (current-instant(native[0]['observed_at'])).total_seconds() > 300:
-                    skipped['current_schedule_stale_or_missing'] += 1; continue
-                value = native[1]
+                if catalogue is not None:
+                    if catalogue_info['state'] != 'ready':
+                        skipped['current_catalog_'+catalogue_info['state']] += 1; continue
+                    entry = catalogue.get(e['source_event_id'])
+                    if not entry:
+                        skipped['not_in_verified_current_catalog'] += 1; continue
+                    value, source_sha = entry
+                    evidence = {'kind': 'current_catalog', **catalogue_info, 'event_sha256': source_sha}
+                else:
+                    native = native_at(db, e['source_event_id'], current)
+                    if not native or (current-instant(native[0]['observed_at'])).total_seconds() > 300:
+                        skipped['current_schedule_stale_or_missing'] += 1; continue
+                    value = native[1]
+                    evidence = {'kind': 'event_observation', 'observed_at': native[0]['observed_at'],
+                                'event_sha256': native[0]['sha256']}
                 if (value.get('isLive') not in (False,0,None) or type(value.get('idSport')) is not int or
                         tr.NATIVE_SPORTS.get(value['idSport']) != e['sport'] or str(value.get('id')) != e['source_event_id'] or
                         [participant_key(n) for n in value.get('members',[])] != [participant_key(e[n]) for n in ('home','away')] or
@@ -150,7 +191,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                     skipped['outcome_already_exists'] += 1; continue
                 features = [{'side':side,'features':f} for side,f in tr.participant_rows(payload,market)]
                 for f in features: ev.vector(f['features'],names)
-                candidates.append({'statistics_id':sid, 'packet':{'format':'doscbot.frozen-forecast.v1',
+                candidates.append({'statistics_id':sid, 'schedule_evidence':evidence, 'packet':{'format':'doscbot.frozen-forecast.v1',
                     'event':{k:e.get(k) for k in ('source_event_id','sport','home','away','competition','kickoff_at')},
                     'sample_sha256':row['sha256'],'sample_as_of':row['as_of'],
                     'model_sha256':metrics['model_sha256'],'market':market,'rows':features}})
@@ -163,6 +204,8 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
     inference_error = None
     for item in candidates:
         packet = item['packet']
+        if (datetime.now(timezone.utc)-instant(item['schedule_evidence']['observed_at'])).total_seconds() > 300:
+            skipped['schedule_expired_before_inference'] += 1; continue
         try:
             for row in packet['rows']:
                 row['probability'] = predict(row['features'],metrics['model_sha256'],metrics['schema_sha256'],token)
@@ -171,6 +214,8 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         issued = datetime.now(timezone.utc)
         if issued < current or instant(packet['event']['kickoff_at'])-issued < lead:
             skipped['horizon_passed_during_inference'] += 1; continue
+        if (issued-instant(item['schedule_evidence']['observed_at'])).total_seconds() > 300:
+            skipped['schedule_expired_during_inference'] += 1; continue
         packet['issued_at'] = issued.isoformat()
         item['header'] = {'mode':'prospective','model_sha256':metrics['model_sha256'],
             'model_ready_at':ready.isoformat(),'lead_minutes':manifest['lead_minutes'],
@@ -227,6 +272,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         'evaluation':evaluate(scored,probabilities) if scored else None,
         'matches':sorted(matches,key=lambda m:m['issued_at'],reverse=True)[:100],
         'skipped':dict(skipped),'unscored_reasons':dict(unscored),'inference_error':inference_error,
+        'catalogue':catalogue_info,
         'experimental':True,'mode':'prospective','quality_verified':False}
 
 
@@ -248,7 +294,7 @@ def main():
             result={'format':'prognozich.model-admin.v1','state':'error',
                 'checked_at':datetime.now(timezone.utc).isoformat(),**error_details(error)}
         atomic_report(args.state/'report.json',result)
-        print(json.dumps({k:result.get(k) for k in ('state','recorded_events','scored_events','pending_events','error_type','sqlite_code','sqlite_name')}))
+        print(json.dumps({k:result.get(k) for k in ('state','recorded_events','scored_events','pending_events','catalogue','skipped','inference_error','error_type','sqlite_code','sqlite_name')}))
         if result['state'] == 'error':
             raise SystemExit(1)
 
