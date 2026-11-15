@@ -558,6 +558,47 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(held['reason'],'future_result')
             self.assertEqual(json.loads(held['payload']),suspicious['data'])
 
+    def test_invalid_result_text_is_preserved_and_does_not_block_valid_results(self):
+        rows=[]
+        for field,value in [('member1','А'*962),('member2','Б'*501),
+                            ('championship','Л'*1472),('score','1'*501),
+                            ('member1',None),('championship',123)]:
+            row=result(cursor=len(rows)+1)
+            row['data'][field]=value
+            rows.append(rekey(row))
+        valid=result(cursor=len(rows)+1)
+        rows.append(valid)
+        for _ in range(2):
+            response=self.send('results',source='a'*64,rows=rows)
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertEqual(response.json()['quarantined'],6)
+        with self.repo.connection() as db:
+            held=db.execute('SELECT cursor,payload,reason FROM archive_quarantined_results ORDER BY cursor').fetchall()
+            self.assertEqual(len(held),6)
+            for stored,original in zip(held,rows):
+                self.assertEqual(json.loads(stored['payload']),original['data'])
+                self.assertEqual(stored['reason'],'invalid_text')
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],1)
+        self.assertEqual(self.client.get('/api/archive/results').json()['total'],1)
+        changed=deepcopy(rows[0]);changed['data']['score']='9:0'
+        response=self.send('results',source='a'*64,rows=[changed])
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.headers['X-Matchlab-Archive-Reason'],'result_cursor_conflict')
+        # Corrected source observations use a new cursor and remain importable.
+        corrected=deepcopy(rows[3]);corrected['cursor']=8;corrected['data']['score']='2:1'
+        response=self.send('results',source='a'*64,rows=[corrected])
+        self.assertEqual(response.status_code,200,response.text)
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_versions').fetchone()[0],2)
+
+    def test_invalid_text_does_not_bypass_result_identity_validation(self):
+        row=result();row['data']['member1']='А'*962
+        response=self.send('results',source='a'*64,rows=[row])
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.headers['X-Matchlab-Archive-Reason'],'result_identity_mismatch')
+        with self.repo.connection() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM archive_quarantined_results').fetchone()[0],0)
+
     def test_quarantine_replay_is_idempotent_and_immutable(self):
         suspicious=result()
         suspicious['data']['date']=(datetime.now(UTC)+timedelta(days=1)).isoformat()

@@ -129,6 +129,24 @@ class ArchiveSyncTests(unittest.TestCase):
         self.assertEqual(last['cursor'],3)
         self.assertEqual(self.client.get('/api/archive/results').json()['results'][0]['score'],'3:1')
 
+    def test_oversized_source_text_does_not_stall_delivery_cursor(self):
+        bad=result()['data'];bad['member1']='А'*1153
+        good=result()['data']
+        save_results(self.db,self.capture,2,0,[bad,good])
+        state={}
+        response=cycle(self.client,self.path,self.root,state)
+        self.assertEqual((response['state'],response['cursor'],response['pending']),('ok',2,0))
+        status=self.client.get('/api/archive/status').json()
+        self.assertEqual((status['stored_results'],status['quarantined_results'],status['sent_cursor']),(1,1,2))
+        self.assertTrue(status['connected'])
+        state['cursor']=0
+        cycle(self.client,self.path,self.root,state)
+        self.assertEqual(state['cursor'],2)
+        self.assertEqual(self.client.get('/api/archive/status').json()['quarantined_results'],1)
+        corrected=deepcopy(good);corrected['score']='83:72'
+        save_results(self.db,self.capture,2,0,[corrected])
+        self.assertEqual(cycle(self.client,self.path,self.root,state)['cursor'],3)
+
     def test_replicates_all_events_results_selected_markets_and_replays_without_duplicates(
         self,
     ):

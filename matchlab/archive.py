@@ -293,9 +293,15 @@ def ingest(repo, body):
                     raise ValueError("Некорректный курсор")
                 if not re.fullmatch(r"[a-f0-9]{64}", row["result_key"]):
                     raise ValueError("Некорректный ключ результата")
-                for field in ("member1", "member2", "championship"):
-                    label(r.get(field), 500)
-                label(r.get("score"), 500, True)
+                text_error = False
+                try:
+                    for field in ("member1", "member2", "championship"):
+                        label(r.get(field), 500)
+                    label(r.get("score"), 500, True)
+                except ValueError:
+                    # Preserve malformed source content verbatim in quarantine;
+                    # never truncate identity fields or stall unrelated results.
+                    text_error = True
                 unidentified = r.get("date") is None or not (
                     r.get("member1") or r.get("member2")
                 )
@@ -324,14 +330,15 @@ def ingest(repo, body):
                         row["result_key"], row["sport_id"], row["sport_label"], observed, payload,
                     ):
                         raise ValueError("Курсор относится к другой версии результата")
-                if future_result:
+                quarantine_reason = "invalid_text" if text_error else "future_result" if future_result else None
+                if quarantine_reason:
                     # A malformed observation must not poison the whole batch.
                     # Preserve it outside BOTH result tables: even once its date
                     # has passed, it is not a confirmed historical result.
                     db.execute(
                         "INSERT OR IGNORE INTO archive_quarantined_results VALUES (?,?,?,?,?,?,?,?,?)",
                         (source, cursor, row["result_key"], row["sport_id"], row["sport_label"],
-                         observed, received, payload, "future_result"),
+                         observed, received, payload, quarantine_reason),
                     )
                     quarantined += 1
                     continue
