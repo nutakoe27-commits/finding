@@ -54,7 +54,7 @@ must enforce sample binding, pre-match cutoff and the original training
 feature preparation before calling it. It must persist pre-match predictions
 separately for prospective evaluation; a later replay is not a live forecast.
 
-## Verified bundle and outstanding integration dependency
+## Verified bundle and feature preparation
 
 `all-20261115-1`: 1030 labelled events / 2060 participant rows; 54 features;
 111 trees. CatBoost 1.2.10 reproduced training log loss
@@ -64,9 +64,20 @@ test on an old dataset row, **not** a new-match quality measurement.
 
 Expected feature-preparation hash from metrics:
 `7953db0396a7ef577c525645f0b9dc421148891f97ffc71e69911558c2140b5c`.
-Supplied collector code hash:
-`607b6ef4456e957b83d07e3a0674092df44b295e0556a1674d8f32d2fa70e677`.
-Resolve the source revision difference before calculating new match features.
+The exact preparation source has been located in
+`nutakoe27-commits/doscbot`, branch `feat/fresh-sports-collector`, commits
+`1d12898`, `2732619`, and `e64e355` (identical preparation hash).
+This revision hashes SEVEN modules: `training`, `training_evidence`,
+`training_diagnostics`, `profiles`, `store`, `outcomes`, `monitor_data`.
+The original VPS collector archive was older; computing the old five-module
+hash on the trainer is also incorrect and does not indicate corrupted code.
+Use an isolated copy of the verified source, not an update of the live collector.
+`audit-features.py --code /path/to/source-root` checks this exact hash and
+reconstructs all exported participant features from immutable samples in the
+new collector database opened with `mode=ro` and `query_only=ON`. It does not
+query outcomes or run inference, and prints only counts and differing field
+names. A successful report is `all_exported_features_match`. Matching this
+dataset is a compatibility check, not an out-of-sample model evaluation.
 Training sample minimum lead was 60 minutes. The original classifier has
 normal-period label restrictions; do not reinterpret it as an overtime or
 retirement settlement model. Existing public Qwen results are separate.

@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/nutakoe27-commits/doscbot",
+  "branch": "feat/fresh-sports-collector",
+  "revision": "e64e355ad7a76ad2f04a666fad6b82c9c2f45080",
+  "modules_sha256": {
+    "training": "4aeacd41d6c827a5f0feb190bc04c10ca1d78b8a5692f913a6f73f12f35bbb17",
+    "training_evidence": "c96416e8e695046c8f59f896dd7281d7cff4aa0a6cbe614364372e936d89ac57",
+    "training_diagnostics": "066d92a2f7e2d5a548f9f2b4345cdf8d2861133629e5e11e4e3a2abc22a75ad5",
+    "profiles": "11533e6a7580305ab02a1802e2245fa9718f2e2ed4c21be312c6534a1384f0e4",
+    "store": "460a989e824c3d288036be59a7d7e5ee0560cb95632110a0401db0e9e8f46eb2",
+    "outcomes": "e5046f0d6d01ad1cfc3c3ef664e120e0b9106cec6196e92d4099921dd69d6e23",
+    "monitor_data": "e103464a498c7054b3abf0aacbd274eedb49ff3a34bdfc2ba60f4f20d9ed8dd1"
+  },
+  "preparation_code_sha256": "7953db0396a7ef577c525645f0b9dc421148891f97ffc71e69911558c2140b5c",
+  "target": "participant_win.v1"
+}
