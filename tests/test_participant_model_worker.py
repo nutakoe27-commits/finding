@@ -232,6 +232,106 @@ class WorkerTests(unittest.TestCase):
         r=self.cycle();self.assertEqual(r['decision_outcomes']['99'],{'state':'scored','winner':'home'})
         self.assertEqual(self.predict.call_count,2)
 
+    def reusable_sample(self, hours=22):
+        self.statistics_mode()
+        path=self.bundle/'model/metrics.json';metrics=json.loads(path.read_text())
+        metrics.update(decision_mode='primary_llm.v1', decision_policy=None)
+        path.write_bytes(w.canonical(metrics))
+        at=self.now-timedelta(hours=hours)
+        self.new['as_of']=at.isoformat()
+        self.new['team_statistics']['observed_at']=at.isoformat()
+        for form in self.new['widget_data']['form']:form['source']['observed_at']=at.isoformat()
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE samples SET as_of=?,sha256=?,payload=? WHERE event_id='99'",
+                       (at.isoformat(),w.digest(self.new),w.canonical(self.new).decode()))
+        self.catalog()
+
+    def fresh_quote(self, *, at=None, changes=None):
+        document=copy.deepcopy(self.new['event'])
+        document['observed_at']=(at or self.now).isoformat()
+        document['markets'][0]['outcomes'][0]['odds']=2.1
+        document.update(changes or {})
+        self.observation('market_document','99',document,at or self.now)
+
+    def test_pretraining_statistics_with_current_quote_are_frozen_and_scored(self):
+        self.reusable_sample();self.fresh_quote()
+        before=self.db.read_bytes();r=self.cycle()
+        self.assertEqual(r['recorded_events'],1,r)
+        self.assertEqual(before,self.db.read_bytes())
+        item=r['matches'][0]
+        self.assertEqual(item['prices']['home'],2.1)
+        self.assertEqual(item['sample_as_of'],(self.now-timedelta(hours=22)).isoformat())
+        self.assertEqual(item['prices_as_of'],self.now.isoformat())
+        self.assertEqual(item['input_policy'],w.REUSE_POLICY)
+        self.assertEqual(item['reason'],'result_not_available_at_cutoff')
+        frozen=json.loads(next((self.state/'frozen').rglob('*.json')).read_text())['data']
+        packet=copy.deepcopy(frozen['packet'])
+        packet['rows']=[{**record,'features':full} for (_,full),record in
+            zip(tr.participant_rows(self.new,packet['market']),packet['rows'])]
+        with sqlite3.connect(self.db) as db:
+            db.row_factory=sqlite3.Row
+            with self.assertRaisesRegex(ValueError,'Invalid model or forecast timing'):
+                ev.score_packets(db,[packet],frozen['header'],self.now)
+            with self.assertRaisesRegex(ValueError,'Invalid prospective sample reuse policy'):
+                ev.score_packets(db,[packet],{**frozen['header'],'mode':'retrospective_temporal_holdout'},
+                                 self.now,max_sample_age_seconds=86400)
+        for call in self.predict.call_args_list:self.assertNotIn('selected_odds',call.args[0])
+        hint=json.loads((self.state/'collection-priority.json').read_text())
+        self.assertEqual(set(hint['excluded_events']),{'1','99'})
+        self.assertEqual(hint['sports'],['football'])
+        Clock.value=self.now+timedelta(hours=6)
+        self.observation('event_outcome','99',{'format':'doscbot.event-outcome.v1','event_id':'99','sport_id':1,
+            'home':'A','away':'B','kickoff_at':self.new['event']['kickoff_at'],'result_start_at':self.new['event']['kickoff_at'],
+            'method':'sport_names_time_unique','score_text':'2:0 (1:0 1:0)'},Clock.value)
+        r=self.cycle();self.assertEqual(r['scored_events'],1,r)
+        self.assertEqual(r['matches'][0]['winner'],'home')
+        self.assertEqual(self.predict.call_count,2)
+
+    def test_new_quote_during_inference_does_not_replace_frozen_evidence(self):
+        self.reusable_sample();self.fresh_quote()
+        def predict(*args):
+            Clock.value=self.now+timedelta(seconds=2)
+            self.fresh_quote(at=self.now+timedelta(seconds=1))
+            return .7
+        self.predict.side_effect=predict
+        r=self.cycle()
+        self.assertEqual(r['recorded_events'],1,r)
+        self.assertEqual(r['matches'][0]['prices_as_of'],self.now.isoformat())
+        self.assertEqual(r['matches'][0]['reason'],'result_not_available_at_cutoff')
+
+    def test_reuse_rejects_missing_stale_changed_and_suspended_quotes(self):
+        self.reusable_sample()
+        self.assertEqual(self.cycle()['skipped']['fresh_market_missing_or_changed'],1)
+        self.fresh_quote(at=self.now-timedelta(minutes=6))
+        self.assertEqual(self.cycle()['skipped']['fresh_market_missing_or_changed'],1)
+        self.fresh_quote(changes={'home':'Other'})
+        self.assertEqual(self.cycle()['skipped']['fresh_market_missing_or_changed'],1)
+        self.fresh_quote(changes={'phase':'live'})
+        self.assertEqual(self.cycle()['skipped']['fresh_market_missing_or_changed'],1)
+        self.fresh_quote(changes={'markets':[]})
+        self.assertEqual(self.cycle()['skipped']['fresh_market_missing_or_changed'],1)
+        self.predict.assert_not_called()
+
+    def test_reuse_rejects_old_statistics_and_training_alias(self):
+        self.reusable_sample(hours=25);self.fresh_quote()
+        self.assertEqual(self.cycle()['recorded_events'],0)
+        self.new['as_of']=(self.now-timedelta(hours=22)).isoformat()
+        self.new['team_statistics']['observed_at']=self.new['as_of']
+        self.new['widget_data']['statistics_id']='old'
+        self.new['team_statistics']['statistics_id']='old'
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE samples SET as_of=?,sha256=?,payload=? WHERE event_id='99'",
+                       (self.new['as_of'],w.digest(self.new),w.canonical(self.new).decode()))
+        self.assertEqual(self.cycle()['skipped']['duplicate_or_trained_statistics'],1)
+        self.predict.assert_not_called()
+
+    def test_quote_expiring_during_inference_is_not_published(self):
+        self.reusable_sample();self.fresh_quote(at=self.now-timedelta(minutes=4,seconds=59))
+        def late(*args):Clock.value=self.now+timedelta(seconds=2);return .5
+        self.predict.side_effect=late
+        r=self.cycle();self.assertEqual(r['recorded_events'],0)
+        self.assertEqual(r['skipped']['input_expired_during_inference'],1)
+
     def test_statistics_model_skips_missing_participant_facts_before_inference(self):
         self.statistics_mode();self.new['widget_data']['form']=[]
         with sqlite3.connect(self.db) as db:

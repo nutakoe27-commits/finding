@@ -34,6 +34,7 @@ class AdminTests(unittest.TestCase):
         signed_in(self.client,self.repo);self.assertEqual(self.client.get(url).status_code,403)
         signed_in(self.client,self.repo,username='admin',role='admin')
         self.value['secret']='must not leak';self.value['matches'][0]['features']={'target':1}
+        self.value['matches'][0]['prices_as_of']='2026-11-15T17:00:00+00:00'
         self.value['feature_profile']='statistics_only.v1'
         self.value['variant_metrics']={'statistics':{'evaluated':1,'hits':1}}
         self.value['matches'][0]['variants']={'statistics':{'side':'home'},'statistics_price':{'decision':'skip'}}
@@ -41,6 +42,7 @@ class AdminTests(unittest.TestCase):
         self.assertEqual(response.status_code,200);self.assertIn('no-store',response.headers['cache-control'])
         data=response.json();self.assertNotIn('secret',data);self.assertNotIn('features',data['matches'][0]);self.assertFalse(data['stale'])
         self.assertEqual(data['matches'][0]['probabilities'],{'home':.7,'away':.2})
+        self.assertEqual(data['matches'][0]['prices_as_of'],'2026-11-15T17:00:00+00:00')
         self.assertFalse(data['quality_verified'])
         self.assertEqual(data['feature_profile'],'statistics_only.v1')
         self.assertEqual(data['matches'][0]['variants']['statistics_price']['decision'],'skip')

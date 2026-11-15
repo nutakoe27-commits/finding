@@ -27,7 +27,8 @@ STAT_FIELDS = tuple(side+'_'+name for side in ('selected','opponent') for name i
 PROMPT = '''Ты основная ИИ спортивного сервиса. Это отдельный виртуальный эксперимент в админке.
 CatBoost уже оценил вероятность победы каждого участника без коэффициентов. Теперь ты
 получаешь эти оценки, предматчевую статистику и сохранённые коэффициенты.
-Цены относятся ко времени sample_as_of, они не являются текущими ценами исполнения. Сам реши:
+Статистика относится ко времени sample_as_of, цены — ко времени prices_as_of.
+Это зафиксированные цены, они не являются текущими ценами исполнения. Сам реши:
 ставить на home/away или пропустить. Фиксированных порогов 55%/5% здесь НЕТ.
 Не пересчитывай и не исправляй вероятности CatBoost. Они оценены раздельно, могут не
 складываться в 100%, не прошли независимую калибровку; остаток не означает ничью.
@@ -113,6 +114,7 @@ def input_packet(data, item):
     return {'event':event, 'scope':item['scope'], 'market':item['market'],
             'model_sha256':data['model_sha256'], 'probabilities':probabilities,
             'statistics':features, 'snapshot_prices':prices, 'sample_as_of':item['sample_as_of'],
+            'prices_as_of':item.get('prices_as_of') or item['sample_as_of'],
             'probabilities_verified':False}
 
 

@@ -146,7 +146,10 @@ Storage and resource boundaries:
   At most 10 new events per run, two sequential CPU inferences each. Worker cap
   50% CPU / 1 GiB RAM. Does not use Qwen slots, GPU, or the old finding database.
 
-Only new snapshots after model readiness are eligible. Training events and
+The original evaluation modes require snapshots after model readiness. In
+`primary_llm.v1`, policy `recent_statistics.v1` also admits validated pre-match
+statistics captured before training, at most 24 hours old at inference. The
+forecast must still be issued after model readiness. Training events and
 aliases with the same statistics ID are excluded. Schedule freshness comes from
 the latest snapshot in this collector's own `source/winline.sqlite3`, whose path
 must match the dataset's `source_archive` ownership metadata. The event must be
@@ -231,3 +234,30 @@ identity before updating the private `worker.env`.
 до матча, токены и причины доступны только в админке.
 
 [Свежий экспорт и полный порядок развёртывания](https://github.com/nutakoe27-commits/doscbot/blob/feat/fresh-sports-collector/docs/primary-model-review.md).
+
+### Расширение охвата без переобучения
+
+В `primary_llm.v1` цены проверяются отдельно от снимка статистики. Требуется
+подробный `market_document` не старше 5 минут с проверенной контрольной суммой,
+совпадающими участниками, спортом, временем и областью расчёта исхода; либо цены
+из только что собранного проверенного снимка. Просроченные/закрытые/неоднозначные
+рынки не заменяются догадками. При отсутствии свежего подтверждения причина —
+`fresh_market_missing_or_changed`.
+
+Исходный снимок, признаки и рынок остаются неизменными для проверки результата.
+Обновлённые коэффициенты сохраняются отдельно в `price_quote`, с идентификатором
+наблюдения и временем. Основная ИИ получает именно их. Админка показывает
+`sample_as_of` для статистики и `prices_as_of` для цен. Уже записанные прогнозы
+прежнего режима сохраняются; новая политика указана в `input_policy`.
+
+Обработчик публикует `collection-priority.json` (0644, без личных данных) рядом
+с `report.json`: поддерживаемые спорты, идентификаторы обучающих/записанных матчей,
+время и хеш модели. Обновлённый doscbot использует его для 80% мест очереди на
+матчи через 2–24 часа, сохраняя 20% для общего обхода. При устаревшем файле
+(15 минут), отсутствии или ошибке действует прежний порядок.
+
+Для обновления на VPS-1: обновить репозиторий сайта, остановить таймер и службу
+`prognozich-model-worker`, выполнить `install-worker.sh` (он сохраняет текущий
+`worker.env`), перезапустить `matchlab.service`. Затем обновить репозиторий
+сборщика и перезапустить `doscbot-collector.service`. Модель/окружение VPS-2,
+обучающие данные, параметры CatBoost и семь модулей подготовки признаков не меняются.

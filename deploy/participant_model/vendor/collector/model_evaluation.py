@@ -133,13 +133,17 @@ def original_sample(db,packet):
     return payload
 
 
-def score_packets(db,packets,header,cutoff):
+def score_packets(db,packets,header,cutoff, *, max_sample_age_seconds=None):
+    if max_sample_age_seconds is not None and (header['mode'] != 'prospective' or
+            type(max_sample_age_seconds) is not int or not 0 < max_sample_age_seconds <= 86400):
+        raise ValueError('Invalid prospective sample reuse policy')
     scored=[];probabilities=[];pending=Counter();outcomes=[]
     ready=instant(header['model_ready_at']);lead=timedelta(minutes=header['lead_minutes'])
     for packet in packets:
         payload=original_sample(db,packet);event=payload['event'];kickoff=instant(event['kickoff_at'])
         sample_time=instant(payload['as_of']);issued=instant(packet['issued_at'])
-        if (packet.get('model_sha256')!=header['model_sha256'] or sample_time<ready or issued<sample_time or
+        if (packet.get('model_sha256')!=header['model_sha256'] or (sample_time<ready if max_sample_age_seconds is None else
+            (issued-sample_time).total_seconds()>max_sample_age_seconds) or issued<sample_time or
             issued<ready or issued>cutoff or kickoff-sample_time<lead):raise ValueError('Invalid model or forecast timing')
         recorded=max(issued,instant(header['sealed_at'])) if header['mode']=='prospective' else issued
         if recorded>cutoff:raise ValueError('Prediction batch was not yet sealed at the scoring cutoff')

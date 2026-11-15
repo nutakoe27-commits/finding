@@ -84,6 +84,15 @@ class ReviewTests(unittest.TestCase):
             self.assertFalse(self.reviewer.run_one())
         self.assertEqual(self.call.call_count,1)
 
+    def test_separate_statistics_and_quote_times_are_sent_to_primary_llm(self):
+        self.item['sample_as_of']=(self.at-timedelta(hours=22)).isoformat()
+        self.item['prices_as_of']=(self.at-timedelta(minutes=1)).isoformat()
+        self.write()
+        self.assertTrue(self.reviewer.run_one())
+        packet=json.loads(self.call.call_args.args[1][1]['content'])
+        self.assertEqual(packet['sample_as_of'],self.item['sample_as_of'])
+        self.assertEqual(packet['prices_as_of'],self.item['prices_as_of'])
+
     def test_late_response_is_not_a_prediction_and_restart_does_not_retry(self):
         def late(*args):
             self.clock.return_value=self.at+timedelta(hours=3)

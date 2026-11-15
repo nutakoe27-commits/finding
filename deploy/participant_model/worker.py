@@ -87,6 +87,51 @@ def current_catalog(database, db, cutoff):
         return result, info
 
 
+# A bounded reuse policy for statistics-only prospective forecasts.
+REUSE_POLICY = 'recent_statistics.v1'
+STATISTICS_MAX_AGE = 24 * 60 * 60
+QUOTE_MAX_AGE = 300
+
+
+def current_quote(db, payload, market, cutoff, tr, *, frozen=None):
+    """Bind fresh detailed market evidence to the same participants and contract."""
+    from collector.store import instant
+    event = payload['event']
+    if frozen is not None and frozen.get('source') not in ('sample','market_document'):
+        return None
+    query = ("SELECT * FROM observations WHERE kind='market_document' AND entity_id=? "
+             "AND julianday(observed_at)<=julianday(?) AND julianday(received_at)<=julianday(?) ")
+    params = (event['source_event_id'],cutoff.isoformat(),cutoff.isoformat())
+    if frozen is not None and frozen['source'] == 'market_document':
+        query += 'AND id=? '
+        params += (frozen['observation_id'],)
+    row = None if frozen is not None and frozen['source'] == 'sample' else db.execute(
+        query+'ORDER BY julianday(observed_at) DESC,id DESC LIMIT 1', params).fetchone()
+    if frozen is not None and frozen['source'] == 'market_document' and row is None:
+        return None
+    if row:
+        document = json.loads(row['payload'])
+        if digest(document) != row['sha256'] or instant(row['received_at']) > cutoff:
+            return None
+        observed = document.get('observed_at')
+        if (not observed or instant(observed) != instant(row['observed_at']) or
+                not 0 <= (cutoff-instant(observed)).total_seconds() <= QUOTE_MAX_AGE or
+                document.get('phase') != 'prematch' or
+                any(document.get(k) != event.get(k) for k in ('source_event_id','sport','home','away')) or
+                abs((instant(document['kickoff_at'])-instant(event['kickoff_at'])).total_seconds()) > 60):
+            return None
+        fresh, reason = tr.winner_market(document)
+        if reason or fresh['scope'] != market['scope'] or set(fresh['prices']) != set(market['prices']):
+            return None
+        return {'observed_at':observed, 'market':fresh, 'observation_id':row['id'],
+                'sha256':row['sha256'], 'source':'market_document'}
+    # A just-captured validated sample also contains its original detailed quote.
+    observed = event.get('observed_at') or payload['as_of']
+    if 0 <= (cutoff-instant(observed)).total_seconds() <= QUOTE_MAX_AGE:
+        return {'observed_at':observed, 'market':market, 'source':'sample', 'sha256':digest(payload)}
+    return None
+
+
 def remote_predict(features, model_sha, schema_sha, token):
     request = Request('http://127.0.0.1:18090/predict',
         data=canonical({'features': features, 'model_sha256': model_sha}),
@@ -162,7 +207,8 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
             AND julianday(kickoff_at)>=julianday(?))
             SELECT s.* FROM samples s JOIN ranked r ON s.id=r.id WHERE r.n=1
             ORDER BY julianday(s.kickoff_at),s.event_id LIMIT 2000''',
-            (ready.isoformat(), current.isoformat(), (current+lead).isoformat()))
+            ((current-timedelta(seconds=STATISTICS_MAX_AGE)).isoformat() if primary_llm else ready.isoformat(),
+             current.isoformat(), (current+lead).isoformat()))
         for row in rows:
             if row['event_id'] in trained or row['event_id'] in seen:
                 skipped['already_trained_or_recorded'] += 1; continue
@@ -209,7 +255,10 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                 for f in features:
                     if statistics_only: stats.vector(f['features'])
                     else: ev.vector(f['features'],names)
-                candidates.append({'statistics_id':sid, 'schedule_evidence':evidence, 'packet':{'format':'doscbot.frozen-forecast.v1',
+                quote = current_quote(db,payload,market,current,tr) if primary_llm else None
+                if primary_llm and quote is None:
+                    skipped['fresh_market_missing_or_changed'] += 1; continue
+                candidates.append({**({'input_policy':REUSE_POLICY,'price_quote':quote} if primary_llm else {}), 'statistics_id':sid, 'schedule_evidence':evidence, 'packet':{'format':'doscbot.frozen-forecast.v1',
                     'event':{k:e.get(k) for k in ('source_event_id','sport','home','away','competition','kickoff_at')},
                     'sample_sha256':row['sha256'],'sample_as_of':row['as_of'],
                     'model_sha256':metrics['model_sha256'],'market':market,'rows':features}})
@@ -230,6 +279,10 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         except Exception as error:
             inference_error = type(error).__name__; break
         issued = datetime.now(timezone.utc)
+        if item.get('input_policy') == REUSE_POLICY and (
+                not 0 <= (issued-instant(packet['sample_as_of'])).total_seconds() <= STATISTICS_MAX_AGE or
+                not 0 <= (issued-instant(item['price_quote']['observed_at'])).total_seconds() <= QUOTE_MAX_AGE):
+            skipped['input_expired_during_inference'] += 1; continue
         if issued < current or instant(packet['event']['kickoff_at'])-issued < lead:
             skipped['horizon_passed_during_inference'] += 1; continue
         if (issued-instant(item['schedule_evidence']['observed_at'])).total_seconds() > 300:
@@ -262,6 +315,11 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         finally: os.close(fd)
         packets.append(item)
     checked = datetime.now(timezone.utc)
+    atomic_report(state/'collection-priority.json', {
+        'format':'doscbot.model-collection-priority.v1','checked_at':checked.isoformat(),
+        'model_sha256':metrics['model_sha256'],
+        'sports':list(metrics['sports'] if statistics_only else manifest['requested_sports']),
+        'excluded_events':sorted(set(trained) | {p['packet']['event']['source_event_id'] for p in packets})})
     scored, probabilities, matches = [], [], []
     unscored = Counter()
     with closing(readonly(database)) as db:
@@ -280,21 +338,32 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                         raise ValueError('Frozen decision policy changed')
                     # Full legacy features are reconstructed ONLY for evidence replay, never sent to CatBoost.
                     scoring_packet = {**p,'rows':[{**record,'features':full} for (_,full),record in zip(full_rows,p['rows'])]}
-                score = ev.score_packets(db,[scoring_packet],item['header'],checked)
+                reused = item.get('input_policy') == REUSE_POLICY
+                if reused:
+                    if not primary_llm or p['event']['source_event_id'] in trained or item['statistics_id'] in protected:
+                        raise ValueError('Reused training event')
+                    original = ev.original_sample(db,scoring_packet)
+                    quote = current_quote(db,original,p['market'],instant(p['issued_at']),tr,frozen=item['price_quote'])
+                    if quote != item['price_quote']:
+                        raise ValueError('Frozen quote evidence changed')
+                score = ev.score_packets(db,[scoring_packet],item['header'],checked,
+                    max_sample_age_seconds=STATISTICS_MAX_AGE if reused else None)
                 outcome = score['outcomes'][0]
                 winner, reason = outcome['winner'], outcome['reason']
             except (ValueError,KeyError,TypeError,OverflowError):
                 winner, reason = None, 'frozen_input_validation_failed'
+            prices = item.get('price_quote',{}).get('market',p['market'])['prices']
             if winner:
                 for row in p['rows']:
                     scored.append({'y':int(winner==row['side']),'sport':p['event']['sport'],
                         'group':p['event']['source_event_id'],'quality':row['features']['capture_state'],
-                        'baseline':(1/p['market']['prices'][row['side']])/sum(1/v for v in p['market']['prices'].values())})
+                        'baseline':(1/prices[row['side']])/sum(1/v for v in prices.values())})
                     probabilities.append(row['probability'])
             else: unscored[reason or 'pending'] += 1
             matches.append({'event':p['event'],'issued_at':p['issued_at'],'sample_as_of':p['sample_as_of'],
                 'scope':p['market']['scope'],'market':p['market']['name'], 'state':'scored' if winner else 'pending',
-                'winner':winner,'reason':reason,'prices':p['market']['prices'],'variants':item.get('variants'),
+                'winner':winner,'reason':reason,'prices':prices,'prices_as_of':item.get('price_quote',{}).get('observed_at',p['sample_as_of']),
+                'input_policy':item.get('input_policy','post_training_sample.v1'),'variants':item.get('variants'),
                 **({'statistics_features':{r['side']:r['features'] for r in p['rows']}} if primary_llm else {}),
                 'probabilities':{row['side']:row['probability'] for row in p['rows']}})
     return {'format':'prognozich.model-admin.v1','state':'degraded' if inference_error else 'ready',
