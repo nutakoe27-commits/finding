@@ -109,25 +109,35 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
     from collector.store import instant
     from collector.train_baseline import read_dataset, evaluate
     from collector.training_evidence import native_at, participant_key, identifier
+    from collector import statistics_contract as stats
     current = datetime.now(timezone.utc)
     metrics = json.loads((bundle/'model/metrics.json').read_text())
     manifest, names, folds = read_dataset(bundle/'dataset', 200000, all_available=True)
+    statistics_only = metrics.get('feature_profile') == stats.PROFILE
+    expected_schema = stats.SCHEMA if statistics_only else tr.SCHEMA
+    training_rows = folds['all']
+    if statistics_only:
+        if metrics.get('statistics_contract_sha256') != hashlib.sha256(Path(stats.__file__).read_bytes()).hexdigest():
+            raise ValueError('Statistics contract changed')
+        stats.validate_policy(metrics['decision_policy'])
+        training_rows = [r for r in training_rows if stats.supported(stats.project({k:None if type(v) is float and math.isnan(v) else v for k,v in zip(names,r['x'])}))]
     code_hash = digest({n:hashlib.sha256((Path(tr.__file__).parent/(n+'.py')).read_bytes()).hexdigest()
         for n in ('training','training_evidence','training_diagnostics','profiles','store','outcomes','monitor_data')})
-    if (metrics.get('target') != 'participant_win.v1' or metrics['schema_sha256'] != digest(tr.SCHEMA) or
-            json.loads((bundle/'model/feature-schema.json').read_text()) != tr.SCHEMA or
+    if (metrics.get('target') != 'participant_win.v1' or metrics['schema_sha256'] != digest(expected_schema) or
+            json.loads((bundle/'model/feature-schema.json').read_text()) != expected_schema or
             metrics['dataset_rows_sha256'] != manifest['rows_sha256'] or
             metrics['preparation_code_sha256'] != code_hash or
             hashlib.sha256((bundle/'model/model.cbm').read_bytes()).hexdigest() != metrics['model_sha256']):
         raise ValueError('Model bundle or preparation mismatch')
-    trained = {r['group']: r for r in folds['all']}
-    if len(trained) != metrics['training_events'] or len(folds['all']) != metrics['training_rows']:
+    trained = {r['group']: r for r in training_rows}
+    if len(trained) != metrics['training_events'] or len(training_rows) != metrics['training_rows']:
         raise ValueError('Training population mismatch')
     ready = instant(metrics['finished_at'])
     if ready > current or ready < instant(manifest['checked_at']):
         raise ValueError('Model readiness time mismatch')
     lead = timedelta(minutes=manifest['lead_minutes'])
-    directory = state/'frozen'/metrics['model_sha256']
+    experiment = metrics['model_sha256'] + ('-stats-'+digest(metrics['decision_policy'])[:12] if statistics_only else '')
+    directory = state/'frozen'/experiment
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     packets = read_packets(directory)
     seen = {p['packet']['event']['source_event_id'] for p in packets}
@@ -159,7 +169,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                 sid = str(widget['statistics_id'])
                 if sid in protected or sid in seen_statistics:
                     skipped['duplicate_or_trained_statistics'] += 1; continue
-                if e['sport'] not in manifest['requested_sports']:
+                if e['sport'] not in (metrics['sports'] if statistics_only else manifest['requested_sports']):
                     skipped['unsupported_sport'] += 1; continue
                 if instant(e['kickoff_at'])-instant(payload['as_of']) < lead:
                     skipped['sample_horizon'] += 1; continue
@@ -189,8 +199,13 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                     skipped['schedule_or_identity_changed'] += 1; continue
                 if db.execute("SELECT 1 FROM observations WHERE kind='event_outcome' AND entity_id=? LIMIT 1", (e['source_event_id'],)).fetchone():
                     skipped['outcome_already_exists'] += 1; continue
-                features = [{'side':side,'features':f} for side,f in tr.participant_rows(payload,market)]
-                for f in features: ev.vector(f['features'],names)
+                features = [{'side':side,'features':stats.project(f) if statistics_only else f}
+                    for side,f in tr.participant_rows(payload,{**market,'prices':{}} if statistics_only else market)]
+                if statistics_only and not all(stats.supported(f['features']) for f in features):
+                    skipped['insufficient_participant_statistics'] += 1; continue
+                for f in features:
+                    if statistics_only: stats.vector(f['features'])
+                    else: ev.vector(f['features'],names)
                 candidates.append({'statistics_id':sid, 'schedule_evidence':evidence, 'packet':{'format':'doscbot.frozen-forecast.v1',
                     'event':{k:e.get(k) for k in ('source_event_id','sport','home','away','competition','kickoff_at')},
                     'sample_sha256':row['sha256'],'sample_as_of':row['as_of'],
@@ -217,6 +232,8 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         if (issued-instant(item['schedule_evidence']['observed_at'])).total_seconds() > 300:
             skipped['schedule_expired_during_inference'] += 1; continue
         packet['issued_at'] = issued.isoformat()
+        if statistics_only:
+            item['variants'] = stats.decide({r['side']:r['probability'] for r in packet['rows']},packet['market']['prices'],metrics['decision_policy'])
         item['header'] = {'mode':'prospective','model_sha256':metrics['model_sha256'],
             'model_ready_at':ready.isoformat(),'lead_minutes':manifest['lead_minutes'],
             'sealed_at':issued.isoformat(),'requested_sports':manifest['requested_sports']}
@@ -248,7 +265,19 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         for item in packets:
             p = item['packet']
             try:
-                score = ev.score_packets(db,[p],item['header'],checked)
+                scoring_packet = p
+                if statistics_only:
+                    source = db.execute('SELECT * FROM samples WHERE event_id=? AND sha256=? ORDER BY id LIMIT 1',
+                        (p['event']['source_event_id'],p['sample_sha256'])).fetchone()
+                    payload = ev.validated_sample(source)
+                    full_rows = list(tr.participant_rows(payload,p['market']))
+                    if len(p['rows'])!=2 or any(record['side']!=side or record['features']!=stats.project(f) for (side,f),record in zip(full_rows,p['rows'])):
+                        raise ValueError('Frozen statistics features changed')
+                    if item.get('variants') != stats.decide({r['side']:r['probability'] for r in p['rows']},p['market']['prices'],metrics['decision_policy']):
+                        raise ValueError('Frozen decision policy changed')
+                    # Full legacy features are reconstructed ONLY for evidence replay, never sent to CatBoost.
+                    scoring_packet = {**p,'rows':[{**record,'features':full} for (_,full),record in zip(full_rows,p['rows'])]}
+                score = ev.score_packets(db,[scoring_packet],item['header'],checked)
                 outcome = score['outcomes'][0]
                 winner, reason = outcome['winner'], outcome['reason']
             except (ValueError,KeyError,TypeError,OverflowError):
@@ -257,12 +286,12 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                 for row in p['rows']:
                     scored.append({'y':int(winner==row['side']),'sport':p['event']['sport'],
                         'group':p['event']['source_event_id'],'quality':row['features']['capture_state'],
-                        'baseline':row['features']['implied_selected']})
+                        'baseline':(1/p['market']['prices'][row['side']])/sum(1/v for v in p['market']['prices'].values())})
                     probabilities.append(row['probability'])
             else: unscored[reason or 'pending'] += 1
             matches.append({'event':p['event'],'issued_at':p['issued_at'],'sample_as_of':p['sample_as_of'],
                 'scope':p['market']['scope'],'market':p['market']['name'], 'state':'scored' if winner else 'pending',
-                'winner':winner,'reason':reason,
+                'winner':winner,'reason':reason,'prices':p['market']['prices'],'variants':item.get('variants'),
                 'probabilities':{row['side']:row['probability'] for row in p['rows']}})
     return {'format':'prognozich.model-admin.v1','state':'degraded' if inference_error else 'ready',
         'checked_at':checked.isoformat(),'model_sha256':metrics['model_sha256'],
@@ -272,13 +301,35 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         'evaluation':evaluate(scored,probabilities) if scored else None,
         'matches':sorted(matches,key=lambda m:m['issued_at'],reverse=True)[:100],
         'skipped':dict(skipped),'unscored_reasons':dict(unscored),'inference_error':inference_error,
-        'catalogue':catalogue_info,
+        'catalogue':catalogue_info,'feature_profile':metrics.get('feature_profile','with_prices.v1'),
+        'variant_metrics':variant_metrics(matches) if statistics_only else None,
+        'decision_policy':metrics.get('decision_policy'),'unsupported_sports':metrics.get('unsupported_sports',[]),
         'experimental':True,'mode':'prospective','quality_verified':False}
 
 
+
+def variant_metrics(matches):
+    a={'selected':0,'evaluated':0,'hits':0,'accuracy':None}
+    b={'bets':0,'settled':0,'won':0,'lost':0,'skipped':0,'pending':0,'profit_units':0.0,'roi':None,'accuracy':None,'coverage':0.0}
+    for m in matches:
+        variants=m.get('variants') or {};first=variants.get('statistics') or {};second=variants.get('statistics_price') or {}
+        if first.get('side'):
+            a['selected']+=1
+            if m['state']=='scored':a['evaluated']+=1;a['hits']+=int(first['side']==m['winner'])
+        if second.get('decision')!='bet':b['skipped']+=1;continue
+        b['bets']+=1
+        if m['state']!='scored':b['pending']+=1;continue
+        won=second['side']==m['winner'];b['settled']+=1;b['won' if won else 'lost']+=1
+        b['profit_units']+=second['odds']-1 if won else -1
+    a['accuracy']=a['hits']/a['evaluated'] if a['evaluated'] else None
+    b['accuracy']=b['won']/b['settled'] if b['settled'] else None
+    b['roi']=b['profit_units']/b['settled'] if b['settled'] else None
+    b['coverage']=b['bets']/len(matches) if matches else 0.0
+    return {'statistics':a,'statistics_price':b}
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument('--bundle',type=Path,default=Path('/var/lib/doscbot-models/all-20261115-1'))
+    p.add_argument('--bundle',type=Path,default=Path(os.environ.get('PARTICIPANT_MODEL_BUNDLE','/var/lib/doscbot-models/all-20261115-1')))
     p.add_argument('--database',type=Path,default=Path('/var/lib/doscbot-collector/data/dataset.sqlite3'))
     p.add_argument('--state',type=Path,default=Path('/var/lib/prognozich-model-client'))
     p.add_argument('--token-file',type=Path,default=Path('/etc/prognozich-model-client/token'))

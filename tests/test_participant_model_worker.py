@@ -75,6 +75,7 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual((r['recorded_events'],r['scored_events'],r['pending_events']),(1,0,1))
         self.assertEqual(self.predict.call_count,2);self.assertEqual(before,self.db.read_bytes())
         self.assertEqual(r['matches'][0]['probabilities'],{'home':.7,'away':.2})
+        self.assertEqual(r['matches'][0]['prices'],{'home':1.8,'draw':3.5,'away':4.0})
         market,_=tr.winner_market(self.new['event'])
         self.assertEqual([c.args[0] for c in self.predict.call_args_list],[f for _,f in tr.participant_rows(self.new,market)])
         self.cycle();self.assertEqual(self.predict.call_count,2)
@@ -176,6 +177,52 @@ class WorkerTests(unittest.TestCase):
         self.predict.side_effect=delayed
         r=self.cycle();self.assertEqual(r['recorded_events'],0)
         self.assertEqual(r['skipped']['schedule_expired_during_inference'],1)
+
+
+    def statistics_mode(self):
+        from collector import statistics_contract as stats
+        for payload in (self.old,self.new):
+            payload['widget_data']['form']=[{'team':{'id':team},'source':{'observed_at':payload['as_of']},
+                'form':{'total':[{'typeid':'W','matchid':'previous-1'},{'typeid':'L','matchid':'previous-2'}]}} for team in ('a','b')]
+            with sqlite3.connect(self.db) as db:
+                db.execute('UPDATE samples SET sha256=?,payload=? WHERE event_id=?',(w.digest(payload),w.canonical(payload).decode(),payload['event']['source_event_id']))
+        rows=[json.loads(x) for x in (self.bundle/'dataset/rows.jsonl').read_text().splitlines()]
+        generated=list(tr.participant_rows(self.old,tr.winner_market(self.old['event'])[0]))
+        for row,(_,f) in zip(rows,generated):row.update(features=f,sample_sha256=w.digest(self.old))
+        raw=b''.join(w.canonical(r)+b'\n' for r in rows);sha=hashlib.sha256(raw).hexdigest()
+        (self.bundle/'dataset/rows.jsonl').write_bytes(raw)
+        path=self.bundle/'dataset/manifest.json';manifest=json.loads(path.read_text());manifest['rows_sha256']=sha;path.write_bytes(w.canonical(manifest))
+        path=self.bundle/'model/metrics.json';metrics=json.loads(path.read_text())
+        metrics.update(feature_profile=stats.PROFILE,schema_sha256=w.digest(stats.SCHEMA),dataset_rows_sha256=sha,
+            statistics_contract_sha256=hashlib.sha256(Path(stats.__file__).read_bytes()).hexdigest(),decision_policy=stats.DEFAULT_POLICY,sports={'football':2})
+        path.write_bytes(w.canonical(metrics));(self.bundle/'model/feature-schema.json').write_bytes(w.canonical(stats.SCHEMA))
+        return stats
+
+    def test_statistics_model_sends_no_prices_and_freezes_two_decisions(self):
+        stats=self.statistics_mode();r=self.cycle()
+        self.assertEqual(r['recorded_events'],1,r)
+        for call in self.predict.call_args_list:
+            self.assertEqual(set(call.args[0]),set(stats.NAMES))
+            self.assertNotIn('selected_odds',call.args[0]);self.assertNotIn('implied_selected',call.args[0])
+        item=r['matches'][0]
+        self.assertEqual(item['prices']['home'],1.8)
+        self.assertEqual(item['variants']['statistics'],{'version':'statistics-winner.v1','side':'home','probability':.7})
+        self.assertEqual(item['variants']['statistics_price']['decision'],'bet')
+        self.assertEqual(r['variant_metrics']['statistics_price']['pending'],1)
+        Clock.value=self.now+timedelta(hours=6)
+        self.observation('event_outcome','99',{'format':'doscbot.event-outcome.v1','event_id':'99','sport_id':1,'home':'A','away':'B','kickoff_at':self.new['event']['kickoff_at'],'result_start_at':self.new['event']['kickoff_at'],'method':'sport_names_time_unique','score_text':'2:0 (1:0 1:0)'},Clock.value)
+        r=self.cycle();self.assertEqual(r['scored_events'],1,r)
+        self.assertEqual(r['variant_metrics']['statistics']['accuracy'],1)
+        self.assertAlmostEqual(r['variant_metrics']['statistics_price']['roi'],.8)
+        self.assertEqual(self.predict.call_count,2)
+
+    def test_statistics_model_skips_missing_participant_facts_before_inference(self):
+        self.statistics_mode();self.new['widget_data']['form']=[]
+        with sqlite3.connect(self.db) as db:
+            db.execute('UPDATE samples SET sha256=?,payload=? WHERE event_id=?',(w.digest(self.new),w.canonical(self.new).decode(),'99'))
+        r=self.cycle();self.assertEqual(r['recorded_events'],0)
+        self.assertEqual(r['skipped']['insufficient_participant_statistics'],1)
+        self.predict.assert_not_called()
 
 
 class WalReaderTests(unittest.TestCase):

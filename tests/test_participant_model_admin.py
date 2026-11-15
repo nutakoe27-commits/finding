@@ -18,7 +18,7 @@ def fixture_report():
         'evaluation':{'overall':{'events':1,'rows':2,'brier':.065,'log_loss':.29,'calibration':[{'bin':2,'rows':1,'predicted':.2,'observed':0},{'bin':7,'rows':1,'predicted':.7,'observed':1}]},
             'sports':{'football':{'events':1,'brier':.065,'log_loss':.29}},'bookmaker_baseline':{'brier':.13}},
         'matches':[{'event':{'source_event_id':'99','sport':'football','home':'Команда А','away':'Команда Б','competition':'Тестовый турнир','kickoff_at':datetime.now(timezone.utc).isoformat()},
-            'issued_at':datetime.now(timezone.utc).isoformat(),'sample_as_of':datetime.now(timezone.utc).isoformat(),'scope':'regulation','market':'Исход 1X2','state':'scored','winner':'home','reason':None,'probabilities':{'home':.7,'away':.2}}]}
+            'issued_at':datetime.now(timezone.utc).isoformat(),'sample_as_of':datetime.now(timezone.utc).isoformat(),'scope':'regulation','market':'Исход 1X2','state':'scored','winner':'home','reason':None,'probabilities':{'home':.7,'away':.2},'prices':{'home':1.8,'draw':3.5,'away':4.0}}]}
 
 class AdminTests(unittest.TestCase):
     def setUp(self):
@@ -34,11 +34,18 @@ class AdminTests(unittest.TestCase):
         signed_in(self.client,self.repo);self.assertEqual(self.client.get(url).status_code,403)
         signed_in(self.client,self.repo,username='admin',role='admin')
         self.value['secret']='must not leak';self.value['matches'][0]['features']={'target':1}
+        self.value['feature_profile']='statistics_only.v1'
+        self.value['variant_metrics']={'statistics':{'evaluated':1,'hits':1}}
+        self.value['matches'][0]['variants']={'statistics':{'side':'home'},'statistics_price':{'decision':'skip'}}
         self.path.write_text(json.dumps(self.value));response=self.client.get(url)
         self.assertEqual(response.status_code,200);self.assertIn('no-store',response.headers['cache-control'])
         data=response.json();self.assertNotIn('secret',data);self.assertNotIn('features',data['matches'][0]);self.assertFalse(data['stale'])
         self.assertEqual(data['matches'][0]['probabilities'],{'home':.7,'away':.2})
         self.assertFalse(data['quality_verified'])
+        self.assertEqual(data['feature_profile'],'statistics_only.v1')
+        self.assertEqual(data['matches'][0]['variants']['statistics_price']['decision'],'skip')
+        self.assertEqual(data['variant_metrics']['statistics']['evaluated'],1)
+        self.assertEqual(data['matches'][0]['prices'],{'home':1.8,'draw':3.5,'away':4.0})
 
     def test_missing_invalid_and_stale_report(self):
         self.assertEqual(report('')['state'],'not_configured')

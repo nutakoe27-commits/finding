@@ -36,8 +36,12 @@ async def exercise(base):
                 await expect(page.locator('#am-metrics .ar-metric')).to_have_count(4)
                 await expect(page.locator('#am-matches tbody tr')).to_have_count(1)
                 await expect(page.locator('#am-chart .am-bin')).to_have_count(2)
+                await expect(page.locator('#am-variants .ar-metric')).to_have_count(4)
+                await expect(page.locator('#am-matches')).to_contain_text('Ставим')
+                await expect(page.locator('#am-version')).to_contain_text('Без коэффициентов в модели.')
                 await expect(page.locator('#am-matches')).to_contain_text('70%')
                 await expect(page.locator('#am-matches')).to_contain_text('20%')
+                await expect(page.locator('#am-matches')).to_contain_text('П1 1,80 · Х 3,50 · П2 4,00')
                 await expect(page.locator('#am-version')).to_contain_text('1\u00a0030')
                 assert not await page.evaluate('document.documentElement.scrollWidth>innerWidth'),(theme,width,'overflow')
                 await page.evaluate('window.scrollTo(0,0)')
@@ -60,7 +64,11 @@ def main():
         root=Path(folder);repo=Repository(root/'matchlab.sqlite3');repo.initialize()
         uid=accounts.create_user(repo,'model_admin',PASSWORD,'admin')
         with repo.connection() as db:accounts.save_agreements(db,uid)
-        report=root/'model-report.json';report.write_text(json.dumps(fixture_report()))
+        report=root/'model-report.json';data=fixture_report()
+        data.update(feature_profile='statistics_only.v1',decision_policy={'min_probability':.55,'min_expected_return':.05},unsupported_sports=['tennis'],
+            variant_metrics={'statistics':{'selected':2,'evaluated':1,'hits':1,'accuracy':1},'statistics_price':{'bets':1,'settled':1,'won':1,'lost':0,'skipped':1,'pending':0,'profit_units':.8,'roi':.8,'accuracy':1,'coverage':.5}})
+        data['matches'][0]['variants']={'statistics':{'side':'home','probability':.7},'statistics_price':{'side':'home','decision':'bet','reason':'paper_rule_passed'}}
+        report.write_text(json.dumps(data))
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         base=f'http://127.0.0.1:{port}'
         env=dict(os.environ,MATCHLAB_DATA_DIR=folder,DATABASE_URL='',PUBLIC_ORIGIN=base,QWEN_BASE_URL='',QWEN_MODEL='',BOOKMAKER_INGEST_TOKEN='',PARTICIPANT_MODEL_REPORT=str(report))

@@ -11,5 +11,6 @@
   "collector/store.py": "460a989e824c3d288036be59a7d7e5ee0560cb95632110a0401db0e9e8f46eb2",
   "collector/training_diagnostics.py": "066d92a2f7e2d5a548f9f2b4345cdf8d2861133629e5e11e4e3a2abc22a75ad5",
   "collector/train_baseline.py": "863c8f91d4bd0d1de47bfff244a297b1b13e5b56665cb6e6ec0a0ffdd837923f",
-  "finding-source.json": "40e4065139eaa5374fbd662c82ff3931d08d565dc1cec76af221250d58c46938"
+  "finding-source.json": "40e4065139eaa5374fbd662c82ff3931d08d565dc1cec76af221250d58c46938",
+  "collector/statistics_contract.py": "3f41fae7bc32c4b617c01f75fc868ebf45e640b4fad8c06e264bee1cd850e2d4"
 }

@@ -22,9 +22,9 @@ def report(path):
             raise ValueError('Unknown report')
         result = {k: data.get(k) for k in ('state', 'checked_at', 'model_sha256', 'target',
             'training_events', 'training_rows', 'lead_minutes', 'recorded_events', 'scored_events',
-            'pending_events', 'evaluation', 'skipped', 'unscored_reasons', 'inference_error', 'error_type')}
+            'pending_events', 'evaluation', 'feature_profile', 'variant_metrics', 'decision_policy', 'unsupported_sports', 'skipped', 'unscored_reasons', 'inference_error', 'error_type')}
         result['matches'] = [{k: item.get(k) for k in ('event', 'issued_at', 'sample_as_of',
-            'scope', 'market', 'state', 'winner', 'reason', 'probabilities')} for item in data.get('matches', [])[:100]]
+            'scope', 'market', 'state', 'winner', 'reason', 'probabilities', 'prices', 'variants')} for item in data.get('matches', [])[:100]]
         checked = datetime.fromisoformat(data['checked_at'])
         age = (datetime.now(timezone.utc) - checked).total_seconds()
         result.update(stale=age > 300 or age < -60, experimental=True, mode='prospective', quality_verified=False)

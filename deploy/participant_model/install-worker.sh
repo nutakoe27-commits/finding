@@ -26,6 +26,7 @@ Type=oneshot
 ExecStart=/usr/bin/python3 /opt/prognozich-model-client/app/worker.py
 WorkingDirectory=/opt/prognozich-model-client/app
 User=root
+EnvironmentFile=-/etc/prognozich-model-client/worker.env
 UMask=0077
 TimeoutStartSec=360
 CPUQuota=50%

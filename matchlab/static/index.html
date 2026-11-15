@@ -31,8 +31,8 @@
   <script src="/static/public-results.js?v=20261113-wording1" defer></script>
   <script src="/static/app.js?v=20261113-wording1" defer></script>
   <link rel="stylesheet" href="/static/admin-results.css?v=20261111-sync2" />
-  <link rel="stylesheet" href="/static/admin-model.css?v=20261115-1" />
-  <script src="/static/admin-model.js?v=20261115-1" defer></script>
+  <link rel="stylesheet" href="/static/admin-model.css?v=20261115-statistics2" />
+  <script src="/static/admin-model.js?v=20261115-statistics2" defer></script>
   <script src="/static/admin-results.js?v=20261113-wording1" defer></script>
   <script src="/static/admin-tokens.js?v=20261110-tokens1" defer></script>
   <link rel="stylesheet" href="/static/admin-billing.css?v=20261111-1" />
@@ -473,6 +473,7 @@
           <p id="am-message" class="account-message" role="status"></p>
           <div id="am-data" hidden>
             <div id="am-metrics" class="ar-metrics"></div>
+            <div id="am-variants" class="ar-metrics" hidden></div>
             <p class="am-experiment">Каждая вероятность оценивает победу конкретного участника на указанном рынке. Оценки двух участников рассчитываются отдельно и не обязаны давать 100% в сумме. Их нельзя нормировать или использовать для вычисления вероятности ничьей.</p>
             <p id="am-version" class="muted"></p>
             <article class="panel"><h3>Насколько проценты совпадают с результатами</h3><p id="am-quality" class="muted"></p><div id="am-chart"></div><p class="small muted">Синий — средняя оценка модели, зелёный — фактическая доля побед в этом диапазоне. Две оценки одного матча связаны: число независимых наблюдений — число матчей.</p></article>

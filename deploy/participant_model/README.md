@@ -194,3 +194,31 @@ Targeted verification:
 PYTHONPATH=tests .venv/bin/python -m unittest test_participant_model_worker test_participant_model_admin
 PYTHONPATH=tests .venv/bin/python tests/browser_participant_model.py
 ```
+
+## Statistics-only modes A and B
+
+The worker accepts a separate `statistics_only.v1` model trained by doscbot.
+The exact 30-feature allowlist is pinned in `vendor/collector/statistics_contract.py`.
+Its hash must match the trained model. All odds, implied prices, margin, market
+counts and their missing indicators are excluded from inference. Rows without
+verified form/season counts for both participants are skipped.
+
+A chooses a participant before prices are examined; B uses the identical frozen
+probability and applies a fixed paper-only price gate (p >= .55, p*odds-1 >= .05).
+Both decisions and the policy are saved with the forecast. Model/policy versions
+use separate directories. The old model is explicitly labelled as using prices.
+
+Admin rows expose frozen snapshot prices and the A/B decisions. Aggregate A
+accuracy excludes missing preferences; B shows coverage, settled accuracy,
+pending bets and unit-stake paper ROI. Skips are not wins. Training accuracy
+is not future accuracy. Public Qwen answers and billing are not switched.
+
+For scoring only, the worker reconstructs the original full legacy features
+from the frozen source sample to reuse its evidence/timing validator. These
+features never go to CatBoost. The frozen statistics-only input and decisions
+are checked independently before settlement.
+
+Training and two-server deployment are documented in doscbot:
+[Statistics models](https://github.com/nutakoe27-commits/doscbot/blob/feat/fresh-sports-collector/docs/statistics-models.md).
+`activate-statistics-bundle.sh` verifies bundle hashes and the remote model
+identity before updating the private `worker.env`.
