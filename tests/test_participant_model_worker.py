@@ -216,6 +216,22 @@ class WorkerTests(unittest.TestCase):
         self.assertAlmostEqual(r['variant_metrics']['statistics_price']['roi'],.8)
         self.assertEqual(self.predict.call_count,2)
 
+    def test_primary_llm_mode_freezes_only_statistics_and_publishes_all_outcomes(self):
+        self.statistics_mode()
+        path=self.bundle/'model/metrics.json';metrics=json.loads(path.read_text());metrics['decision_mode']='primary_llm.v1';metrics['decision_policy']=None;path.write_bytes(w.canonical(metrics))
+        r=self.cycle();self.assertEqual(r['decision_mode'],'primary_llm.v1')
+        item=r['matches'][0]
+        self.assertEqual(set(item['variants']),{'statistics'})
+        self.assertEqual(set(r['variant_metrics']),{'statistics'})
+        self.assertNotIn('selected_odds',item['statistics_features']['home'])
+        self.assertEqual(item['statistics_features']['home']['selected_form_count'],2)
+        self.assertEqual(r['decision_outcomes'],{'99':{'state':'pending','winner':None}})
+        self.cycle();self.assertEqual(self.predict.call_count,2)
+        Clock.value=self.now+timedelta(hours=6)
+        self.observation('event_outcome','99',{'format':'doscbot.event-outcome.v1','event_id':'99','sport_id':1,'home':'A','away':'B','kickoff_at':self.new['event']['kickoff_at'],'result_start_at':self.new['event']['kickoff_at'],'method':'sport_names_time_unique','score_text':'2:0 (1:0 1:0)'},Clock.value)
+        r=self.cycle();self.assertEqual(r['decision_outcomes']['99'],{'state':'scored','winner':'home'})
+        self.assertEqual(self.predict.call_count,2)
+
     def test_statistics_model_skips_missing_participant_facts_before_inference(self):
         self.statistics_mode();self.new['widget_data']['form']=[]
         with sqlite3.connect(self.db) as db:

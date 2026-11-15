@@ -37,7 +37,9 @@ async def exercise(base):
                 await expect(page.locator('#am-matches tbody tr')).to_have_count(1)
                 await expect(page.locator('#am-chart .am-bin')).to_have_count(2)
                 await expect(page.locator('#am-variants .ar-metric')).to_have_count(4)
-                await expect(page.locator('#am-matches')).to_contain_text('Ставим')
+                await expect(page.locator('#am-matches')).to_contain_text('Ставим · Команда А')
+                await expect(page.locator('#am-matches')).to_contain_text('Токены: вход 250 / выход 40')
+                await expect(page.locator('#am-variants')).to_contain_text('Фиксированных порогов 55%/5% нет.')
                 await expect(page.locator('#am-version')).to_contain_text('Без коэффициентов в модели.')
                 await expect(page.locator('#am-matches')).to_contain_text('70%')
                 await expect(page.locator('#am-matches')).to_contain_text('20%')
@@ -68,6 +70,18 @@ def main():
         data.update(feature_profile='statistics_only.v1',decision_policy={'min_probability':.55,'min_expected_return':.05},unsupported_sports=['tennis'],
             variant_metrics={'statistics':{'selected':2,'evaluated':1,'hits':1,'accuracy':1},'statistics_price':{'bets':1,'settled':1,'won':1,'lost':0,'skipped':1,'pending':0,'profit_units':.8,'roi':.8,'accuracy':1,'coverage':.5}})
         data['matches'][0]['variants']={'statistics':{'side':'home','probability':.7},'statistics_price':{'side':'home','decision':'bet','reason':'paper_rule_passed'}}
+        from matchlab.participant_model_review import POLICY,identifier
+        data.update(decision_mode='primary_llm.v1',decision_policy=None,
+            decision_outcomes={'99':{'state':'scored','winner':'home'}})
+        data['matches'][0]['variants'].pop('statistics_price')
+        reviews=root/'participant-model-reviews';reviews.mkdir()
+        (reviews/(identifier(data,data['matches'][0])+'.json')).write_text(json.dumps({
+            'format':POLICY,'model_sha256':data['model_sha256'],'event_id':'99','state':'ready',
+            'issued_at':data['matches'][0]['issued_at'],'decision':'bet','side':'home','odds':1.8,
+            'llm_model':'primary-site-model','started_at':data['checked_at'],'finished_at':data['checked_at'],
+            'reason_codes':['favorable_combination','uncalibrated_model'],
+            'input':{'private':'MUST_NOT_LEAK'},
+            'token_usage':{'prompt_tokens':250,'completion_tokens':40,'total_tokens':290,'model_calls':1,'complete':True}}))
         report.write_text(json.dumps(data))
         with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
         base=f'http://127.0.0.1:{port}'

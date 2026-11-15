@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from . import accounts
 
 
-def report(path):
+def report(path, settings=None):
     if not path:
         return {'state': 'not_configured'}
     try:
@@ -22,12 +22,15 @@ def report(path):
             raise ValueError('Unknown report')
         result = {k: data.get(k) for k in ('state', 'checked_at', 'model_sha256', 'target',
             'training_events', 'training_rows', 'lead_minutes', 'recorded_events', 'scored_events',
-            'pending_events', 'evaluation', 'feature_profile', 'variant_metrics', 'decision_policy', 'unsupported_sports', 'skipped', 'unscored_reasons', 'inference_error', 'error_type')}
+            'pending_events', 'evaluation', 'decision_mode', 'feature_profile', 'variant_metrics', 'decision_policy', 'unsupported_sports', 'skipped', 'unscored_reasons', 'inference_error', 'error_type')}
         result['matches'] = [{k: item.get(k) for k in ('event', 'issued_at', 'sample_as_of',
             'scope', 'market', 'state', 'winner', 'reason', 'probabilities', 'prices', 'variants')} for item in data.get('matches', [])[:100]]
         checked = datetime.fromisoformat(data['checked_at'])
         age = (datetime.now(timezone.utc) - checked).total_seconds()
         result.update(stale=age > 300 or age < -60, experimental=True, mode='prospective', quality_verified=False)
+        if settings is not None:
+            from .participant_model_review import attach_reviews
+            result=attach_reviews(result,data,settings)
         return result
     except FileNotFoundError:
         return {'state': 'waiting'}
@@ -39,4 +42,4 @@ def install(app, repo, settings):
     @app.get('/api/admin/participant-model')
     def participant_model(request: Request):
         accounts.admin_user(request)
-        return JSONResponse(report(settings.participant_model_report), headers={'Cache-Control': 'private, no-store'})
+        return JSONResponse(report(settings.participant_model_report,settings), headers={'Cache-Control': 'private, no-store'})

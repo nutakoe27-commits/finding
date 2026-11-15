@@ -20,7 +20,8 @@ if (m.get('feature_profile')!=c.PROFILE or m['schema_sha256']!=worker.digest(c.S
     m['dataset_rows_sha256']!=manifest['rows_sha256'] or
     m['model_sha256']!=hashlib.sha256((bundle/'model/model.cbm').read_bytes()).hexdigest()):
     raise SystemExit('Statistics model, schema or input checksums differ')
-c.validate_policy(m['decision_policy'])
+if m.get('decision_mode','price_gate.v1') not in ('primary_llm.v1','price_gate.v1'):raise SystemExit('Unknown decision mode')
+if m.get('decision_mode')!='primary_llm.v1':c.validate_policy(m['decision_policy'])
 with urlopen('http://127.0.0.1:18090/health',timeout=5) as response:health=json.load(response)
 if health.get('state')!='ready' or health.get('model_sha256')!=m['model_sha256']:
     raise SystemExit('Deploy this statistics model on VPS-2 first; tunnel model differs')

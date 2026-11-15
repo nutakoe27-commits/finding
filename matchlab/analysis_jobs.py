@@ -30,7 +30,7 @@ def stamp():return datetime.now(timezone.utc).isoformat()
 class AnalysisJobs:
     def __init__(self,repo,settings,execute):
         self.repo=repo;self.settings=settings;self.execute=execute
-        self.stopping=Event();self.wake=Event();self.thread=None;self.threads=[]
+        self.stopping=Event();self.wake=Event();self.thread=None;self.threads=[];self.idle_system=None
 
     def start(self):
         self.stopping.clear()
@@ -176,6 +176,7 @@ class AnalysisJobs:
         while not self.stopping.is_set():
             try:
                 if self.run_one(lane):continue
+                if lane=='system' and self.idle_system and not self.stopping.is_set():self.idle_system()
             except Exception as error:
                 LOG.warning('Analysis queue unavailable: category=%s',type(error).__name__)
             self.wake.wait(1);self.wake.clear()

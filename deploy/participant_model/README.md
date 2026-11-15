@@ -222,3 +222,12 @@ Training and two-server deployment are documented in doscbot:
 [Statistics models](https://github.com/nutakoe27-commits/doscbot/blob/feat/fresh-sports-collector/docs/statistics-models.md).
 `activate-statistics-bundle.sh` verifies bundle hashes and the remote model
 identity before updating the private `worker.env`.
+
+## Основная ИИ после статистической модели
+
+Новый режим `primary_llm.v1`: одна модель без коэффициентов и отдельное решение
+настроенной основной ИИ в свободном системном потоке сайта. Пороговый фильтр B
+не используется; старые эксперименты сохраняют свой режим. Запрос фиксируется
+до матча, токены и причины доступны только в админке.
+
+[Свежий экспорт и полный порядок развёртывания](https://github.com/nutakoe27-commits/doscbot/blob/feat/fresh-sports-collector/docs/primary-model-review.md).

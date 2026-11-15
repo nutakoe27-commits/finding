@@ -695,6 +695,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from .analysis_jobs import AnalysisJobs
     jobs=AnalysisJobs(repo,settings,execute_job)
+    from .participant_model_review import Reviewer
+    model_reviewer=Reviewer(settings,system_analysis_lock)
+    jobs.idle_system=model_reviewer.run_one
     app.state.analysis_jobs=jobs
     from .featured_automation import FeaturedAutomation
     def prepare_featured(event_id,statistics_job_id):

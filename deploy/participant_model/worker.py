@@ -114,12 +114,15 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
     metrics = json.loads((bundle/'model/metrics.json').read_text())
     manifest, names, folds = read_dataset(bundle/'dataset', 200000, all_available=True)
     statistics_only = metrics.get('feature_profile') == stats.PROFILE
+    primary_llm = statistics_only and metrics.get('decision_mode') == 'primary_llm.v1'
     expected_schema = stats.SCHEMA if statistics_only else tr.SCHEMA
     training_rows = folds['all']
     if statistics_only:
         if metrics.get('statistics_contract_sha256') != hashlib.sha256(Path(stats.__file__).read_bytes()).hexdigest():
             raise ValueError('Statistics contract changed')
-        stats.validate_policy(metrics['decision_policy'])
+        if metrics.get('decision_mode','price_gate.v1') not in ('price_gate.v1','primary_llm.v1'):
+            raise ValueError('Unknown decision mode')
+        if not primary_llm: stats.validate_policy(metrics['decision_policy'])
         training_rows = [r for r in training_rows if stats.supported(stats.project({k:None if type(v) is float and math.isnan(v) else v for k,v in zip(names,r['x'])}))]
     code_hash = digest({n:hashlib.sha256((Path(tr.__file__).parent/(n+'.py')).read_bytes()).hexdigest()
         for n in ('training','training_evidence','training_diagnostics','profiles','store','outcomes','monitor_data')})
@@ -136,7 +139,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
     if ready > current or ready < instant(manifest['checked_at']):
         raise ValueError('Model readiness time mismatch')
     lead = timedelta(minutes=manifest['lead_minutes'])
-    experiment = metrics['model_sha256'] + ('-stats-'+digest(metrics['decision_policy'])[:12] if statistics_only else '')
+    experiment = metrics['model_sha256'] + ('-primary-llm-v1' if primary_llm else '-stats-'+digest(metrics['decision_policy'])[:12] if statistics_only else '')
     directory = state/'frozen'/experiment
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     packets = read_packets(directory)
@@ -233,7 +236,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
             skipped['schedule_expired_during_inference'] += 1; continue
         packet['issued_at'] = issued.isoformat()
         if statistics_only:
-            item['variants'] = stats.decide({r['side']:r['probability'] for r in packet['rows']},packet['market']['prices'],metrics['decision_policy'])
+            item['variants'] = experiment_variants(stats,packet,metrics,primary_llm)
         item['header'] = {'mode':'prospective','model_sha256':metrics['model_sha256'],
             'model_ready_at':ready.isoformat(),'lead_minutes':manifest['lead_minutes'],
             'sealed_at':issued.isoformat(),'requested_sports':manifest['requested_sports']}
@@ -273,7 +276,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
                     full_rows = list(tr.participant_rows(payload,p['market']))
                     if len(p['rows'])!=2 or any(record['side']!=side or record['features']!=stats.project(f) for (side,f),record in zip(full_rows,p['rows'])):
                         raise ValueError('Frozen statistics features changed')
-                    if item.get('variants') != stats.decide({r['side']:r['probability'] for r in p['rows']},p['market']['prices'],metrics['decision_policy']):
+                    if item.get('variants') != experiment_variants(stats,p,metrics,primary_llm):
                         raise ValueError('Frozen decision policy changed')
                     # Full legacy features are reconstructed ONLY for evidence replay, never sent to CatBoost.
                     scoring_packet = {**p,'rows':[{**record,'features':full} for (_,full),record in zip(full_rows,p['rows'])]}
@@ -292,6 +295,7 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
             matches.append({'event':p['event'],'issued_at':p['issued_at'],'sample_as_of':p['sample_as_of'],
                 'scope':p['market']['scope'],'market':p['market']['name'], 'state':'scored' if winner else 'pending',
                 'winner':winner,'reason':reason,'prices':p['market']['prices'],'variants':item.get('variants'),
+                **({'statistics_features':{r['side']:r['features'] for r in p['rows']}} if primary_llm else {}),
                 'probabilities':{row['side']:row['probability'] for row in p['rows']}})
     return {'format':'prognozich.model-admin.v1','state':'degraded' if inference_error else 'ready',
         'checked_at':checked.isoformat(),'model_sha256':metrics['model_sha256'],
@@ -301,11 +305,21 @@ def cycle(bundle, database, state, token_file, *, predict=remote_predict):
         'evaluation':evaluate(scored,probabilities) if scored else None,
         'matches':sorted(matches,key=lambda m:m['issued_at'],reverse=True)[:100],
         'skipped':dict(skipped),'unscored_reasons':dict(unscored),'inference_error':inference_error,
+        'decision_mode':metrics.get('decision_mode','price_gate.v1'),
+        'decision_outcomes':{m['event']['source_event_id']:{'state':m['state'],'winner':m['winner']} for m in matches} if primary_llm else {},
         'catalogue':catalogue_info,'feature_profile':metrics.get('feature_profile','with_prices.v1'),
-        'variant_metrics':variant_metrics(matches) if statistics_only else None,
+        'variant_metrics':({'statistics':variant_metrics(matches)['statistics']} if primary_llm else variant_metrics(matches)) if statistics_only else None,
         'decision_policy':metrics.get('decision_policy'),'unsupported_sports':metrics.get('unsupported_sports',[]),
         'experimental':True,'mode':'prospective','quality_verified':False}
 
+
+
+def experiment_variants(stats,packet,metrics,primary_llm):
+    probabilities={r['side']:r['probability'] for r in packet['rows']}
+    if primary_llm:
+        side=None if abs(probabilities['home']-probabilities['away'])<1e-12 else max(probabilities,key=probabilities.get)
+        return {'statistics':{'version':'statistics-winner.v1','side':side,'probability':probabilities[side] if side else None}}
+    return stats.decide(probabilities,packet['market']['prices'],metrics['decision_policy'])
 
 
 def variant_metrics(matches):

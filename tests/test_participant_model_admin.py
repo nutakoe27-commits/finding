@@ -47,6 +47,22 @@ class AdminTests(unittest.TestCase):
         self.assertEqual(data['variant_metrics']['statistics']['evaluated'],1)
         self.assertEqual(data['matches'][0]['prices'],{'home':1.8,'draw':3.5,'away':4.0})
 
+    def test_primary_review_is_admin_only_and_does_not_expose_prompt_or_call_provider(self):
+        from unittest.mock import patch
+        from matchlab.participant_model_review import POLICY,identifier
+        self.value.update(decision_mode='primary_llm.v1',decision_outcomes={'99':{'state':'scored','winner':'home'}})
+        self.path.write_text(json.dumps(self.value));folder=self.root/'participant-model-reviews';folder.mkdir()
+        (folder/(identifier(self.value,self.value['matches'][0])+'.json')).write_text(json.dumps({
+            'format':POLICY,'model_sha256':self.value['model_sha256'],'event_id':'99','state':'ready',
+            'decision':'bet','side':'home','odds':1.8,'reason_codes':['favorable_combination'],
+            'input':{'secret':'DO_NOT_EXPOSE'},'token_usage':{'total_tokens':123}}))
+        signed_in(self.client,self.repo,username='admin',role='admin')
+        with patch('matchlab.participant_model_review._completion',side_effect=AssertionError('GET must not generate')):
+            response=self.client.get('/api/admin/participant-model')
+        self.assertEqual(response.status_code,200);self.assertNotIn('DO_NOT_EXPOSE',response.text)
+        self.assertEqual(response.json()['neural_metrics']['won'],1)
+        self.assertEqual(response.json()['matches'][0]['neural_review']['decision'],'bet')
+
     def test_missing_invalid_and_stale_report(self):
         self.assertEqual(report('')['state'],'not_configured')
         self.assertEqual(report(str(self.root/'missing'))['state'],'waiting')
