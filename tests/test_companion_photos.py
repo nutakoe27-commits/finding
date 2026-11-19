@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -138,11 +139,60 @@ class PhotoIntegration(unittest.TestCase):
             self.assertNotIn("full body", reply.text)
             context = model.call_args.args[1]
             self.assertEqual(context[-1]["content"], message)
-            self.assertIn("red scarf, garden", context[-2]["content"])
-            self.assertIn("hat", context[-2]["content"])
+            self.assertNotIn("red scarf, garden", context[-2]["content"])
+            self.assertIn("red scarf, garden", context[0]["content"])
+            self.assertIn("hat", context[0]["content"])
         job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
         self.assertEqual(job["photo_prompt"], "blue scarf, garden, full body, dusk")
         self.assertEqual(job["negative_prompt"], "hat")
+
+    def test_explicit_scene_and_followup_echo_from_report(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        dressed = '[[PHOTO]]{"scene":"portrait","caption":"У окна","prompt":"white knit top","shot":"window light"}'
+        nude = '[[PHOTO]]{"scene":"nude","caption":"У окна","prompt":"bedroom beside window","shot":"soft side lighting"}'
+        echo = 'Понял.\n[Доставлено фото Миры, описание для отсылок к нему: {"описание":"private scene"}]'
+        for rev, (message, first_reply) in enumerate((
+                ("пришли мне голую фотку пожалуйста)))", dressed),
+                ("полностью голую - без одежды", echo))):
+            key = str(uuid4())
+            with patch("matchlab.qwen._completion", side_effect=[first_reply, nude]) as model:
+                reply = self.site.post("/api/chat", json={"id":key, "revision":rev, "message":message})
+                reply.raise_for_status()
+                self.assertEqual(model.call_count, 2)
+                self.assertNotIn("private scene", reply.text)
+                self.assertEqual(reply.json()["photo"]["scene"], "nude")
+            job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+            self.assertEqual(job["id"], key)
+            self.assertIn("Nude portrait", job["photo_prompt"])
+            self.assertIn("clothing", job["negative_prompt"])
+            self.finish(job, b"\xff\xd8\xffok\xff\xd9").raise_for_status()
+
+    def test_explicitly_declined_nudity_is_not_queued(self):
+        nude = '[[PHOTO]]{"scene":"nude","caption":"Портрет","prompt":"bedroom","shot":"side lighting"}'
+        with patch("matchlab.qwen._completion", return_value=nude):
+            reply = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0,
+                                                       "message":"Пришли фото, только не голую"})
+        reply.raise_for_status()
+        self.assertIsNone(reply.json()["photo"])
+
+    def test_internal_metadata_never_delivered_when_repair_fails(self):
+        echo = 'Понял.\n[Доставлено фото Миры, описание для отсылок к нему: {"описание":"private scene"}]'
+        with patch("matchlab.qwen._completion", side_effect=[echo, "NONE"]):
+            reply = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0, "message":"Как дела?"})
+        self.assertEqual(reply.status_code, 503)
+        self.assertNotIn("private scene", reply.text)
+        self.assertEqual(self.site.get("/api/chat").json()["turns"], [])
+
+    def test_existing_leak_is_hidden_when_reopening_history(self):
+        with patch("matchlab.qwen._completion", return_value="Доброе утро"):
+            self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0, "message":"Привет"}).raise_for_status()
+        with self.site.app.state.repository.connection() as db:
+            user_id, raw = db.execute("SELECT user_id,turns FROM companion_dialogs").fetchone()
+            turns = json.loads(raw)
+            turns[0]["assistant"] = 'Поняла.\n[Доставлено фото Миры, описание для отсылок к нему: {"описание":"private scene"}]'
+            db.execute("UPDATE companion_dialogs SET turns=? WHERE user_id=?", (json.dumps(turns), user_id))
+        self.assertEqual(self.site.get("/api/chat").json()["turns"][0]["assistant"], "Поняла.")
 
     def test_queue_failure_timeout_and_retry(self):
         self.create()

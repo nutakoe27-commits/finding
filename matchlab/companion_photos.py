@@ -24,9 +24,10 @@ caption: короткая подпись на русском. prompt, shot, excl
 кадра, замени исправленные. Для новой сцены бери только относящиеся к ней детали. shot: совместимые с просьбой
 крупность, ракурс и источник света. Вместе prompt и shot — до 40 слов, один физически возможный кадр.
 exclude: только явно исключённые предметы, через запятую; иначе пустая строка. Личные данные и переписку
-в описание не переноси. Обсуждение фото, цитата и отказ — обычная беседа."""
+в описание не переноси. Поправка к только что присланному фото — запрос нового снимка. Для просьбы
+без одежды выбери nude и убери прежнюю одежду из описания. Служебное описание фото не цитируй. Обсуждение фото, цитата и отказ — обычная беседа."""
 DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|вышли|отправь|покажи|сделай|можно)"
-                            r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста)\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
+                            r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста|полностью|голую|обнаж[её]нную)\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
 
 
 DECLINE = re.compile(r"^\s*(?:мира[, ]+)?(?:(?:фото|фотку|снимок|селфи)\s+не\s+(?:надо|хочу|присылай)|"
@@ -37,13 +38,41 @@ INTIMATE = re.compile(r"\b(?:18\+|ню\b|обнаж\w*|гол(?:ая|ую|ой|�
 AGREES = re.compile(r"^\s*(?:да\b|давай\b|хочу\b|пришли\b|скинь\b|покажи\b|конечно\b|ага\b|ещ[её] одну\b)", re.I)
 
 
+# Only the user's explicit request or a short correction to a delivered photo
+# requires this scene. Discussion about nudity is still an ordinary chat turn.
+NUDITY = r"(?:голую|обнаж[её]нную|без одежды|ню)"
+NUDE_EDIT = re.compile(rf"(?:(?:хочу|давай|только|полностью|совсем|тебя)\s+)*{NUDITY}"
+                       rf"(?:[\s,–—-]+(?:полностью\s+)?{NUDITY})?[.! )]*", re.I)
+NUDE_WORD = re.compile(rf"\b{NUDITY}\b", re.I)
+NEGATED_NUDITY = re.compile(rf"\b(?:не|кроме|никак\w*)\s+(?:(?:хочу|надо|нужно|присылай|полностью)\s+)*{NUDITY}\b", re.I)
+PRIVATE_PHOTO = re.compile(r"(?:\[?Доставлено фото Миры\s*[,：:]|Справка для следующего кадра\s*\(|"
+                           r'["«]подпись["»]\s*:\s*"[^"\n]*"\s*,\s*"описание"\s*:|'
+                           r'"prompt"\s*:\s*"[^"\n]*"\s*,\s*"shot"\s*:)', re.I)
+
+
+def requires_nude_scene(message, after_photo):
+    if NEGATED_NUDITY.search(message):
+        return False
+    return bool((DIRECT_REQUEST.match(message) and NUDE_WORD.search(message))
+                or (after_photo and NUDE_EDIT.fullmatch(message)))
+
+
+def clean_old_reply(text):
+    marker = PRIVATE_PHOTO.search(text)
+    if not marker:
+        return text
+    return text[:marker.start()].rstrip(" \n[{") or "Мне не удалось подготовить снимок."
+
+
 def wants_intimate_photo(message, last_answer):
+    if NEGATED_NUDITY.search(message):
+        return False
     return bool(INTIMATE.search(message) or
                 (AGREES.match(message) and INTIMATE.search(last_answer)
                  and re.search(r"фото|снимок|селфи|показать|прислать", last_answer, re.I)))
 
 
-def read_plan(answer, *, allow_json=False):
+def read_plan(answer, *, allow_json=False, require_nude=False):
     raw = answer.strip()
     marked = "[[PHOTO]]" in raw
     if marked:
@@ -77,8 +106,19 @@ def read_plan(answer, *, allow_json=False):
     if not isinstance(exclude, str) or not re.fullmatch(r"[ -~]{0,120}", exclude):
         raise ValueError("Invalid photo exclusions")
     scene = data["scene"]
-    if scene == "portrait" and re.search(r"\b(nude|naked|topless|lingerie|underwear|bare breasts)\b", prompt, re.I):
-        scene = "nude"
+    if scene == "portrait":
+        if re.search(r"\b(nude|naked|topless|bare breasts)\b", prompt, re.I):
+            scene = "nude"
+        elif re.search(r"\b(lingerie|underwear)\b", prompt, re.I):
+            scene = "boudoir"
+    if PRIVATE_PHOTO.search(caption):
+        raise ValueError("Internal photo caption")
+    if require_nude:
+        outfit = re.search(r"\b(?:clothed|dressed in|knit(?:ted)? top|lingerie|bra|sweater|t-shirt)\b", prompt, re.I)
+        if scene != "nude" or outfit or re.search(r"\b(?:nudity|nude|naked)\b", exclude, re.I):
+            raise ValueError("Photo scene contradicts request")
+        prompt = "Nude portrait of an adult woman, " + prompt
+        exclude = ", ".join(filter(None, ("clothing, underwear", exclude.strip())))
     return scene, prompt, caption.strip(), exclude.strip()
 
 

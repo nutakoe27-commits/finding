@@ -78,7 +78,16 @@ def transcript(revision, turns):
 
 def dialog(db, user_id):
     row = db.execute("SELECT revision, turns FROM companion_dialogs WHERE user_id=?", (user_id,)).fetchone()
-    return (row["revision"], json.loads(row["turns"])) if row else (0, [])
+    if not row:
+        return 0, []
+    turns = json.loads(row["turns"])
+    for turn in turns:
+        turn["assistant"] = companion_photos.clean_old_reply(turn["assistant"])
+        for part in turn.get("parts", []):
+            part["text"] = companion_photos.clean_old_reply(part["text"])
+        if turn.get("queued"):
+            turn["queued"] = [companion_photos.clean_old_reply(text) for text in turn["queued"]]
+    return row["revision"], turns
 
 
 def create_chat_app(settings=None):
@@ -276,41 +285,45 @@ def create_chat_app(settings=None):
             scene = latest_photo["caption"] or companion_photos.SCENES.get(latest_photo["scene"], "портрет Миры")
             reference = json.dumps({"подпись": scene, "описание": latest_photo["photo_prompt"],
                                     "исключения": latest_photo["negative_prompt"] or ""}, ensure_ascii=False)
-            # Anchor the caption to its turn so delivery of a new photo does not
-            # invalidate the system prefix and every preceding chat message.
-            target = prompt[0]  # Legacy camera requests had no associated chat turn.
-            for index, turn in enumerate(turns[-8:]):
-                if turn.get("photo_id") == latest_photo["id"]:
-                    target = prompt[2 * index + 2]
-                    break
-            target["content"] += f"\n[Доставлено фото Миры, описание для отсылок к нему: {reference}]"
+            # Keep renderer metadata out of the examples of Mira's conversational voice.
+            prompt[0]["content"] += "\nСправка для следующего кадра (не выводи в чат): " + reference
         model = replace(settings, qwen_enable_thinking=False)
         plan = None
         try:
             answer = await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
             if photos_enabled:
-                direct = bool(companion_photos.DIRECT_REQUEST.match(message))
+                after_photo = bool(latest_photo and turns and turns[-1].get("photo_id") == latest_photo["id"])
+                require_nude = companion_photos.requires_nude_scene(message, after_photo)
+                direct = require_nude or bool(companion_photos.DIRECT_REQUEST.match(message))
                 malformed_plan = False
                 try:
-                    plan = companion_photos.read_plan(answer, allow_json=direct)
+                    plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude)
+                    if plan is None and companion_photos.PRIVATE_PHOTO.search(answer):
+                        raise ValueError("Internal photo metadata in reply")
                     needs_plan = direct and plan is None
                 except ValueError:
                     malformed_plan = True
                     needs_plan = True
                 if needs_plan:
                     # Some chat models acknowledge a direct request in prose. Recover the actual job.
-                    repair = [*prompt, {"role": "assistant", "content": answer}, {"role": "user", "content":
-                              "Проверь мой последний запрос. Если я просил снимок, верни [[PHOTO]] и JSON "
-                              "по прежним правилам. Иначе верни NONE."}]
+                    instruction = ("Верни только [[PHOTO]] и JSON. Пользователь явно просит новый кадр без одежды: "
+                                   "scene=nude, в prompt убери одежду из предыдущего кадра."
+                                   if require_nude else
+                                   "Проверь мой последний запрос. Если я просил снимок, верни [[PHOTO]] и JSON "
+                                   "по прежним правилам. Иначе верни NONE.")
+                    repair = [*prompt, {"role": "assistant", "content": companion_photos.clean_old_reply(answer)},
+                              {"role": "user", "content": instruction}]
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
-                    plan = companion_photos.read_plan(detail, allow_json=True)
-                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan):
+                    plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude)
+                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or require_nude):
                         raise ValueError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."
             if plan and plan[0] in companion_photos.ADULT and not companion_photos.wants_intimate_photo(
                     message, turns[-1]["assistant"] if turns else ""):
                 plan, answer = None, "Ты хочешь именно интимное фото?"
+            if not plan and companion_photos.PRIVATE_PHOTO.search(answer):
+                raise ValueError("Internal photo metadata in chat reply")
             parts = ["Сейчас сделаю снимок."] if plan else reply_parts(answer)
         except ValueError:
             with repo.connection() as db:
