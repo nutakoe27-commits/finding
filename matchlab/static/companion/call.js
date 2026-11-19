@@ -205,7 +205,7 @@ async function startCall() {
       call.node.port.onmessage = (e) => microphoneChunk(call, e.data);
     };
     const loadGreeting = async () => {
-      const r = await fetch('/chat-assets/hello.mp3', { signal: call.abort.signal });
+      const r = await fetch('/chat-assets/hello.mp3?v=f2', { signal: call.abort.signal });
       if (!r.ok) throw new Error('Не удалось загрузить приветствие.');
       return r.arrayBuffer();
     };

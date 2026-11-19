@@ -1,15 +1,16 @@
 # Аудиозвонки Мире
 
-Русскую речь синтезирует модель VITS2 Natasha через ONNX Runtime на CPU сервера сайта. Установка загружает файл весов объёмом 157 МБ и проверяет его SHA-256 перед заменой. По умолчанию файл находится в `.local/voices/natasha.onnx` относительно корня проекта. Путь можно задать через `MIRA_RU_MODEL`. Модель опубликована под лицензией MIT. [Карточка модели](https://huggingface.co/frappuccino/vits2_ru_natasha)
+Голос А использует русский режим Supertonic 3, стиль F2 и частоту 44,1 кГц. Приветствие подготовлено заранее. Ответы в звонке и озвучка русских сообщений синтезируются на CPU сервера сайта. Веса и лицензия Open RAIL-M устанавливаются в `.local/voices/supertonic-3-f2`. Путь задаётся переменной `MIRA_SUPERTONIC_DIR`. [Карточка модели](https://huggingface.co/Supertone/supertonic-3)
 
-После обновления кода на VPS-1 выполните из каталога сайта:
+Установка на VPS-1 из каталога сайта
 
 ```bash
-.venv/bin/python -m pip install 'onnxruntime==1.23.2' 'num2words==0.5.14' 'websockets==15.0.1' &&
+.venv/bin/python -m pip install 'supertonic==1.3.1' 'onnxruntime==1.23.2' 'num2words==0.5.14' 'websockets==15.0.1' &&
 .venv/bin/python -m matchlab.russian_voice --install &&
-PYTHONPATH=. .venv/bin/python scripts/check_companion_voice.py &&
 systemctl restart matchlab.service
 ```
+
+Для установки весов из локальной копии добавьте к команде установки модели `--archive /root/mira-voice-a.tar.gz`. В обоих вариантах установщик проверяет SHA-256 каждого файла и синтезирует короткую реплику. Полная проверка звонка через туннель запускается командой `PYTHONPATH=. .venv/bin/python scripts/check_companion_voice.py`.
 
 Для распознавания речи используется Whisper через существующий туннель, для английских ответов — Kokoro. Проверка синтезирует русскую фразу, передаёт её в Whisper и проверяет звуковой ответ Kokoro.
 

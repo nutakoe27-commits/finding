@@ -15,7 +15,7 @@ from matchlab import companion_voice as voice
 async def check():
     report = {}
     try:
-        wav = await asyncio.wait_for(voice.russian_audio("Привет, Мира. Как дела?"), 10)
+        wav = await asyncio.wait_for(voice.russian_audio("Привет, Мира. Как дела?"), 45)
         with wave.open(io.BytesIO(wav)) as source:
             if source.getsampwidth() != 2 or source.getnchannels() != 1:
                 raise ValueError("Unexpected audio format")
