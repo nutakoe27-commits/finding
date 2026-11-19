@@ -288,6 +288,9 @@ def create_chat_app(settings=None):
                                     "исключения": latest_photo["negative_prompt"] or ""}, ensure_ascii=False)
             # Keep renderer metadata out of the examples of Mira's conversational voice.
             prompt[0]["content"] += "\nСправка для следующего кадра (не выводи в чат): " + reference
+        explicit_selfie = photos_enabled and companion_photos.asks_explicit_selfie(message)
+        if explicit_selfie:
+            prompt[0]["content"] += "\n" + companion_photos.EXPLICIT_PLAN
         model = replace(settings, qwen_enable_thinking=False)
         plan = None
         try:
@@ -295,10 +298,11 @@ def create_chat_app(settings=None):
             if photos_enabled:
                 after_photo = bool(latest_photo and turns and turns[-1].get("photo_id") == latest_photo["id"])
                 require_nude = companion_photos.requires_nude_scene(message, after_photo)
-                direct = require_nude or bool(companion_photos.DIRECT_REQUEST.match(message))
+                direct = explicit_selfie or require_nude or bool(companion_photos.DIRECT_REQUEST.match(message))
                 malformed_plan = False
                 try:
-                    plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude)
+                    plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude,
+                                                      explicit_selfie=explicit_selfie)
                     if plan is None and companion_photos.PRIVATE_PHOTO.search(answer):
                         raise companion_photos.PhotoPlanError("Internal photo metadata in reply")
                     needs_plan = direct and plan is None
@@ -318,9 +322,12 @@ def create_chat_app(settings=None):
                                     'Заполни поля деталями последней просьбы.')
                     repair = [*prompt, {"role": "assistant", "content": companion_photos.clean_old_reply(answer)},
                               {"role": "user", "content": instruction}]
+                    if explicit_selfie:
+                        repair[-1]["content"] = companion_photos.EXPLICIT_PLAN
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
-                    plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude)
-                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or require_nude):
+                    plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude,
+                                                      explicit_selfie=explicit_selfie)
+                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or require_nude or explicit_selfie):
                         raise companion_photos.PhotoPlanError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."

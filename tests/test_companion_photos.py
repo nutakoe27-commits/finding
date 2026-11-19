@@ -13,6 +13,13 @@ from matchlab.config import Settings
 
 
 class PhotoCameraTests(unittest.TestCase):
+    def test_explicit_selfie_requires_a_direct_request(self):
+        for message in ("пришли порно-селфи", "нужно прям порно, но селфи", "сделай селфи в стиле порно в зеркале"):
+            self.assertTrue(companion_photos.asks_explicit_selfie(message), message)
+        for message in ("Пришли развратное фото", "Пришли ню", "Не хочу порно-селфи",
+                        "порно-селфи обсуждали вчера", "пришли порно-селфи, хотя нет, передумал"):
+            self.assertFalse(companion_photos.asks_explicit_selfie(message), message)
+
     def test_camera_geometry_and_custom_request_survive_planning(self):
         data = {"scene": "portrait", "caption": "На кухне", "prompt": "blue shirt", "shot": "uneven window light"}
         for camera, geometry in (("front", "forearm"), ("mirror", "reflection"), ("timer", "propped up")):
@@ -240,6 +247,23 @@ class PhotoIntegration(unittest.TestCase):
         image = b"\xff\xd8\xfftest\xff\xd9"
         self.finish(job, image).raise_for_status()
         self.assertEqual(self.site.get(f"/api/chat/photos/{job['id']}/image").content, image)
+
+    def test_explicit_selfie_repairs_a_downgrade_and_uses_existing_adult_card(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        data = {"scene":"nude", "caption":"В зеркале", "prompt":"bedroom, warm light",
+                "shot":"angled reflection", "camera":"mirror"}
+        with patch("matchlab.qwen._completion", side_effect=[
+                "[[PHOTO]]"+json.dumps(data), "[[PHOTO]]"+json.dumps(data | {"scene":"explicit"})]):
+            result = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0,
+                                                       "message":"Пришли порно-селфи в зеркале"})
+        result.raise_for_status()
+        self.assertEqual(result.json()["photo"]["scene"], "nude")
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertIn("Sexually explicit adult selfie", job["photo_prompt"])
+        self.assertIn("mirror selfie", job["photo_prompt"])
+        with self.assertRaises(companion_photos.PhotoPlanError):
+            companion_photos.read_plan("[[PHOTO]]"+json.dumps(data | {"scene":"explicit"}))
 
     def test_queue_failure_timeout_and_retry(self):
         self.create()

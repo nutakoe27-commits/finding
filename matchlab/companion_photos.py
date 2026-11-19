@@ -38,6 +38,17 @@ DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|
                             r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста|полностью|голую|обнаж[её]нную|(?:интимн|откровенн|развратн)(?:ое|ую))\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
 
 
+# A generic adult or nude photo request keeps its existing meaning.
+EXPLICIT_SELFIE = re.compile(
+    r"^(?:мира[,!]?\s+)?(?:(?:пришли|скинь|хочу|сделай|покажи|нужно|давай|можно)\s+)?"
+    r"(?:(?:мне|прям|прямо|сво[её])\s+)*"
+    r"(?:порно(?:[- ]|,?\s+но\s+)?селфи|селфи\s+(?:в стиле|в формате)\s+порно)"
+    r"(?=$|[\s.,!)—-])", re.I)
+EXPLICIT_PLAN = ("Для этой прямой просьбы верни [[PHOTO]] и JSON с scene=explicit. Это селфи одной "
+                 "совершеннолетней Миры: сохрани в prompt запрошенный взрослый жанр и действие, "
+                 "выбери camera=front или mirror по смыслу. Остальные поля по правилам фото.")
+
+
 DECLINE = re.compile(r"^\s*(?:мира[, ]+)?(?:(?:фото|фотку|снимок|селфи)\s+не\s+(?:надо|хочу|присылай)|"
                      r"не\s+(?:присылай|показывай|хочу|надо)\s+(?:мне\s+)?(?:фото|фотку|снимок|селфи))\b", re.I)
 INTIMATE = re.compile(r"\b(?:18\+|ню\b|обнаж\w*|гол(?:ая|ую|ой|еньк\w*)|без (?:одежды|белья)|"
@@ -57,6 +68,17 @@ NEGATED_NUDITY = re.compile(rf"\b(?:не|кроме|никак\w*)\s+(?:(?:хо�
 PRIVATE_PHOTO = re.compile(r"(?:\[?Доставлено фото Миры\s*[,：:]|Справка для следующего кадра\s*\(|"
                            r'["«]подпись["»]\s*:\s*"[^"\n]*"\s*,\s*"описание"\s*:|'
                            r'"prompt"\s*:\s*"[^"\n]*"\s*,\s*"shot"\s*:)', re.I)
+
+
+def asks_explicit_selfie(message):
+    match = EXPLICIT_SELFIE.match(message)
+    if not match:
+        return False
+    rest = message[match.end():].strip(" ,.!)—-").lower()
+    if re.search(r"\b(?:не|нет|отмена|передумал\w*|отмен\w*|без порно)\b", rest):
+        return False
+    return not rest or rest == "пожалуйста" or rest.startswith(
+        ("в ", "на ", "у ", "из ", "с ", "при ", "лежа ", "лёжа ", "сидя ", "стоя "))
 
 
 def requires_nude_scene(message, after_photo):
@@ -85,7 +107,7 @@ def wants_intimate_photo(message, last_answer, *, previous_scene=None, requested
     if requested_scene in ADULT and previous_scene == requested_scene and REPEAT_PHOTO.fullmatch(message):
         return True
     direct = DIRECT_REQUEST.match(message)
-    requested_style = direct and ADULT_PHOTO.search(direct.group())
+    requested_style = asks_explicit_selfie(message) or (direct and ADULT_PHOTO.search(direct.group()))
     return bool(requested_style or INTIMATE.search(message) or
                 (AGREES.match(message) and INTIMATE.search(last_answer)
                  and re.search(r"фото|снимок|селфи|показать|прислать", last_answer, re.I)))
@@ -104,7 +126,7 @@ def photo_text(value):
     return value
 
 
-def read_plan(answer, *, allow_json=False, require_nude=False):
+def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=False):
     raw = answer.strip()
     marked = "[[PHOTO]]" in raw
     if marked:
@@ -121,7 +143,8 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
         return None
     if not (marked or allow_json) and not (isinstance(data, dict) and {"scene", "caption", "prompt"} <= data.keys()):
         return None
-    if not isinstance(data, dict) or data.get("scene") not in ("portrait", "boudoir", "nude"):
+    scenes = ("explicit",) if explicit_selfie else ("portrait", "boudoir", "nude")
+    if not isinstance(data, dict) or data.get("scene") not in scenes:
         raise PhotoPlanError("Invalid photo scene")
     prompt, caption = photo_text(data.get("prompt")), data.get("caption")
     if not isinstance(prompt, str) or not re.fullmatch(r"[ -~]{3,400}", prompt) or not re.search("[a-zA-Z]", prompt):
@@ -142,6 +165,8 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
                   "self timer": "timer", "tripod": "timer"}.get(camera, camera)
     if not isinstance(camera, str) or camera not in CAMERAS:
         raise PhotoPlanError("Invalid camera mode")
+    if explicit_selfie and camera not in ("front", "mirror"):
+        raise PhotoPlanError("Expected a selfie camera")
     if CAMERAS[camera]:
         prompt = CAMERAS[camera] + ", " + prompt
     if camera == "front":
@@ -154,6 +179,10 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
             scene = "boudoir"
     if PRIVATE_PHOTO.search(caption):
         raise PhotoPlanError("Internal photo caption")
+    if explicit_selfie:
+        # Older clients use "nude" to conceal the image until opened. The
+        # renderer receives the requested genre and full composition in text.
+        return "nude", "Sexually explicit adult selfie, " + prompt, caption.strip(), exclude.strip()
     if require_nude:
         outfit = re.search(r"\b(?:clothed|dressed in|knit(?:ted)? top|lingerie|bra|sweater|t-shirt)\b", prompt, re.I)
         if scene != "nude" or outfit or re.search(r"\b(?:nudity|nude|naked)\b", exclude, re.I):
