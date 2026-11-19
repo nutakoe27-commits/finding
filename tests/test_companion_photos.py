@@ -7,9 +7,39 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from matchlab import accounts
+from matchlab import accounts, companion_photos
 from matchlab.companion import create_chat_app
 from matchlab.config import Settings
+
+
+class PhotoCameraTests(unittest.TestCase):
+    def test_camera_geometry_and_custom_request_survive_planning(self):
+        data = {"scene": "portrait", "caption": "На кухне", "prompt": "blue shirt", "shot": "uneven window light"}
+        for camera, geometry in (("front", "forearm"), ("mirror", "reflection"), ("timer", "propped up")):
+            with self.subTest(camera=camera):
+                _, prompt, _, negative = companion_photos.read_plan("[[PHOTO]]" + json.dumps(dict(data, camera=camera)))
+                self.assertEqual("mirror selfie" in negative, camera == "front")
+                self.assertIn(geometry, prompt)
+                self.assertIn("blue shirt, uneven window light", prompt)
+        for optional in ({}, {"camera": "custom"}):
+            _, prompt, _, _ = companion_photos.read_plan("[[PHOTO]]" + json.dumps(data | optional))
+            self.assertEqual(prompt, "blue shirt, uneven window light")
+        with self.assertRaises(ValueError):
+            companion_photos.read_plan("[[PHOTO]]" + json.dumps(dict(data, camera=["front"])))
+
+    def test_direct_adult_style_request_and_discussion(self):
+        self.assertTrue(companion_photos.wants_intimate_photo("Пришли мне откровенное фото", ""))
+        self.assertFalse(companion_photos.wants_intimate_photo("Не нужно развратное фото", ""))
+        self.assertFalse(companion_photos.wants_intimate_photo("Пришли фото, но не откровенное фото", ""))
+
+
+    def test_followup_only_applies_to_same_delivered_adult_scene(self):
+        check = companion_photos.wants_intimate_photo
+        self.assertTrue(check("Так же, но в зеркале", "", previous_scene="boudoir", requested_scene="boudoir"))
+        self.assertFalse(check("Так же, но в зеркале", "", previous_scene="boudoir", requested_scene="nude"))
+        self.assertFalse(check("Так же, но без интима", "", previous_scene="nude", requested_scene="nude"))
+        self.assertFalse(check("Так же, но в свитере", "", previous_scene="nude", requested_scene="nude"))
+        self.assertFalse(check("Так же, но в зеркале", "", previous_scene=None, requested_scene="nude"))
 
 
 class PhotoIntegration(unittest.TestCase):
@@ -78,8 +108,8 @@ class PhotoIntegration(unittest.TestCase):
         self.site.post("/api/photo-worker/claim", headers=gpu)
         with patch("matchlab.qwen._completion", return_value="Я сейчас на набережной в красном шарфе."):
             self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0, "message": "Где гуляешь?"})
-        send = {"id": str(uuid4()), "revision": 1, "message": "А можно тебя там увидеть по пояс, без очков?"}
-        plan = '[[PHOTO]]{"scene":"portrait","caption":"На набережной","prompt":"red scarf, evening waterfront","shot":"waist-up, soft dusk light","exclude":"glasses"}'
+        send = {"id": str(uuid4()), "revision": 1, "message": "А можно селфи там по пояс, без очков?"}
+        plan = '[[PHOTO]]{"scene":"portrait","caption":"На набережной","prompt":"red scarf, evening waterfront","shot":"waist-up, soft dusk light","camera":"front","exclude":"glasses"}'
         with patch("matchlab.qwen._completion", return_value=plan) as model:
             result = self.site.post("/api/chat", json=send)
             self.assertEqual(result.status_code, 200, result.text)
@@ -90,13 +120,14 @@ class PhotoIntegration(unittest.TestCase):
             self.assertIn("в красном шарфе", model.call_args.args[1][-2]["content"])
         self.assertEqual(self.site.post("/api/photo-worker/claim", headers=self.gpu).status_code, 204)
         job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
-        self.assertEqual(job["photo_prompt"], "red scarf, evening waterfront, waist-up, soft dusk light")
-        self.assertEqual(job["negative_prompt"], "glasses")
+        self.assertEqual(job["photo_prompt"], "handheld front-camera selfie, foreshortened forearm at frame edge, "
+                         "red scarf, evening waterfront, waist-up, soft dusk light")
+        self.assertEqual(job["negative_prompt"], "glasses, mirror selfie, phone blocking face")
         self.finish(job, b"").raise_for_status()
         self.create(retry_of=job["id"]).raise_for_status()
         again = self.site.post("/api/photo-worker/claim", headers=gpu).json()
         self.assertEqual(again["photo_prompt"], job["photo_prompt"])
-        self.assertEqual(again["negative_prompt"], "glasses")
+        self.assertEqual(again["negative_prompt"], job["negative_prompt"])
         self.assertNotEqual(again["id"], job["id"])
 
     def test_chat_photo_boundaries_and_stale_worker(self):
@@ -164,7 +195,7 @@ class PhotoIntegration(unittest.TestCase):
                 self.assertEqual(reply.json()["photo"]["scene"], "nude")
             job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
             self.assertEqual(job["id"], key)
-            self.assertIn("Nude portrait", job["photo_prompt"])
+            self.assertIn("Unclothed adult woman", job["photo_prompt"])
             self.assertIn("clothing", job["negative_prompt"])
             self.finish(job, b"\xff\xd8\xffok\xff\xd9").raise_for_status()
 

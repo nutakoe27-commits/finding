@@ -16,18 +16,26 @@ MAX_JPEG = 800_000
 METADATA = "id,scene,created_at,state,deadline,caption"
 
 
-PHOTO_STYLE = """Если просят фото Миры сейчас, в том числе «покажись там», «ещё одну» или принимают предложение,
-составь задание фотографу. Формат: [[PHOTO]]{"scene":"portrait","caption":"…","prompt":"…","shot":"…","exclude":""}.
-scene: portrait (одета), boudoir или nude — два последних только по явной просьбе или согласию на такой снимок.
-caption: короткая подпись на русском. prompt, shot, exclude на английском (ASCII). prompt: самое важное из последней
-просьбы первым; конкретные одежда, действие, предметы и место. Для «так же, но…» сохрани детали прошлого
-кадра, замени исправленные. Для новой сцены бери только относящиеся к ней детали. shot: совместимые с просьбой
-крупность, ракурс и источник света. Вместе prompt и shot — до 40 слов, один физически возможный кадр.
-exclude: только явно исключённые предметы, через запятую; иначе пустая строка. Личные данные и переписку
-в описание не переноси. Поправка к только что присланному фото — запрос нового снимка. Для просьбы
-без одежды выбери nude и убери прежнюю одежду из описания. Служебное описание фото не цитируй. Обсуждение фото, цитата и отказ — обычная беседа."""
+PHOTO_STYLE = """Просьба о фото Миры, согласие на снимок или поправка к нему («так же, но…») → только
+[[PHOTO]]{"scene":"…","caption":"…","prompt":"…","shot":"…","camera":"…","exclude":""}.
+Обсуждение, цитата, отказ → беседа. scene: portrait — одета; boudoir или nude — по явной просьбе/согласию.
+caption по-русски. prompt, shot, exclude на английском ASCII. prompt: сначала конкретные действие, поза,
+одежда и место из просьбы. При поправке сохрани остальное из прошлого кадра; для nude убери одежду.
+camera: front — селфи с руки; mirror — отражение с телефоном; timer — телефон на опоре для общего плана
+или когда заняты руки; custom — заданная съёмка, например студийная. shot: крупность, угол телефона,
+взгляд и источник света на месте. Для бытового кадра одна живая деталь: край плеча обрезан, блик или неровная
+тень. Уважай заданный ракурс и свет. prompt + shot до 40 слов. exclude — явно исключённые предметы через
+запятую. Береги личные данные; служебное описание не цитируй."""
+# Put the essential camera geometry into the stored render prompt once, so a retry
+# or a follow-up refers to the same composition. A custom shot is already specified.
+CAMERAS = {
+    "front": "handheld front-camera selfie, foreshortened forearm at frame edge",
+    "mirror": "mirror selfie, phone visible in one hand in reflection",
+    "timer": "phone propped up, self-timer snapshot",
+    "custom": "",
+}
 DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|вышли|отправь|покажи|сделай|можно)"
-                            r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста|полностью|голую|обнаж[её]нную)\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
+                            r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста|полностью|голую|обнаж[её]нную|(?:интимн|откровенн|развратн)(?:ое|ую))\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
 
 
 DECLINE = re.compile(r"^\s*(?:мира[, ]+)?(?:(?:фото|фотку|снимок|селфи)\s+не\s+(?:надо|хочу|присылай)|"
@@ -35,6 +43,7 @@ DECLINE = re.compile(r"^\s*(?:мира[, ]+)?(?:(?:фото|фотку|сним�
 INTIMATE = re.compile(r"\b(?:18\+|ню\b|обнаж\w*|гол(?:ая|ую|ой|еньк\w*)|без (?:одежды|белья)|"
                       r"в (?:бель[её]|трус\w*|лифчик\w*)|раздет\w*|разден\w*|интим\w*|эроти\w*|нюд\w*|"
                       r"топлес|nudes?\b|naked|lingerie|underwear|раздень\w*)", re.I)
+ADULT_PHOTO = re.compile(r"\b(?:откровенн|развратн)(?:ое|ую)\s+(?:фото|фотку|селфи)\b", re.I)
 AGREES = re.compile(r"^\s*(?:да\b|давай\b|хочу\b|пришли\b|скинь\b|покажи\b|конечно\b|ага\b|ещ[её] одну\b)", re.I)
 
 
@@ -64,10 +73,20 @@ def clean_old_reply(text):
     return text[:marker.start()].rstrip(" \n[{") or "Мне не удалось подготовить снимок."
 
 
-def wants_intimate_photo(message, last_answer):
-    if NEGATED_NUDITY.search(message):
+REPEAT_PHOTO = re.compile(r"(?:давай\s+)?(?:ещ[её] (?:одну|одно|такую же)|тот же кадр|так(?:ую)? же)"
+                          r"(?:[, ]+(?:но |только )?(?:в зеркале|сбоку|сверху|снизу|поближе|издалека))?[.! )]*", re.I)
+DECLINE_ADULT = re.compile(r"\b(?:без (?:интима|эротики|ню)|(?:только|лучше) в одежде|"
+                          r"не (?:интимн|откровенн|развратн)\w*)\b", re.I)
+
+
+def wants_intimate_photo(message, last_answer, *, previous_scene=None, requested_scene=None):
+    if NEGATED_NUDITY.search(message) or DECLINE_ADULT.search(message):
         return False
-    return bool(INTIMATE.search(message) or
+    if requested_scene in ADULT and previous_scene == requested_scene and REPEAT_PHOTO.fullmatch(message):
+        return True
+    direct = DIRECT_REQUEST.match(message)
+    requested_style = direct and ADULT_PHOTO.search(direct.group())
+    return bool(requested_style or INTIMATE.search(message) or
                 (AGREES.match(message) and INTIMATE.search(last_answer)
                  and re.search(r"фото|снимок|селфи|показать|прислать", last_answer, re.I)))
 
@@ -105,6 +124,13 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
     exclude = data.get("exclude", "")
     if not isinstance(exclude, str) or not re.fullmatch(r"[ -~]{0,120}", exclude):
         raise ValueError("Invalid photo exclusions")
+    camera = data.get("camera", "custom")
+    if not isinstance(camera, str) or camera not in CAMERAS:
+        raise ValueError("Invalid camera mode")
+    if CAMERAS[camera]:
+        prompt = CAMERAS[camera] + ", " + prompt
+    if camera == "front":
+        exclude = ", ".join(filter(None, (exclude.strip(), "mirror selfie, phone blocking face")))
     scene = data["scene"]
     if scene == "portrait":
         if re.search(r"\b(nude|naked|topless|bare breasts)\b", prompt, re.I):
@@ -117,7 +143,7 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
         outfit = re.search(r"\b(?:clothed|dressed in|knit(?:ted)? top|lingerie|bra|sweater|t-shirt)\b", prompt, re.I)
         if scene != "nude" or outfit or re.search(r"\b(?:nudity|nude|naked)\b", exclude, re.I):
             raise ValueError("Photo scene contradicts request")
-        prompt = "Nude portrait of an adult woman, " + prompt
+        prompt = "Unclothed adult woman, " + prompt
         exclude = ", ".join(filter(None, ("clothing, underwear", exclude.strip())))
     return scene, prompt, caption.strip(), exclude.strip()
 

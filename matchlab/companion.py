@@ -320,7 +320,8 @@ def create_chat_app(settings=None):
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."
             if plan and plan[0] in companion_photos.ADULT and not companion_photos.wants_intimate_photo(
-                    message, turns[-1]["assistant"] if turns else ""):
+                    message, turns[-1]["assistant"] if turns else "",
+                    previous_scene=latest_photo["scene"] if after_photo else None, requested_scene=plan[0]):
                 plan, answer = None, "Ты хочешь именно интимное фото?"
             if not plan and companion_photos.PRIVATE_PHOTO.search(answer):
                 raise ValueError("Internal photo metadata in chat reply")

@@ -16,15 +16,13 @@ import requests
 
 MODEL = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 REVISION = "451f4fe16113bff5a5d2269ed5ad43b0592e9a14"
-PORTRAIT = ("Editorial photograph of Mira, one fictional 28-year-old woman, short wavy brunette bob, "
-            "hazel green eyes, arched brows, warm olive complexion, natural skin texture, subtle smile, ")
 SCENES = {
-    "selfie": "candid close-up selfie, ivory knit sweater, window light, soft shadows, softly blurred terracotta wall",
-    "cafe": "waist-up seated in a cozy cafe, moss green blouse, late afternoon window light, film photography",
-    "boudoir": "intimate boudoir portrait, lace lingerie, warm bedside lamp, relaxed pose, natural proportions",
-    "nude": "fine art nude portrait, bare breasts, relaxed adult woman alone, side lighting, studio backdrop",
+    "selfie": "handheld front-camera selfie, forearm at the frame edge, slightly high angle, sweater, uneven window light",
+    "cafe": "handheld selfie at a cafe table, moss green blouse, off-centre framing, light from the cafe window",
+    "boudoir": "mirror selfie, lace lingerie, phone in one hand, uneven bedside lamplight",
+    "nude": "unclothed adult woman, self-timer phone snapshot, soft light from the bedroom window",
 }
-NEGATIVE = ("illustration, CGI, waxy skin, excessive retouching, blur, double face, duplicate person, "
+NEGATIVE = ("illustration, CGI, waxy skin, excessive retouching, double face, duplicate person, "
             "distorted anatomy, extra limbs, watermark, signature, lettering")
 
 
@@ -36,16 +34,9 @@ FACE_WEIGHTS = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
 
 
 def render_prompts(scene, photo_prompt, negative_prompt, *, xl):
-    if photo_prompt:
-        # CLIP truncates long prompts. Put the requested shot ahead of style defaults.
-        positive = ("Photograph of one adult woman, " + photo_prompt +
-                    ", short wavy brunette bob, hazel eyes, olive skin, natural skin texture")
-    elif xl:
-        positive = ("Candid photograph of a 28-year-old adult woman, short wavy brunette bob, "
-                    "hazel-green eyes, olive complexion, " + SCENES[scene] +
-                    ", lifelike skin, fine flyaway hairs, candid expression, subtle film grain")
-    else:
-        positive = PORTRAIT + SCENES[scene]
+    composition = photo_prompt or SCENES[scene]
+    positive = (composition + ", photograph of one adult woman, short wavy brunette bob, "
+                "hazel eyes, olive skin, natural skin texture")
     negative = NEGATIVE + (", bad hands, airbrushed, plastic skin" if xl else "")
     return positive, (negative_prompt + ", " + negative if negative_prompt else negative)
 
@@ -107,7 +98,12 @@ class RealVisPortraits:
         self.pipe.enable_model_cpu_offload(gpu_id=0)
         self.pipe.set_progress_bar_config(disable=True)
         with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
-            self.reference = ImageOps.fit(avatar.convert("RGB"), (224, 224), Image.Resampling.LANCZOS)
+            # This bundled avatar is square; crop to the face so the adapter
+            # does not also condition every scene on its sweater and shoulders.
+            side = avatar.width
+            face = avatar.crop((round(side * .25), round(side * .17),
+                                round(side * .81), round(side * .73)))
+            self.reference = ImageOps.fit(face.convert("RGB"), (224, 224), Image.Resampling.LANCZOS)
 
     def render(self, scene, seed=None, photo_prompt=None, negative_prompt=None):
         import torch
