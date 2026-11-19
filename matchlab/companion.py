@@ -132,7 +132,7 @@ def create_chat_app(settings=None):
     accounts.install(app, repo, settings)
     social_login.install(app, repo, settings)
     companion_admin.install(app, repo)
-    companion_photos.install(app, repo, settings)
+    enqueue_photo = companion_photos.install(app, repo, settings)
     def call_reply(history, text):
         prompt = conversation_prompt(history, text, call=True)
         return qwen._completion(replace(settings, qwen_enable_thinking=False), prompt, temperature=0.75)
@@ -284,7 +284,7 @@ def create_chat_app(settings=None):
         message = message.strip()
         with repo.connection() as db:
             revision, turns = dialog(db,user["id"])
-            latest_photo = db.execute("SELECT scene,created_at FROM companion_photos WHERE user_id=? "
+            latest_photo = db.execute("SELECT scene,caption,photo_prompt,created_at FROM companion_photos WHERE user_id=? "
                                       "AND state='ready' ORDER BY created_at DESC,id DESC LIMIT 1",
                                       (user["id"],)).fetchone()
         for turn in turns:
@@ -298,30 +298,55 @@ def create_chat_app(settings=None):
             dictated=channel == "voice", days_away=pause_days(turns, sent_at),
         )
         if latest_photo and (len(turns) < 8 or latest_photo["created_at"] >= (turns[-8].get("sent_at") or "")):
-            scene = companion_photos.SCENES[latest_photo["scene"]]
-            prompt[0]["content"] += (f"\nПоследнее фото в вашей переписке — {scene}. "
+            scene = latest_photo["caption"] or companion_photos.SCENES.get(latest_photo["scene"], "портрет Миры")
+            reference = json.dumps({"подпись": scene, "описание": latest_photo["photo_prompt"]}, ensure_ascii=False)
+            prompt[0]["content"] += (f"\nДанные последнего фото в вашей переписке: {reference}. "
                                      "Если человек говорит о снимке, учитывай его сюжет. "
                                      "Возвращайся к нему, только если собеседник сам о нём заговорил.")
+        photos_enabled = (settings.data_dir / "photo-worker.key").is_file()
+        if photos_enabled:
+            prompt[0]["content"] += "\n" + companion_photos.PHOTO_STYLE
+        model = replace(settings, qwen_enable_thinking=False)
+        plan = None
         try:
-            answer = await run_in_threadpool(
-                qwen._completion,
-                replace(settings, qwen_enable_thinking=False),
-                prompt,
-                temperature=0.75,
-            )
-            parts = reply_parts(answer)
+            answer = await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
+            if photos_enabled:
+                direct = bool(companion_photos.DIRECT_REQUEST.match(message))
+                try:
+                    plan = companion_photos.read_plan(answer, allow_json=direct)
+                    needs_plan = direct and plan is None
+                except ValueError:
+                    needs_plan = True
+                if needs_plan:
+                    # Some chat models acknowledge a direct request in prose. Recover the actual job.
+                    repair = [dict(item) for item in prompt]
+                    repair[0]["content"] += ("\nПроверь последний запрос. Если пользователь просит снимок, "
+                                             "составь [[PHOTO]] и JSON по правилам выше. Иначе верни NONE.")
+                    detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
+                    plan = companion_photos.read_plan(detail, allow_json=True)
+                    if plan is None and (detail.strip().upper() != "NONE" or "[[PHOTO]]" in answer):
+                        raise ValueError("Incomplete photo description")
+            if plan and companion_photos.DECLINE.match(message):
+                plan, answer = None, "Хорошо, просто поболтаем."
+            if plan and plan[0] in companion_photos.ADULT and not companion_photos.wants_intimate_photo(
+                    message, turns[-1]["assistant"] if turns else ""):
+                plan, answer = None, "Ты хочешь именно интимное фото?"
+            parts = ["Сейчас сделаю снимок."] if plan else reply_parts(answer)
         except ValueError:
             with repo.connection() as db:
                 companion_admin.record(db, user["id"], "reply_failed")
             raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.")
         turn = {"id":key, "user":message, "assistant":parts[0] if channel == "text" else " ".join(parts), "channel":channel,
                 "sent_at":sent_at, "answered_at":accounts.now(), "shared_version":accounts.LEGAL_VERSION}
+        if plan:
+            turn["photo_id"] = key
         if channel == "text" and len(parts) > 1:
             turn["parts"] = [{"text": parts[0], "at": turn["answered_at"]}]
             turn["queued"] = parts[1:]
         if turns:
             turns[-1].pop("queued", None)
         turns = (turns + [turn])[-40:]
+        photo = None
         with repo.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("INSERT OR IGNORE INTO companion_dialogs VALUES (?,0,'[]')",(user["id"],))
@@ -329,7 +354,9 @@ def create_chat_app(settings=None):
                                 (revision+1,json.dumps(turns,ensure_ascii=False),user["id"],revision))
             if result.rowcount != 1:
                 raise HTTPException(409,"Диалог изменился. Обновите переписку.")
+            if plan:
+                photo = enqueue_photo(db, user["id"], key, *plan)
             companion_admin.record(db, user["id"], channel + "_turn")
-        return transcript(revision + 1, turns)
+        return {**transcript(revision + 1, turns), "photo": photo}
 
     return app

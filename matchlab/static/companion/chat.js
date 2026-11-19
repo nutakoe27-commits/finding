@@ -272,11 +272,6 @@ el('compose').onsubmit = guard(async () => {
   if (pending || voice.busy) return;
   const message = el('message').value.trim();
   if (!message) return;
-  const scene = photos.enabled && photos.requestedScene(message);
-  if (scene) {
-    photos.open(message, scene);
-    return;
-  }
   const channel = voice.draft ? 'voice' : 'text';
   pending = true;
   pauseFollowup();
@@ -297,7 +292,9 @@ el('compose').onsubmit = guard(async () => {
   try {
     const data = await api('chat', 'POST', retry);
     reply = data.turns.find((t) => t.id === retry.id);
+    if (data.photo && !photos.items.some((item) => item.id === data.photo.id)) photos.items.push(data.photo);
     draw(data);
+    if (reply?.photo_id) photos.load().catch(() => {});
     retry = null;
     el('message').value = '';
     el('message').rows = 1;

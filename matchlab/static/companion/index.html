@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#172b3c" />
     <title>Мира · Сообщения</title>
-    <link rel="stylesheet" href="/chat-assets/chat.css?v=8" />
-    <script defer src="/chat-assets/chat.js?v=8"></script>
-    <script defer src="/chat-assets/photos.js?v=1"></script>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=9" />
+    <script defer src="/chat-assets/chat.js?v=9"></script>
+    <script defer src="/chat-assets/photos.js?v=2"></script>
     <link rel="stylesheet" href="/static/social-login.css" />
     <link rel="stylesheet" href="/chat-assets/account.css?v=1" />
     <script defer src="/chat-assets/account-ui.js?v=1"></script>
@@ -16,22 +16,6 @@
     <script defer src="/chat-assets/call.js?v=4"></script>
   </head>
   <body>
-    <dialog id="photoDialog" aria-labelledby="photoTitle">
-      <form id="photoForm">
-        <h2 id="photoTitle">Фото от Миры</h2>
-        <fieldset id="photoScenes">
-          <legend>Какой снимок прислать?</legend>
-          <label><input type="radio" name="scene" value="selfie" checked> Селфи у окна</label>
-          <label><input type="radio" name="scene" value="cafe"> В кафе</label>
-          <label><input type="radio" name="scene" value="boudoir"> В белье · 18+</label>
-          <label><input type="radio" name="scene" value="nude"> Ню · 18+</label>
-        </fieldset>
-        <label id="photoConsent" hidden><input type="checkbox" id="wantAdult"> Хочу получить интимное фото Миры</label>
-        <p id="photoError" role="status"></p>
-        <div class="photo-actions"><button type="button" id="photoCancel">Отмена</button>
-        <button class="primary" id="photoSubmit">Попросить фото</button></div>
-      </form>
-    </dialog>
     <main class="messenger" data-pane="chat">
       <aside class="rail" aria-label="Список чатов">
         <div class="railbrand">

@@ -91,11 +91,12 @@ class RealVisPortraits:
         with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
             self.reference = ImageOps.fit(avatar.convert("RGB"), (224, 224), Image.Resampling.LANCZOS)
 
-    def render(self, scene, seed=None):
+    def render(self, scene, seed=None, photo_prompt=None):
         import torch
 
+        composition = photo_prompt or SCENES[scene]
         prompt = ("Candid photograph of a 28-year-old adult woman, short wavy brunette bob, "
-                  "hazel-green eyes, olive complexion, " + SCENES[scene] +
+                  "hazel-green eyes, olive complexion, " + composition +
                   ", lifelike skin, fine flyaway hairs, candid expression, subtle film grain")
         with torch.inference_mode():
             image = self.pipe(prompt=prompt, negative_prompt=NEGATIVE + ", bad hands, airbrushed, plastic skin",
@@ -125,7 +126,6 @@ class SD15Portraits:
 
         with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
             self.portrait = ImageOps.fit(avatar.convert("RGB"), (512, 640), Image.Resampling.LANCZOS)
-        # All four compositions are authored locally and depict a single adult character.
         self.base = StableDiffusionPipeline.from_pretrained(
             MODEL, revision=REVISION, variant="fp16", torch_dtype=torch.float16, use_safetensors=True,
             safety_checker=None, requires_safety_checker=False,
@@ -138,12 +138,12 @@ class SD15Portraits:
             pipe.enable_vae_slicing()
             pipe.set_progress_bar_config(disable=True)
 
-    def render(self, scene, seed=None):
+    def render(self, scene, seed=None, photo_prompt=None):
         import torch
         from PIL import Image
 
         generator = torch.Generator("cuda").manual_seed(secrets.randbits(32) if seed is None else seed)
-        params = dict(prompt=PORTRAIT + SCENES[scene], negative_prompt=NEGATIVE,
+        params = dict(prompt=PORTRAIT + (photo_prompt or SCENES[scene]), negative_prompt=NEGATIVE,
                       guidance_scale=6.5, generator=generator)
         with torch.inference_mode():
             if scene == "selfie":
@@ -175,10 +175,10 @@ def main():
     select_gpu()
     generator = RealVisPortraits() if profile == "realvisxl" else SD15Portraits()
 
-    def render(scene, seed=None):
+    def render(scene, seed=None, photo_prompt=None):
         started = time.monotonic()
         torch.cuda.reset_peak_memory_stats()
-        jpeg = generator.render(scene, seed)
+        jpeg = generator.render(scene, seed, photo_prompt)
         logging.info("%s in %.1fs, torch peak %d MiB", profile, time.monotonic() - started,
                      torch.cuda.max_memory_reserved() // 2**20)
         return jpeg
@@ -192,7 +192,7 @@ def main():
         raise ValueError("MIRA_SITE requires HTTPS")
     token = Path(__file__).with_name("photo-worker.key").read_text().strip()
     session = requests.Session()
-    session.headers["Authorization"] = "Bearer " + token
+    session.headers.update({"Authorization": "Bearer " + token, "X-Mira-Photo-Context": "1"})
     logging.info("Photo worker ready (%s)", profile)
     while True:
         try:
@@ -203,7 +203,7 @@ def main():
             resp.raise_for_status()
             job = resp.json()
             try:
-                jpeg = render(job["scene"])
+                jpeg = render(job["scene"], photo_prompt=job.get("photo_prompt"))
             except Exception:
                 logging.exception("Generation failed for %s", profile)
                 jpeg = b""

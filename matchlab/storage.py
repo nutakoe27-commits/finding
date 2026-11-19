@@ -49,7 +49,7 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS companion_photos (
                     id TEXT PRIMARY KEY, user_id TEXT NOT NULL, scene TEXT NOT NULL,
                     created_at TEXT NOT NULL, state TEXT NOT NULL, deadline INTEGER NOT NULL,
-                    claim_id TEXT, jpeg BLOB
+                    claim_id TEXT, jpeg BLOB, photo_prompt TEXT, caption TEXT
                 );
                 CREATE INDEX IF NOT EXISTS companion_photo_history ON companion_photos(user_id,created_at);
                 CREATE INDEX IF NOT EXISTS companion_photo_queue ON companion_photos(state,deadline);
@@ -154,6 +154,10 @@ class Repository:
             db.executescript(SCHEMA)
             from .accounts import SCHEMA as ACCOUNT_SCHEMA
             db.executescript(ACCOUNT_SCHEMA)
+            photo_columns = {row["name"] for row in db.execute("PRAGMA table_info(companion_photos)")}
+            for column in ("photo_prompt", "caption"):
+                if column not in photo_columns:
+                    db.execute(f"ALTER TABLE companion_photos ADD COLUMN {column} TEXT")
             user_columns={row['name'] for row in db.execute('PRAGMA table_info(users)')}
             if 'display_name' not in user_columns:db.execute('ALTER TABLE users ADD COLUMN display_name TEXT')
             if 'last_login_provider' not in user_columns:db.execute("ALTER TABLE users ADD COLUMN last_login_provider TEXT NOT NULL DEFAULT 'local'")

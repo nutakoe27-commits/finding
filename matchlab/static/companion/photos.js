@@ -1,5 +1,6 @@
 'use strict';
 const sceneLabels = {
+  portrait: 'Портрет',
   selfie: 'Селфи у окна',
   cafe: 'В кафе',
   boudoir: 'В белье · 18+',
@@ -10,22 +11,6 @@ const photos = {
   enabled: false,
   version: 0,
   revealed: new Set(),
-  requestedScene(text) {
-    const phrase = text
-      .toLocaleLowerCase('ru')
-      .replace(/ё/g, 'е')
-      .trim()
-      .replace(/^мира[,!]?\s+/, '')
-      .replace(
-        /^(?:пришли|покажи|скинь|отправь|сделай|можно)\s+(?:(?:мне|свое|свою|твое|твою|пожалуйста)\s+)*/,
-        '',
-      )
-      .replace(/[?!., )]+$/, '');
-    if (/^(?:интимное фото|фото ню|ню)$/.test(phrase)) return 'nude';
-    if (/^(?:фото|фотку|селфи) в белье$/.test(phrase)) return 'boudoir';
-    if (/^(?:фото|фотку|селфи) (?:в|из) кафе$/.test(phrase)) return 'cafe';
-    return /^(?:\/?фото|фотку|селфи|фотографию)(?: миры| у окна)?$/.test(phrase) ? 'selfie' : null;
-  },
   reset() {
     clearTimeout(this.timer);
     this.version++;
@@ -75,7 +60,7 @@ const photos = {
       card.dataset.at = photo.created_at;
       card.dataset.state = photo.state;
       const title = document.createElement('p');
-      title.textContent = 'Фото Миры · ' + sceneLabels[photo.scene];
+      title.textContent = 'Фото Миры · ' + (photo.caption || sceneLabels[photo.scene]);
       card.append(title);
       if (photo.state === 'ready') {
         const show = () => {
@@ -100,7 +85,16 @@ const photos = {
       } else if (photo.state === 'failed') {
         const again = document.createElement('button');
         again.textContent = 'Фото не получилось · Повторить';
-        again.onclick = () => this.open('', photo.scene);
+        const requestId = crypto.randomUUID();
+        again.onclick = guard(async () => {
+          again.disabled = true;
+          try {
+            await api('chat/photos', 'POST', { id: requestId, retry_of: photo.id });
+            await this.load();
+          } finally {
+            again.disabled = false;
+          }
+        });
         card.append(again);
       } else {
         const status = document.createElement('small');
@@ -121,57 +115,17 @@ const photos = {
     const lastPhoto = this.items.at(-1);
     const lastReplyAt = latestTurn?.parts?.at(-1)?.at || latestTurn?.answered_at || '';
     if (lastPhoto && lastPhoto.created_at >= lastReplyAt)
-      el('preview').textContent = 'Фото Миры · ' + sceneLabels[lastPhoto.scene];
+      el('preview').textContent = 'Фото Миры · ' + (lastPhoto.caption || sceneLabels[lastPhoto.scene]);
     el('welcome').hidden = list.childElementCount > 0;
     if (!el('finder').hidden) searchMessages();
     else if (atEnd) scrollEnd();
   },
-  open(draft = '', scene = 'selfie') {
-    if (!canChat()) return;
-    this.draft = draft;
-    this.key = crypto.randomUUID();
-    const form = el('photoForm');
-    form.reset();
-    form.elements.scene.value = scene;
-    el('photoError').textContent = '';
-    syncConsent();
-    el('photoDialog').showModal();
-  },
 };
-function syncConsent() {
-  const adult = ['boudoir', 'nude'].includes(el('photoForm').elements.scene.value);
-  el('photoConsent').hidden = !adult;
-  el('wantAdult').required = adult;
-  el('wantAdult').checked = false;
-}
-el('photoTool').onclick = () => photos.open();
-el('photoCancel').onclick = () => el('photoDialog').close();
-el('photoScenes').onchange = () => {
-  photos.key = crypto.randomUUID();
-  syncConsent();
-};
-el('photoForm').onsubmit = async (event) => {
-  event.preventDefault();
-  el('photoSubmit').disabled = true;
-  try {
-    const p = await api('chat/photos', 'POST', {
-      id: photos.key,
-      scene: el('photoForm').elements.scene.value,
-      adult: el('wantAdult').checked,
-    });
-    if (!photos.items.some((item) => item.id === p.id)) photos.items.push(p);
-    if (photos.draft && el('message').value.trim() === photos.draft) {
-      el('message').value = '';
-      el('message').rows = 1;
-      voice.draft = false;
-    }
-    el('photoDialog').close();
-    photos.render();
-    scrollEnd();
-    await photos.load();
-  } catch (err) {
-    el(el('photoDialog').open ? 'photoError' : 'status').textContent = err.message;
-  } finally {
-    el('photoSubmit').disabled = false;
-  }
+el('photoTool').onclick = () => {
+  if (!canChat() || pending || voice.busy) return;
+  const field = el('message');
+  const description = field.value.trim();
+  field.value = description ? 'Пришли фото: ' + description : 'Пришли своё фото';
+  voice.draft = false;
+  el('compose').requestSubmit();
 };
