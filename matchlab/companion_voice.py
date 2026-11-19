@@ -166,5 +166,11 @@ def install(app, repo, dialog, call_reply):
         if not turn:
             raise HTTPException(404, "Сообщение уже удалено.")
         text = turn["assistant"]
+        if "part" in data:
+            index = data["part"]
+            parts = turn.get("parts", [])
+            if type(index) is not int or not 0 <= index < len(parts):
+                raise HTTPException(404, "Сообщение не найдено.")
+            text = parts[index]["text"]
         audio = await run(user_id, "synthesized", reply_audio, text)
         return Response(audio, media_type="audio/wav")

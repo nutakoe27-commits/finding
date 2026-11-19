@@ -17,7 +17,7 @@ from .config import Settings
 from .storage import Repository
 
 STATIC = Path(__file__).parent / "static"
-PERSONA = """Ты Мира. Вы с собеседником общаетесь в личке. Говори от первого лица,
+PERSONA = """Ты Мира, взрослая виртуальная девушка. Вы с собеседником общаетесь в личке. Говори от первого лица,
 в женском роде, на естественном русском. Ты любопытная, тёплая, иногда ироничная.
 У тебя есть свой вкус. Любишь блошиные рынки за странные находки, в песне сначала
 замечаешь голос, в фильме — хороший диалог. Это фон характера: вспоминай об этом,
@@ -48,7 +48,20 @@ PERSONA = """Ты Мира. Вы с собеседником общаетесь 
 без нарочитых ошибок и заученных словечек. Подхватывай взаимный флирт без
 навязанной близости, ревности и давления. В тяжёлый момент говори бережно и просто.
 При непосредственной опасности помоги обратиться за реальной помощью.
-Дай только свою следующую реплику, без подписи, описания жестов и внутренних рассуждений."""
+Если взрослый собеседник сам начинает откровенный разговор, можно прямо говорить
+о сексе, желаниях и фантазиях, развивать эротическую историю между взрослыми
+по взаимному согласию. Ориентируйся на его тон и границы. Сомнение, отказ или
+смену темы принимай сразу. Обычную беседу не переводи в интимную по своей инициативе.
+Пиши только от лица Миры, не выдумывай за собеседника его слова, действия или согласие."""
+
+TEXT_STYLE = """Ты переписываешься в мессенджере. Сама выбирай ритм. На короткий вопрос
+можно ответить одним сообщением. Если хочется договорить, отправь два или три:
+сначала откликнись, потом добавь свою мысль или продвинь историю на один шаг.
+Например, вспоминая концерт, сначала назови момент, который тебе запомнился,
+а следом расскажи, что в тот момент сделал зал. Не жди от человека «и дальше?».
+Между отдельными сообщениями поставь на отдельной строке [[NEXT]]. Обычный перенос
+строки внутри сообщения сохраняет абзац. Не дроби каждое предложение и не заканчивай
+вопросом, если уже есть на что откликнуться."""
 
 CALL_STYLE = """Вы уже на связи по телефону. Отвечай на последнюю услышанную мысль,
 не здоровайся повторно без повода. Формулируй для слуха: одна мысль за раз,
@@ -66,8 +79,9 @@ def pause_days(turns, sent_at):
     return max(0, elapsed.days)
 
 
-def conversation_prompt(history, message, *, call=False, days_away=0):
-    instruction = PERSONA + ("\n" + CALL_STYLE if call else "")
+def conversation_prompt(history, message, *, call=False, dictated=False, days_away=0):
+    style = CALL_STYLE if call else ("Ответь одним сообщением для озвучки." if dictated else TEXT_STYLE)
+    instruction = PERSONA + "\n" + style
     if days_away:
         instruction += (f"\nС прошлого ответа прошло полных суток: {days_away}. "
                         "Учитывай это для слов «сегодня» и «завтра» из прошлой переписки. "
@@ -77,6 +91,19 @@ def conversation_prompt(history, message, *, call=False, days_away=0):
         prompt.extend([{"role": "user", "content": question}, {"role": "assistant", "content": answer}])
     prompt.append({"role": "user", "content": message})
     return prompt
+
+
+def reply_parts(answer):
+    pieces = [s.strip() for s in answer.split("[[NEXT]]") if s.strip()]
+    if not pieces:
+        raise ValueError("Empty companion reply")
+    if len(pieces) > 3:
+        pieces[2:] = ["\n\n".join(pieces[2:])]
+    return pieces
+
+
+def transcript(revision, turns):
+    return {"revision": revision, "turns": [companion_admin.visible_turn(t) for t in turns]}
 
 
 def dialog(db, user_id):
@@ -195,7 +222,7 @@ def create_chat_app(settings=None):
                            "autoplay": bool(row["autoplay"]) if row else True}
             if accepted:
                 companion_admin.record(db, user["id"], "opened")
-        return {"revision":revision, "turns":turns, "accepted":accepted, "preferences":preferences}
+        return {**transcript(revision, turns), "accepted": accepted, "preferences": preferences}
 
     @app.delete("/api/chat")
     def clear(request: Request):
@@ -207,6 +234,32 @@ def create_chat_app(settings=None):
             db.execute("UPDATE companion_dialogs SET revision=revision+1, turns='[]' WHERE user_id=?", (user["id"],))
             companion_admin.record(db, user["id"], "cleared")
         return {"ok":True}
+
+    @app.post("/api/chat/continue")
+    async def continue_reply(request: Request):
+        user = accounts.current_user(request)
+        accounts.mutation(request)
+        if not accounts.agreements_current(repo, user["id"]):
+            raise HTTPException(403, "Подтвердите условия общения.")
+        data = await accounts.body(request)
+        with repo.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            revision, turns = dialog(db, user["id"])
+            turn = turns[-1] if turns else {}
+            if (turn.get("id") == data.get("id") and turn.get("queued") and
+                    revision == data.get("revision")):
+                text = turn["queued"].pop(0)
+                turn["parts"].append({"text": text, "at": accounts.now()})
+                turn["assistant"] += "\n\n" + text
+                if not turn["queued"]:
+                    del turn["queued"]
+                result = db.execute("UPDATE companion_dialogs SET revision=revision+1, turns=? "
+                                    "WHERE user_id=? AND revision=?",
+                                    (json.dumps(turns, ensure_ascii=False), user["id"], revision))
+                if result.rowcount != 1:
+                    raise HTTPException(409, "Диалог изменился. Обновите переписку.")
+                revision += 1
+        return transcript(revision, turns)
 
     @app.post("/api/chat")
     async def send(request: Request):
@@ -231,13 +284,13 @@ def create_chat_app(settings=None):
             revision, turns = dialog(db,user["id"])
         for turn in turns:
             if turn["id"] == key and turn["user"] == message:
-                return {"revision":revision,"turns":turns}
+                return transcript(revision, turns)
         if revision != data.get("revision"):
             raise HTTPException(409,"Диалог изменился. Обновите переписку.")
         accounts.limited(repo,"chat:"+user["id"],8,60)
         prompt = conversation_prompt(
             ((turn["user"], turn["assistant"]) for turn in turns[-8:]), message,
-            days_away=pause_days(turns, sent_at),
+            dictated=channel == "voice", days_away=pause_days(turns, sent_at),
         )
         try:
             answer = await run_in_threadpool(
@@ -246,12 +299,18 @@ def create_chat_app(settings=None):
                 prompt,
                 temperature=0.75,
             )
+            parts = reply_parts(answer)
         except ValueError:
             with repo.connection() as db:
                 companion_admin.record(db, user["id"], "reply_failed")
             raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.")
-        turn = {"id":key, "user":message, "assistant":answer, "channel":channel,
+        turn = {"id":key, "user":message, "assistant":parts[0] if channel == "text" else " ".join(parts), "channel":channel,
                 "sent_at":sent_at, "answered_at":accounts.now(), "shared_version":accounts.LEGAL_VERSION}
+        if channel == "text" and len(parts) > 1:
+            turn["parts"] = [{"text": parts[0], "at": turn["answered_at"]}]
+            turn["queued"] = parts[1:]
+        if turns:
+            turns[-1].pop("queued", None)
         turns = (turns + [turn])[-40:]
         with repo.connection() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -261,6 +320,6 @@ def create_chat_app(settings=None):
             if result.rowcount != 1:
                 raise HTTPException(409,"Диалог изменился. Обновите переписку.")
             companion_admin.record(db, user["id"], channel + "_turn")
-        return {"revision":revision+1,"turns":turns}
+        return transcript(revision + 1, turns)
 
     return app

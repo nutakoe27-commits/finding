@@ -42,10 +42,11 @@ const voice = {
   },
   async play(turn, button) {
     if (!canChat() || this.busy || pending) return;
-    const same = this.playId === turn.id;
+    const key = turn.id + ':' + (turn.part ?? 'all');
+    const same = this.playId === key;
     this.stopPlayback();
     if (same) return;
-    this.playId = turn.id;
+    this.playId = key;
     this.button = button;
     const generation = this.generation;
     if (button) button.textContent = 'Остановить';
@@ -65,7 +66,7 @@ const voice = {
     const r = await fetch('/api/chat/speak', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': session.csrf },
-      body: JSON.stringify({ id: turn.id }),
+      body: JSON.stringify({ id: turn.id, part: turn.part }),
       signal: this.abort.signal,
     });
     if (!r.ok) throw new Error('Озвучка недоступна. Ответ сохранён в переписке.');

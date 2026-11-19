@@ -7,6 +7,13 @@ from fastapi.responses import FileResponse
 from . import accounts
 
 
+def visible_turn(turn):
+    visible = {key: value for key, value in turn.items() if key != "queued"}
+    if turn.get("queued"):
+        visible["has_more"] = True
+    return visible
+
+
 def record(db, user_id, action):
     db.execute("INSERT INTO companion_activity(user_id,at,action) VALUES (?,?,?)",
                (user_id, accounts.now(), action))
@@ -46,7 +53,7 @@ def install(app, repo):
             if not user:
                 raise HTTPException(404, "Пользователь не найден.")
             row = db.execute("SELECT turns FROM companion_dialogs WHERE user_id=?", (user_id,)).fetchone()
-            turns = [t for t in json.loads(row[0]) if t.get("shared_version")] if row else []
+            turns = [visible_turn(t) for t in json.loads(row[0]) if t.get("shared_version")] if row else []
             events = db.execute("SELECT at,action FROM companion_activity WHERE user_id=? ORDER BY id DESC LIMIT 100",
                                 (user_id,)).fetchall()
             accounts.audit(db, actor["id"], "companion.review", user_id)

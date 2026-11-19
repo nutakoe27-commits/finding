@@ -75,7 +75,12 @@ function render() {
     for (const t of card.turns) {
       for (const [name, text, at, mine] of [
         ['Пользователь', t.user, t.sent_at, true],
-        ['Мира', t.assistant, t.answered_at, false],
+        ...(t.parts || [{ text: t.assistant, at: t.answered_at }]).map((p) => [
+          'Мира',
+          p.text,
+          p.at,
+          false,
+        ]),
       ]) {
         const row = node('div', '', mine ? 'bubble mine' : 'bubble');
         row.append(

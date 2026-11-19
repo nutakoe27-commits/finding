@@ -5,7 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 from fastapi.testclient import TestClient
 from matchlab import accounts
-from matchlab.companion import PERSONA, create_chat_app
+from matchlab.companion import PERSONA, TEXT_STYLE, create_chat_app
 from matchlab.config import Settings
 
 
@@ -96,7 +96,7 @@ class CompanionTests(unittest.TestCase):
 
         payload = self.provider.call_args.kwargs["json"]
         self.assertEqual(payload["messages"], [
-            {"role": "system", "content": PERSONA},
+            {"role": "system", "content": PERSONA + "\n" + TEXT_STYLE},
             {"role": "user", "content": "Привет, Мира"},
             {"role": "assistant", "content": "Привет!"},
             {"role": "user", "content": "Я к тебе за советом"},
@@ -104,6 +104,51 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.75)
         self.assertEqual(payload["max_tokens"], 1400)
         self.assertFalse(payload["chat_template_kwargs"]["enable_thinking"])
+
+    def test_followups_survive_reload_and_retry_and_can_be_interrupted(self):
+        self.register("conversation")
+        self.provider.return_value["choices"][0]["message"]["content"] = (
+            "Я нашла тот билет.\n[[NEXT]]\nНа обороте рисунок!\n[[NEXT]]\nСекретная третья мысль."
+        )
+        msg = {"message":"И что было дальше?", "revision":0, "id":str(uuid4())}
+        first = self.client.post("/api/chat", json=msg)
+        self.assertNotIn("рисунок", first.text)
+        self.assertTrue(first.json()["turns"][-1]["has_more"])
+        history = self.client.get("/api/chat").json()
+        self.assertEqual(history["turns"], first.json()["turns"])
+        step = {"id":msg["id"], "revision":1}
+        second = self.client.post("/api/chat/continue", json=step).json()
+        self.assertEqual([p["text"] for p in second["turns"][-1]["parts"]],
+                         ["Я нашла тот билет.", "На обороте рисунок!"])
+        self.assertEqual(self.client.post("/api/chat/continue", json=step).json(), second)
+        self.assertEqual(self.client.post("/api/chat/speak", json={"id":msg["id"], "part":2}).status_code, 404)
+        from unittest.mock import AsyncMock
+        with patch("matchlab.companion_voice.reply_audio", new_callable=AsyncMock, return_value=b"RIFF") as audio:
+            spoken = self.client.post("/api/chat/speak", json={"id":msg["id"], "part":1})
+            self.assertEqual(spoken.status_code, 200)
+            audio.assert_awaited_once_with("На обороте рисунок!")
+        self.provider.assert_called_once()
+        self.provider.return_value["choices"][0]["message"]["content"] = "Да, давай."
+        self.client.post("/api/chat", json={"message":"Давай про другое", "id":str(uuid4()), "revision":2})
+        history = self.provider.call_args.kwargs["json"]["messages"]
+        self.assertEqual(history[-2]["content"], "Я нашла тот билет.\n\nНа обороте рисунок!")
+        final = self.client.post("/api/chat/continue", json={**step, "revision":2})
+        self.assertNotIn("Секретная", final.text)
+        self.assertNotIn("has_more", final.text)
+        self.assertEqual(final.json()["revision"], 3)
+
+    def test_multibubble_format_and_voice(self):
+        from matchlab.companion import reply_parts
+        self.assertEqual(reply_parts("А\n\nБ"), ["А\n\nБ"])
+        self.assertEqual(reply_parts("А[[NEXT]]Б[[NEXT]]В[[NEXT]]Г"), ["А", "Б", "В\n\nГ"])
+        with self.assertRaises(ValueError):
+            reply_parts(" [[NEXT]] ")
+        self.register("dictated")
+        self.provider.return_value["choices"][0]["message"]["content"] = "Да.[[NEXT]]Согласна."
+        voice = self.client.post("/api/chat", json={"message":"Привет", "id":str(uuid4()),
+                                                    "channel":"voice", "revision":0})
+        self.assertEqual(voice.json()["turns"][0]["assistant"], "Да. Согласна.")
+        self.assertNotIn("has_more", voice.text)
 
     def test_pause_after_return_is_grounded_in_saved_reply_time(self):
         from matchlab.companion import conversation_prompt, pause_days

@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#172b3c" />
     <title>Мира · Сообщения</title>
-    <link rel="stylesheet" href="/chat-assets/chat.css?v=6" />
-    <script defer src="/chat-assets/chat.js?v=6"></script>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=7" />
+    <script defer src="/chat-assets/chat.js?v=7"></script>
     <link rel="stylesheet" href="/static/social-login.css" />
     <link rel="stylesheet" href="/chat-assets/account.css?v=1" />
     <script defer src="/chat-assets/account-ui.js?v=1"></script>
     <script defer src="/static/social-login.js"></script>
-    <script defer src="/chat-assets/voice.js?v=4"></script>
+    <script defer src="/chat-assets/voice.js?v=5"></script>
     <script defer src="/chat-assets/call.js?v=4"></script>
   </head>
   <body>
@@ -125,6 +125,10 @@
           <div id="messages" role="log" aria-live="off"></div>
         </section>
         <footer>
+          <div id="deliveryState">
+            <small id="followup" role="status" hidden>Мира печатает…</small>
+            <button id="retryFollowup" type="button" hidden>Загрузить продолжение</button>
+          </div>
           <div id="status" role="status"></div>
           <div id="recording" hidden>
             <span class="recDot"></span><strong id="recTime">Запись · 0:00</strong>

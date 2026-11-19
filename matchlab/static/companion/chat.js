@@ -110,6 +110,61 @@ el('finder').onkeydown = (event) => {
     toggleFinder(false);
   }
 };
+let latestTurn = null;
+let followupTimer;
+let delivery = null;
+function pauseFollowup() {
+  clearTimeout(followupTimer);
+  el('followup').hidden = true;
+  el('retryFollowup').hidden = true;
+}
+function scheduleFollowup() {
+  pauseFollowup();
+  if (!latestTurn?.has_more || pending || !session?.accepted) return;
+  const turn = latestTurn;
+  const lastText = turn.parts.at(-1).text;
+  el('followup').hidden = false;
+  followupTimer = setTimeout(
+    () => {
+      delivery = deliver().finally(() => {
+        delivery = null;
+      });
+    },
+    Math.min(3200, 1250 + lastText.length * 19),
+  );
+
+  async function deliver() {
+    try {
+      const data = await api('chat/continue', 'POST', { id: turn.id, revision });
+      if (latestTurn !== turn) return;
+      const updated = data.turns.at(-1);
+      if (
+        data.revision === revision + 1 &&
+        updated?.id === turn.id &&
+        updated.parts?.length === turn.parts.length + 1
+      ) {
+        const part = updated.parts.at(-1);
+        const thread = el('thread');
+        const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 48;
+        el('messages').append(
+          bubble(part.text, false, part.at, { ...updated, part: updated.parts.length - 1 }),
+        );
+        revision = data.revision;
+        latestTurn = updated;
+        el('preview').textContent = part.text;
+        if (!el('finder').hidden) searchMessages();
+        else if (atEnd) scrollEnd();
+        scheduleFollowup();
+      } else draw(data);
+    } catch (error) {
+      if (latestTurn !== turn) return;
+      pauseFollowup();
+      if (error.status === 401 || error.status === 403) return;
+      el('retryFollowup').hidden = false;
+    }
+  }
+}
+el('retryFollowup').onclick = scheduleFollowup;
 function draw(data) {
   revision = data.revision;
   const list = el('messages');
@@ -130,12 +185,17 @@ function draw(data) {
       list.append(heading);
       previousDay = day;
     }
-    list.append(
-      bubble(turn.user, true, turn.sent_at, turn),
-      bubble(turn.assistant, false, turn.answered_at, turn),
-    );
+    list.append(bubble(turn.user, true, turn.sent_at, turn));
+    if (turn.parts) {
+      turn.parts.forEach((part, index) =>
+        list.append(bubble(part.text, false, part.at, { ...turn, part: index })),
+      );
+    } else list.append(bubble(turn.assistant, false, turn.answered_at, turn));
   }
-  el('preview').textContent = data.turns.at(-1)?.assistant || 'Начать разговор';
+  latestTurn = data.turns.at(-1);
+  el('preview').textContent =
+    latestTurn?.parts?.at(-1)?.text || latestTurn?.assistant || 'Начать разговор';
+  scheduleFollowup();
   el('welcome').hidden = data.turns.length > 0;
   scrollEnd();
   if (!el('finder').hidden) searchMessages();
@@ -154,9 +214,9 @@ async function refresh() {
   for (const id of ['adminLink', 'adminMobile']) el(id).hidden = session.user?.role !== 'admin';
   if (session.user) {
     const data = await api('chat');
+    session.accepted = data.accepted;
     draw(data);
     applyPreferences(data.preferences);
-    session.accepted = data.accepted;
     if (!data.accepted) confirmDocuments();
   } else {
     draw({ revision: 0, turns: [] });
@@ -182,11 +242,17 @@ function guard(fn) {
   };
 }
 el('logout').onclick = guard(async () => {
+  pauseFollowup();
+  await delivery;
+  pauseFollowup();
   await api('auth/logout', 'POST', {});
   location.replace('/');
 });
 el('clear').onclick = guard(async () => {
   if (confirm('Удалить всю историю общения с Мирой?')) {
+    pauseFollowup();
+    await delivery;
+    pauseFollowup();
     await api('chat', 'DELETE');
     voice.stopPlayback();
     voice.draft = false;
@@ -202,15 +268,17 @@ el('compose').onsubmit = guard(async () => {
   const message = el('message').value.trim();
   if (!message) return;
   const channel = voice.draft ? 'voice' : 'text';
-  if (!retry || retry.message !== message || retry.revision !== revision)
-    retry = { message, revision, id: crypto.randomUUID(), channel };
   pending = true;
+  pauseFollowup();
   el('send').disabled = true;
   el('message').readOnly = true;
   el('profile').disabled = true;
   el('mic').disabled = true;
   el('status').textContent = 'Мира печатает…';
   el('welcome').hidden = true;
+  await delivery;
+  if (!retry || retry.message !== message || retry.revision !== revision)
+    retry = { message, revision, id: crypto.randomUUID(), channel };
   const preview = bubble(message, true, null, retry);
   preview.classList.add('queued');
   el('messages').append(preview);
@@ -232,6 +300,7 @@ el('compose').onsubmit = guard(async () => {
     throw err;
   } finally {
     pending = false;
+    scheduleFollowup();
     el('send').disabled = false;
     el('message').readOnly = false;
     el('profile').disabled = false;

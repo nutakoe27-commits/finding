@@ -339,6 +339,7 @@ button:disabled {
 #starters .glyph {
   width: 15px;
 }
+#deliveryState,
 #messages,
 #compose,
 #recording,
@@ -775,4 +776,18 @@ input:not([type='checkbox']) {
     height: 100%;
     padding: max(24px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom));
   }
+}
+
+#followup,
+#retryFollowup {
+  display: inline-block;
+  margin: 0 8px 5px;
+  color: var(--sub);
+  font-size: 13px;
+}
+#retryFollowup {
+  color: var(--accent);
+}
+#deliveryState [hidden] {
+  display: none;
 }
