@@ -43,6 +43,9 @@ class Repository:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connection() as db:
             db.executescript("""
+                CREATE TABLE IF NOT EXISTS companion_dialogs (
+                    user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, turns TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS matches (
                     date TEXT NOT NULL,
                     season TEXT NOT NULL,
