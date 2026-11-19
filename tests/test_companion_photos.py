@@ -265,6 +265,56 @@ class PhotoIntegration(unittest.TestCase):
         with self.assertRaises(companion_photos.PhotoPlanError):
             companion_photos.read_plan("[[PHOTO]]"+json.dumps(data | {"scene":"explicit"}))
 
+    def test_confirmation_queues_original_detail_once_and_hides_internal_plan(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        wrong_shot = {"scene":"nude", "caption":"Как ты просил", "prompt":"woman beside mirror",
+                      "shot":"waist up, soft light", "camera":"mirror"}
+        with patch("matchlab.qwen._completion", return_value="[[PHOTO]]"+json.dumps(wrong_shot)) as model:
+            first = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0, "message":"Покажи вагину"})
+            first.raise_for_status()
+            self.assertIsNone(first.json()["photo"])
+            self.assertNotIn("pending_photo_plan", first.text)
+            self.assertNotIn("vulva", self.site.get("/api/chat").text)
+            self.assertEqual(self.site.post("/api/photo-worker/claim", headers=gpu).status_code, 204)
+            yes = {"id":str(uuid4()), "revision":1, "message":"Да"}
+            second = self.site.post("/api/chat", json=yes)
+            second.raise_for_status()
+            self.assertEqual(second.json()["photo"]["caption"], "Крупный план")
+            self.site.post("/api/chat", json=yes).raise_for_status()
+            model.assert_called_once()
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertEqual(job["scene"], "nude")
+        self.assertTrue(job["photo_prompt"].startswith("detail photograph of vulva"))
+        self.assertNotIn("mirror", job["photo_prompt"])
+        self.assertIn("second person", job["negative_prompt"])
+        self.assertEqual(self.site.post("/api/photo-worker/claim", headers=gpu).status_code, 204)
+
+    def test_confirmation_before_upgrade_recovers_subject_from_original_message(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        old_turn = {"id":str(uuid4()), "user":"Покажи браслет", "assistant":companion_photos.CONFIRM_PHOTO}
+        with self.site.app.state.repository.connection() as db:
+            user_id = db.execute("SELECT id FROM users WHERE username=?", ("mira_reader",)).fetchone()[0]
+            db.execute("INSERT INTO companion_dialogs(user_id,revision,turns) VALUES (?,1,?)",
+                       (user_id, json.dumps([old_turn])))
+        description = {"scene":"portrait", "caption":"Мой браслет", "prompt":"silver bracelet on wrist",
+                       "shot":"evening light", "camera":"detail"}
+        with patch("matchlab.qwen._completion", return_value="[[PHOTO]]"+json.dumps(description)) as model:
+            self.site.post("/api/chat", json={"id":str(uuid4()), "revision":1, "message":"Да"}).raise_for_status()
+            self.assertIn("Покажи браслет", model.call_args.args[1][-1]["content"])
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertIn("silver bracelet on wrist", job["photo_prompt"])
+
+    def test_changed_reply_does_not_confirm_stored_plan(self):
+        wrong_shot = '[[PHOTO]]{"scene":"nude","caption":"Кадр","prompt":"portrait","shot":"at home"}'
+        with patch("matchlab.qwen._completion", side_effect=[wrong_shot, "Хорошо."]) as model:
+            self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0, "message":"Пришли фото"}).raise_for_status()
+            reply = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":1, "message":"Да нет, не надо"})
+            reply.raise_for_status()
+            self.assertIsNone(reply.json()["photo"])
+            self.assertEqual(model.call_count, 2)
+
     def test_queue_failure_timeout_and_retry(self):
         self.create()
         self.assertEqual(self.finish(self.claim(), b"").status_code, 204)

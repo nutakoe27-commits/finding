@@ -50,3 +50,10 @@ class RenderLifecycle(unittest.TestCase):
             self.assertTrue(negative.startswith("glasses, "))
             legacy, _ = worker.render_prompts("cafe", None, None, xl=xl)
             self.assertIn(worker.SCENES["cafe"], legacy)
+
+    def test_detail_frame_does_not_request_hair_or_eye_attributes(self):
+        for xl in (True, False):
+            positive, _ = worker.render_prompts("portrait", "detail photograph of a bracelet", None, xl=xl)
+            self.assertIn("bracelet", positive)
+            self.assertNotIn("brunette", positive)
+            self.assertNotIn("hazel eyes", positive)

@@ -274,6 +274,11 @@ def create_chat_app(settings=None):
             raise HTTPException(409,"Диалог изменился. Обновите переписку.")
         accounts.limited(repo,"chat:"+user["id"],8,60)
         photos_enabled = (settings.data_dir / "photo-worker.key").is_file()
+        previous = turns[-1] if turns else {}
+        confirming = bool(photos_enabled and previous.get("assistant") == companion_photos.CONFIRM_PHOTO
+                          and companion_photos.CONFIRM_YES.fullmatch(message))
+        photo_request = previous["user"] if confirming else message
+        subject = companion_photos.requested_detail(photo_request)
         # Reproduce the assistant delimiters from generation for prefix reuse.
         # Only already delivered parts are visible to the model on interruption.
         prompt = conversation_prompt(
@@ -288,21 +293,26 @@ def create_chat_app(settings=None):
                                     "исключения": latest_photo["negative_prompt"] or ""}, ensure_ascii=False)
             # Keep renderer metadata out of the examples of Mira's conversational voice.
             prompt[0]["content"] += "\nСправка для следующего кадра (не выводи в чат): " + reference
-        explicit_selfie = photos_enabled and companion_photos.asks_explicit_selfie(message)
+        if confirming:
+            # Includes confirmations from older releases which did not retain the plan.
+            prompt[-1]["content"] = "Да, подтверждаю предыдущий запрос фото: " + photo_request
+        explicit_selfie = photos_enabled and companion_photos.asks_explicit_selfie(photo_request)
         if explicit_selfie:
             prompt[0]["content"] += "\n" + companion_photos.EXPLICIT_PLAN
         model = replace(settings, qwen_enable_thinking=False)
-        plan = None
+        plan = previous.get("pending_photo_plan") if confirming else None
+        pending_plan = None
+        after_photo = bool(latest_photo and previous.get("photo_id") == latest_photo["id"])
         try:
-            answer = await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
-            if photos_enabled:
-                after_photo = bool(latest_photo and turns and turns[-1].get("photo_id") == latest_photo["id"])
-                require_nude = companion_photos.requires_nude_scene(message, after_photo)
-                direct = explicit_selfie or require_nude or bool(companion_photos.DIRECT_REQUEST.match(message))
+            answer = "" if plan else await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
+            if photos_enabled and not plan:
+                require_nude = companion_photos.requires_nude_scene(photo_request, after_photo)
+                required_plan = confirming or bool(subject) or explicit_selfie or require_nude
+                direct = required_plan or bool(companion_photos.DIRECT_REQUEST.match(photo_request))
                 malformed_plan = False
                 try:
                     plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude,
-                                                      explicit_selfie=explicit_selfie)
+                                                      explicit_selfie=explicit_selfie, detail_subject=subject)
                     if plan is None and companion_photos.PRIVATE_PHOTO.search(answer):
                         raise companion_photos.PhotoPlanError("Internal photo metadata in reply")
                     needs_plan = direct and plan is None
@@ -326,15 +336,15 @@ def create_chat_app(settings=None):
                         repair[-1]["content"] = companion_photos.EXPLICIT_PLAN
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
                     plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude,
-                                                      explicit_selfie=explicit_selfie)
-                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or require_nude or explicit_selfie):
+                                                      explicit_selfie=explicit_selfie, detail_subject=subject)
+                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or required_plan):
                         raise companion_photos.PhotoPlanError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."
             if plan and plan[0] in companion_photos.ADULT and not companion_photos.wants_intimate_photo(
                     message, turns[-1]["assistant"] if turns else "",
                     previous_scene=latest_photo["scene"] if after_photo else None, requested_scene=plan[0]):
-                plan, answer = None, "Ты хочешь именно интимное фото?"
+                pending_plan, plan, answer = plan, None, companion_photos.CONFIRM_PHOTO
             if not plan and companion_photos.PRIVATE_PHOTO.search(answer):
                 raise companion_photos.PhotoPlanError("Internal photo metadata in chat reply")
             parts = ["Сейчас сделаю снимок."] if plan else reply_parts(answer)
@@ -347,6 +357,8 @@ def create_chat_app(settings=None):
             raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.") from exc
         turn = {"id":key, "user":message, "assistant":parts[0] if channel == "text" else " ".join(parts), "channel":channel,
                 "sent_at":sent_at, "answered_at":accounts.now(), "shared_version":accounts.LEGAL_VERSION}
+        if pending_plan:
+            turn["pending_photo_plan"] = pending_plan
         if plan:
             turn["photo_id"] = key
         if channel == "text" and len(parts) > 1:
@@ -354,6 +366,7 @@ def create_chat_app(settings=None):
             turn["queued"] = parts[1:]
         if turns:
             turns[-1].pop("queued", None)
+            turns[-1].pop("pending_photo_plan", None)
         turns = (turns + [turn])[-40:]
         photo = None
         with repo.connection() as db:

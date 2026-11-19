@@ -35,8 +35,11 @@ FACE_WEIGHTS = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
 
 def render_prompts(scene, photo_prompt, negative_prompt, *, xl):
     composition = photo_prompt or SCENES[scene]
-    positive = (composition + ", photograph of one adult woman, short wavy brunette bob, "
-                "hazel eyes, olive skin, natural skin texture")
+    if composition.startswith("detail photograph"):
+        positive = composition + ", candid phone photo, natural texture"
+    else:
+        positive = (composition + ", photograph of one adult woman, short wavy brunette bob, "
+                    "hazel eyes, olive skin, natural skin texture")
     negative = NEGATIVE + (", bad hands, airbrushed, plastic skin" if xl else "")
     return positive, (negative_prompt + ", " + negative if negative_prompt else negative)
 
@@ -91,7 +94,6 @@ class RealVisPortraits:
             local_files_only=True, add_watermarker=False)
         self.pipe.load_ip_adapter(face_path, subfolder="sdxl_models", weight_name=FACE_WEIGHTS,
                                   image_encoder_folder="models/image_encoder", local_files_only=True)
-        self.pipe.set_ip_adapter_scale(0.65)
         self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(
             self.pipe.scheduler.config, algorithm_type="sde-dpmsolver++", use_karras_sigmas=True)
         self.pipe.enable_vae_tiling()
@@ -109,6 +111,7 @@ class RealVisPortraits:
         import torch
 
         prompt, negative = render_prompts(scene, photo_prompt, negative_prompt, xl=True)
+        self.pipe.set_ip_adapter_scale(0.0 if prompt.startswith("detail photograph") else 0.65)
         with torch.inference_mode():
             image = self.pipe(prompt=prompt, negative_prompt=negative,
                               ip_adapter_image=self.reference, width=768, height=960, num_inference_steps=32,

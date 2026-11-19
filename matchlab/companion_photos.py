@@ -19,10 +19,10 @@ METADATA = "id,scene,created_at,state,deadline,caption"
 PHOTO_STYLE = """Просьба о фото Миры, согласие на снимок или поправка к нему («так же, но…») → только
 [[PHOTO]]{"scene":"…","caption":"…","prompt":"…","shot":"…","camera":"…","exclude":""}.
 Обсуждение, цитата, отказ → беседа. scene: portrait — одета; boudoir или nude — по явной просьбе/согласию.
-caption по-русски. prompt, shot, exclude на английском ASCII. prompt: сначала конкретные действие, поза,
+caption — короткое название кадра по-русски. prompt, shot, exclude на английском ASCII. prompt: сначала конкретные действие, поза,
 одежда и место из просьбы. При поправке сохрани остальное из прошлого кадра; для nude убери одежду.
 camera: front — селфи с руки; mirror — отражение с телефоном; timer — телефон на опоре для общего плана
-или когда заняты руки; custom — заданная съёмка, например студийная. shot: крупность, угол телефона,
+или когда заняты руки; detail — крупный план запрошенной детали вне лица; custom — заданная съёмка, например студийная. shot: крупность, угол телефона,
 взгляд и источник света на месте. Для бытового кадра одна живая деталь: край плеча обрезан, блик или неровная
 тень. Уважай заданный ракурс и свет. prompt + shot до 40 слов. exclude — явно исключённые предметы через
 запятую. Береги личные данные; служебное описание не цитируй."""
@@ -32,8 +32,25 @@ CAMERAS = {
     "front": "handheld front-camera selfie, foreshortened forearm at frame edge",
     "mirror": "mirror selfie, phone visible in one hand in reflection",
     "timer": "phone propped up, self-timer snapshot",
+    "detail": "detail photograph",
     "custom": "",
 }
+CONFIRM_PHOTO = "Ты хочешь именно интимное фото?"
+CONFIRM_YES = re.compile(r"(?:да(?:[, ]+давай)?|давай|ага|конечно|подтверждаю|да[, ]+хочу)[.! )]*", re.I)
+# For terse requests the named subject is the composition. Use a direct
+# translation even if the planner returned a generic portrait description.
+DETAIL_SUBJECTS = {
+    "кольцо": "ring", "браслет": "bracelet", "маникюр": "manicure",
+    "татуировку": "tattoo", "вагину": "vulva", "вульву": "vulva",
+}
+SHOW_DETAIL = re.compile(r"покажи\s+(?:мне\s+)?(?:сво(?:й|ю|[её])\s+)?(\w+)(?:\s+пожалуйста)?[.! )]*", re.I)
+
+
+def requested_detail(message):
+    match = SHOW_DETAIL.fullmatch(message)
+    return DETAIL_SUBJECTS.get(match[1].lower()) if match else None
+
+
 DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|вышли|отправь|покажи|сделай|можно)"
                             r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста|полностью|голую|обнаж[её]нную|(?:интимн|откровенн|развратн)(?:ое|ую))\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
 
@@ -108,8 +125,9 @@ def wants_intimate_photo(message, last_answer, *, previous_scene=None, requested
         return True
     direct = DIRECT_REQUEST.match(message)
     requested_style = asks_explicit_selfie(message) or (direct and ADULT_PHOTO.search(direct.group()))
+    assent = CONFIRM_YES.fullmatch(message) if last_answer == CONFIRM_PHOTO else AGREES.match(message)
     return bool(requested_style or INTIMATE.search(message) or
-                (AGREES.match(message) and INTIMATE.search(last_answer)
+                (assent and INTIMATE.search(last_answer)
                  and re.search(r"фото|снимок|селфи|показать|прислать", last_answer, re.I)))
 
 
@@ -126,7 +144,7 @@ def photo_text(value):
     return value
 
 
-def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=False):
+def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=False, detail_subject=None):
     raw = answer.strip()
     marked = "[[PHOTO]]" in raw
     if marked:
@@ -165,6 +183,9 @@ def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=F
                   "self timer": "timer", "tripod": "timer"}.get(camera, camera)
     if not isinstance(camera, str) or camera not in CAMERAS:
         raise PhotoPlanError("Invalid camera mode")
+    planner_chose_detail = camera == "detail"
+    if detail_subject:
+        camera = "detail"
     if explicit_selfie and camera not in ("front", "mirror"):
         raise PhotoPlanError("Expected a selfie camera")
     if CAMERAS[camera]:
@@ -189,6 +210,17 @@ def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=F
             raise PhotoPlanError("Photo scene contradicts request")
         prompt = "Unclothed adult woman, " + prompt
         exclude = ", ".join(filter(None, ("clothing, underwear", exclude.strip())))
+    if camera == "detail":
+        if detail_subject:
+            # A portrait shot from a stale plan can contradict the requested crop.
+            if not planner_chose_detail or detail_subject not in prompt.lower():
+                prompt = f"detail photograph of {detail_subject}, tight crop, available light"
+            if detail_subject == "vulva":
+                scene = "nude"
+        if not prompt.startswith("detail photograph"):
+            prompt = "detail photograph, " + prompt
+        exclude = ", ".join(filter(None, (exclude.strip(), "face, mirror reflection, second person")))
+        return scene, prompt, "Крупный план", exclude
     return scene, prompt, caption.strip(), exclude.strip()
 
 
