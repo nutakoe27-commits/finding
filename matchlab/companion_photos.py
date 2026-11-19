@@ -16,11 +16,15 @@ MAX_JPEG = 800_000
 METADATA = "id,scene,created_at,state,deadline,caption"
 
 
-PHOTO_STYLE = """Фото Миры: если человек просит снимок сейчас (также «покажись там», «ещё одну» или согласие на предложение фото),
-верни только [[PHOTO]] и JSON {"scene":"portrait","caption":"У моря","prompt":"red dress, evening seaside"}.
-Подпись по-русски; prompt — до 40 английских слов: пожелания человека и детали сцены из разговора,
-без личных данных. Одна взрослая Мира. portrait — одета; boudoir или nude только по явной интимной просьбе
-или согласию на конкретный интимный снимок. Обсуждение, цитата и отказ от фото — обычная беседа."""
+PHOTO_STYLE = """Если просят фото Миры сейчас, в том числе «покажись там», «ещё одну» или принимают предложение,
+составь задание фотографу. Формат: [[PHOTO]]{"scene":"portrait","caption":"…","prompt":"…","shot":"…","exclude":""}.
+scene: portrait (одета), boudoir или nude — два последних только по явной просьбе или согласию на такой снимок.
+caption: короткая подпись на русском. prompt, shot, exclude на английском (ASCII). prompt: самое важное из последней
+просьбы первым; конкретные одежда, действие, предметы и место. Для «так же, но…» сохрани детали прошлого
+кадра, замени исправленные. Для новой сцены бери только относящиеся к ней детали. shot: совместимые с просьбой
+крупность, ракурс и источник света. Вместе prompt и shot — до 40 слов, один физически возможный кадр.
+exclude: только явно исключённые предметы, через запятую; иначе пустая строка. Личные данные и переписку
+в описание не переноси. Обсуждение фото, цитата и отказ — обычная беседа."""
 DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|вышли|отправь|покажи|сделай|можно)"
                             r"\s+(?:(?:мне|сво[еёю]|тво[еёю]|пожалуйста)\s+)*(?:фото|фотку|селфи|снимок)\b", re.I)
 
@@ -41,13 +45,21 @@ def wants_intimate_photo(message, last_answer):
 
 def read_plan(answer, *, allow_json=False):
     raw = answer.strip()
-    if "[[PHOTO]]" in raw:
+    marked = "[[PHOTO]]" in raw
+    if marked:
         raw = raw.split("[[PHOTO]]", 1)[1].strip()
-    elif not allow_json or not raw.startswith(("{", "```")):
+    elif not raw.startswith(("{", "```")):
         return None
     if raw.startswith("```") and raw.endswith("```"):
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)[:-3].strip()
-    data = json.loads(raw)
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        if marked or allow_json:
+            raise
+        return None
+    if not (marked or allow_json) and not (isinstance(data, dict) and {"scene", "caption", "prompt"} <= data.keys()):
+        return None
     if not isinstance(data, dict) or data.get("scene") not in ("portrait", "boudoir", "nude"):
         raise ValueError("Invalid photo scene")
     prompt, caption = data.get("prompt"), data.get("caption")
@@ -55,10 +67,19 @@ def read_plan(answer, *, allow_json=False):
         raise ValueError("Invalid photo description")
     if not isinstance(caption, str) or not caption.strip() or len(caption) > 120 or not caption.isprintable():
         raise ValueError("Invalid photo caption")
+    shot = data.get("shot")
+    if not isinstance(shot, str) or not re.fullmatch(r"[ -~]{3,160}", shot) or not re.search("[a-zA-Z]", shot):
+        raise ValueError("Invalid camera description")
+    prompt = prompt.strip() + ", " + shot.strip()
+    if len(prompt.split()) > 40:
+        raise ValueError("Photo description exceeds the word budget")
+    exclude = data.get("exclude", "")
+    if not isinstance(exclude, str) or not re.fullmatch(r"[ -~]{0,120}", exclude):
+        raise ValueError("Invalid photo exclusions")
     scene = data["scene"]
     if scene == "portrait" and re.search(r"\b(nude|naked|topless|lingerie|underwear|bare breasts)\b", prompt, re.I):
         scene = "nude"
-    return scene, prompt.strip(), caption.strip()
+    return scene, prompt, caption.strip(), exclude.strip()
 
 
 def public(row, now):
@@ -90,7 +111,7 @@ def install(app, repo, settings):
 
     context_heartbeat = settings.data_dir / "photo-worker-context.alive"
 
-    def enqueue(db, user_id, key, scene, photo_prompt=None, caption=None):
+    def enqueue(db, user_id, key, scene, photo_prompt=None, caption=None, negative_prompt=None):
         now = int(time.time())
         row = db.execute(f"SELECT {METADATA},user_id FROM companion_photos WHERE id=?", (key,)).fetchone()
         if row:
@@ -106,8 +127,8 @@ def install(app, repo, settings):
         if len(active) >= 8:
             raise HTTPException(429, "Очередь заполнена. Попробуйте чуть позже.")
         created = accounts.now()
-        db.execute("INSERT INTO companion_photos(id,user_id,scene,created_at,state,deadline,photo_prompt,caption) "
-                   "VALUES (?,?,?,?,'queued',?,?,?)", (key, user_id, scene, created, now + 600, photo_prompt, caption))
+        db.execute("INSERT INTO companion_photos(id,user_id,scene,created_at,state,deadline,photo_prompt,caption,negative_prompt) "
+                   "VALUES (?,?,?,?,'queued',?,?,?,?)", (key, user_id, scene, created, now + 600, photo_prompt, caption, negative_prompt))
         for old in db.execute("SELECT id FROM companion_photos WHERE user_id=? "
                               "ORDER BY created_at DESC,id DESC", (user_id,)).fetchall()[40:]:
             db.execute("DELETE FROM companion_photos WHERE id=?", (old["id"],))
@@ -141,11 +162,11 @@ def install(app, repo, settings):
                 raise HTTPException(422)
             with repo.connection() as db:
                 db.execute("BEGIN IMMEDIATE")
-                old = db.execute(f"SELECT {METADATA},photo_prompt FROM companion_photos WHERE id=? AND user_id=?",
+                old = db.execute(f"SELECT {METADATA},photo_prompt,negative_prompt FROM companion_photos WHERE id=? AND user_id=?",
                                  (data["retry_of"], user["id"])).fetchone()
                 if not old or public(old, time.time())["state"] != "failed":
                     raise HTTPException(409, "Снимок уже обработан.")
-                return enqueue(db, user["id"], key, old["scene"], old["photo_prompt"], old["caption"])
+                return enqueue(db, user["id"], key, old["scene"], old["photo_prompt"], old["caption"], old["negative_prompt"])
         scene = data.get("scene")
         if not isinstance(scene, str) or scene not in SCENES:
             raise HTTPException(422, "Выберите сюжет.")
@@ -176,7 +197,7 @@ def install(app, repo, settings):
         compatible = "" if contextual else "AND photo_prompt IS NULL "
         # Idle polls need no write lock. Recheck eligibility in the conditional update.
         with repo.connection() as db:
-            row = db.execute("SELECT id,scene,photo_prompt FROM companion_photos WHERE state='queued' AND deadline>? "
+            row = db.execute("SELECT id,scene,photo_prompt,negative_prompt FROM companion_photos WHERE state='queued' AND deadline>? "
                              f"{compatible}ORDER BY created_at,id LIMIT 1", (now,)).fetchone()
         if not row:
             return Response(status_code=204)

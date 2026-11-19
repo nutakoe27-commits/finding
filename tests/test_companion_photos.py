@@ -77,8 +77,8 @@ class PhotoIntegration(unittest.TestCase):
         self.site.post("/api/photo-worker/claim", headers=gpu)
         with patch("matchlab.qwen._completion", return_value="Я сейчас на набережной в красном шарфе."):
             self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0, "message": "Где гуляешь?"})
-        send = {"id": str(uuid4()), "revision": 1, "message": "А можно тебя там увидеть?"}
-        plan = '[[PHOTO]]{"scene":"portrait","caption":"На набережной","prompt":"red scarf, evening waterfront"}'
+        send = {"id": str(uuid4()), "revision": 1, "message": "А можно тебя там увидеть по пояс, без очков?"}
+        plan = '[[PHOTO]]{"scene":"portrait","caption":"На набережной","prompt":"red scarf, evening waterfront","shot":"waist-up, soft dusk light","exclude":"glasses"}'
         with patch("matchlab.qwen._completion", return_value=plan) as model:
             result = self.site.post("/api/chat", json=send)
             self.assertEqual(result.status_code, 200, result.text)
@@ -89,15 +89,17 @@ class PhotoIntegration(unittest.TestCase):
             self.assertIn("в красном шарфе", model.call_args.args[1][-2]["content"])
         self.assertEqual(self.site.post("/api/photo-worker/claim", headers=self.gpu).status_code, 204)
         job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
-        self.assertEqual(job["photo_prompt"], "red scarf, evening waterfront")
+        self.assertEqual(job["photo_prompt"], "red scarf, evening waterfront, waist-up, soft dusk light")
+        self.assertEqual(job["negative_prompt"], "glasses")
         self.finish(job, b"").raise_for_status()
         self.create(retry_of=job["id"]).raise_for_status()
         again = self.site.post("/api/photo-worker/claim", headers=gpu).json()
         self.assertEqual(again["photo_prompt"], job["photo_prompt"])
+        self.assertEqual(again["negative_prompt"], "glasses")
         self.assertNotEqual(again["id"], job["id"])
 
     def test_chat_photo_boundaries_and_stale_worker(self):
-        adult = '[[PHOTO]]{"scene":"nude","caption":"В студии","prompt":"nude studio portrait"}'
+        adult = '[[PHOTO]]{"scene":"nude","caption":"В студии","prompt":"nude studio portrait","shot":"side lighting"}'
         with patch("matchlab.qwen._completion", return_value=adult):
             msg = {"id": str(uuid4()), "revision": 0, "message": "Фото не надо"}
             self.assertIsNone(self.site.post("/api/chat", json=msg).json()["photo"])
@@ -110,7 +112,7 @@ class PhotoIntegration(unittest.TestCase):
 
     def test_explicit_request_recovers_text_only_ack(self):
         self.site.post("/api/photo-worker/claim", headers={**self.gpu, "X-Mira-Photo-Context": "1"})
-        plan = '[[PHOTO]]{"scene":"portrait","caption":"В синем","prompt":"blue dress, candlelight"}'
+        plan = '[[PHOTO]]{"scene":"portrait","caption":"В синем","prompt":"blue dress","shot":"waist-up, candlelight"}'
         with patch("matchlab.qwen._completion", side_effect=["Сейчас!", plan]) as model:
             r = self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0,
                                "message": "Пришли фото в синем платье при свечах"})
@@ -119,6 +121,28 @@ class PhotoIntegration(unittest.TestCase):
             initial, repair = (call.args[1] for call in model.call_args_list)
             self.assertEqual(repair[:len(initial)], initial)
             self.assertEqual(repair[-2], {"role":"assistant", "content":"Сейчас!"})
+
+    def test_correction_uses_delivered_photo_without_leaking_prompts(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        first = '[[PHOTO]]{"scene":"portrait","caption":"В саду","prompt":"red scarf, garden","shot":"close-up, dusk","exclude":"hat"}'
+        with patch("matchlab.qwen._completion", return_value=first):
+            self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0, "message":"Пришли фото в саду"}).raise_for_status()
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.finish(job, b"\xff\xd8\xffok\xff\xd9").raise_for_status()
+        message = "Так же, только шарф синий и в полный рост"
+        revised = '{"scene":"portrait","caption":"Синий шарф","prompt":"blue scarf, garden","shot":"full body, dusk","exclude":"hat"}'
+        with patch("matchlab.qwen._completion", return_value=revised) as model:
+            reply = self.site.post("/api/chat", json={"id": str(uuid4()), "revision":1, "message":message})
+            reply.raise_for_status()
+            self.assertNotIn("full body", reply.text)
+            context = model.call_args.args[1]
+            self.assertEqual(context[-1]["content"], message)
+            self.assertIn("red scarf, garden", context[-2]["content"])
+            self.assertIn("hat", context[-2]["content"])
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertEqual(job["photo_prompt"], "blue scarf, garden, full body, dusk")
+        self.assertEqual(job["negative_prompt"], "hat")
 
     def test_queue_failure_timeout_and_retry(self):
         self.create()

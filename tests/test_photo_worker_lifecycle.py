@@ -39,5 +39,14 @@ class RenderLifecycle(unittest.TestCase):
                               "assert sys.argv[1] == '--job-output'\n"
                               "Path(sys.argv[2]).write_text(json.dumps(json.load(sys.stdin)))\n")
             with patch.object(worker, "__file__", str(helper)):
-                result = worker.render_job({"scene":"portrait", "photo_prompt":"red scarf", "claim":"private"})
-            self.assertEqual(json.loads(result), {"scene":"portrait", "photo_prompt":"red scarf"})
+                result = worker.render_job({"scene":"portrait", "photo_prompt":"red scarf", "negative_prompt":"glasses", "claim":"private"})
+            self.assertEqual(json.loads(result), {"scene":"portrait", "photo_prompt":"red scarf", "negative_prompt":"glasses"})
+
+    def test_custom_composition_and_exclusions_take_priority_for_both_renderers(self):
+        for xl in (True, False):
+            positive, negative = worker.render_prompts("portrait", "wide shot, blue scarf", "glasses", xl=xl)
+            self.assertLess(positive.index("wide shot"), positive.index("brunette"))
+            self.assertNotIn("glasses", positive)
+            self.assertTrue(negative.startswith("glasses, "))
+            legacy, _ = worker.render_prompts("cafe", None, None, xl=xl)
+            self.assertIn(worker.SCENES["cafe"], legacy)

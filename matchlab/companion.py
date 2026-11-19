@@ -254,7 +254,7 @@ def create_chat_app(settings=None):
         message = message.strip()
         with repo.connection() as db:
             revision, turns = dialog(db,user["id"])
-            latest_photo = db.execute("SELECT id,scene,caption,photo_prompt,created_at FROM companion_photos WHERE user_id=? "
+            latest_photo = db.execute("SELECT id,scene,caption,photo_prompt,negative_prompt,created_at FROM companion_photos WHERE user_id=? "
                                       "AND state='ready' ORDER BY created_at DESC,id DESC LIMIT 1",
                                       (user["id"],)).fetchone()
         for turn in turns:
@@ -274,7 +274,8 @@ def create_chat_app(settings=None):
         )
         if latest_photo and (len(turns) < 8 or latest_photo["created_at"] >= (turns[-8].get("sent_at") or "")):
             scene = latest_photo["caption"] or companion_photos.SCENES.get(latest_photo["scene"], "портрет Миры")
-            reference = json.dumps({"подпись": scene, "описание": latest_photo["photo_prompt"]}, ensure_ascii=False)
+            reference = json.dumps({"подпись": scene, "описание": latest_photo["photo_prompt"],
+                                    "исключения": latest_photo["negative_prompt"] or ""}, ensure_ascii=False)
             # Anchor the caption to its turn so delivery of a new photo does not
             # invalidate the system prefix and every preceding chat message.
             target = prompt[0]  # Legacy camera requests had no associated chat turn.
@@ -289,10 +290,12 @@ def create_chat_app(settings=None):
             answer = await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
             if photos_enabled:
                 direct = bool(companion_photos.DIRECT_REQUEST.match(message))
+                malformed_plan = False
                 try:
                     plan = companion_photos.read_plan(answer, allow_json=direct)
                     needs_plan = direct and plan is None
                 except ValueError:
+                    malformed_plan = True
                     needs_plan = True
                 if needs_plan:
                     # Some chat models acknowledge a direct request in prose. Recover the actual job.
@@ -301,7 +304,7 @@ def create_chat_app(settings=None):
                               "по прежним правилам. Иначе верни NONE."}]
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
                     plan = companion_photos.read_plan(detail, allow_json=True)
-                    if plan is None and (detail.strip().upper() != "NONE" or "[[PHOTO]]" in answer):
+                    if plan is None and (detail.strip().upper() != "NONE" or malformed_plan):
                         raise ValueError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."

@@ -35,6 +35,21 @@ ADAPTER_REV = "018e402774aeeddd60609b4ecdb7e298259dc729"
 FACE_WEIGHTS = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
 
 
+def render_prompts(scene, photo_prompt, negative_prompt, *, xl):
+    if photo_prompt:
+        # CLIP truncates long prompts. Put the requested shot ahead of style defaults.
+        positive = ("Photograph of one adult woman, " + photo_prompt +
+                    ", short wavy brunette bob, hazel eyes, olive skin, natural skin texture")
+    elif xl:
+        positive = ("Candid photograph of a 28-year-old adult woman, short wavy brunette bob, "
+                    "hazel-green eyes, olive complexion, " + SCENES[scene] +
+                    ", lifelike skin, fine flyaway hairs, candid expression, subtle film grain")
+    else:
+        positive = PORTRAIT + SCENES[scene]
+    negative = NEGATIVE + (", bad hands, airbrushed, plastic skin" if xl else "")
+    return positive, (negative_prompt + ", " + negative if negative_prompt else negative)
+
+
 def select_gpu():
     import torch
 
@@ -94,15 +109,12 @@ class RealVisPortraits:
         with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
             self.reference = ImageOps.fit(avatar.convert("RGB"), (224, 224), Image.Resampling.LANCZOS)
 
-    def render(self, scene, seed=None, photo_prompt=None):
+    def render(self, scene, seed=None, photo_prompt=None, negative_prompt=None):
         import torch
 
-        composition = photo_prompt or SCENES[scene]
-        prompt = ("Candid photograph of a 28-year-old adult woman, short wavy brunette bob, "
-                  "hazel-green eyes, olive complexion, " + composition +
-                  ", lifelike skin, fine flyaway hairs, candid expression, subtle film grain")
+        prompt, negative = render_prompts(scene, photo_prompt, negative_prompt, xl=True)
         with torch.inference_mode():
-            image = self.pipe(prompt=prompt, negative_prompt=NEGATIVE + ", bad hands, airbrushed, plastic skin",
+            image = self.pipe(prompt=prompt, negative_prompt=negative,
                               ip_adapter_image=self.reference, width=768, height=960, num_inference_steps=32,
                               guidance_scale=5.0, generator=torch.Generator("cpu").manual_seed(
                                   secrets.randbits(32) if seed is None else seed)).images[0]
@@ -141,12 +153,13 @@ class SD15Portraits:
             pipe.enable_vae_slicing()
             pipe.set_progress_bar_config(disable=True)
 
-    def render(self, scene, seed=None, photo_prompt=None):
+    def render(self, scene, seed=None, photo_prompt=None, negative_prompt=None):
         import torch
         from PIL import Image
 
         generator = torch.Generator("cuda").manual_seed(secrets.randbits(32) if seed is None else seed)
-        params = dict(prompt=PORTRAIT + (photo_prompt or SCENES[scene]), negative_prompt=NEGATIVE,
+        prompt, negative = render_prompts(scene, photo_prompt, negative_prompt, xl=False)
+        params = dict(prompt=prompt, negative_prompt=negative,
                       guidance_scale=6.5, generator=generator)
         with torch.inference_mode():
             if scene == "selfie":
@@ -163,7 +176,8 @@ def render_job(job):
     # hooks after each photo, including on CUDA errors. Only the poller stays up.
     with tempfile.TemporaryDirectory(prefix="mira-render-") as directory:
         path = Path(directory) / "photo.jpg"
-        payload = json.dumps({"scene": job["scene"], "photo_prompt": job.get("photo_prompt")}).encode()
+        payload = json.dumps({"scene": job["scene"], "photo_prompt": job.get("photo_prompt"),
+                              "negative_prompt": job.get("negative_prompt")}).encode()
         subprocess.run([sys.executable, __file__, "--job-output", str(path)], input=payload,
                        check=True, timeout=285)
         return path.read_bytes()
@@ -200,7 +214,7 @@ def main():
         generator = RealVisPortraits() if profile == "realvisxl" else SD15Portraits()
         loaded = time.monotonic()
         torch.cuda.reset_peak_memory_stats()
-        jpeg = generator.render(job["scene"], args.seed, job.get("photo_prompt"))
+        jpeg = generator.render(job["scene"], args.seed, job.get("photo_prompt"), job.get("negative_prompt"))
         (args.job_output or args.preview).write_bytes(jpeg)
         logging.info("%s loaded in %.1fs, rendered in %.1fs, torch peak %d MiB", profile,
                      loaded - start, time.monotonic() - loaded, torch.cuda.max_memory_reserved() // 2**20)
