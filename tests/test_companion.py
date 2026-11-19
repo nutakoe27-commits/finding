@@ -123,6 +123,34 @@ class CompanionTests(unittest.TestCase):
             db.execute('DELETE FROM registration_agreements')
         self.assertEqual(self.client.post(path,json=payload).status_code,403)
 
+    def test_call_returns_audio_and_session_bound_memory_without_chat_rows(self):
+        import base64
+        from unittest.mock import AsyncMock
+        path = '/api/chat/call/turn'
+        payload = {'audio': base64.b64encode(bytes(3200)).decode()}
+        self.assertEqual(self.client.post(path, json=payload).status_code, 401)
+        self.register('caller')
+        headers = {'X-CSRF-Token':'invalid'}
+        self.assertEqual(self.client.post(path, json=payload, headers=headers).status_code, 403)
+        with patch('matchlab.companion_voice.transcribe', new=AsyncMock(return_value='Слышу тебя')), \
+             patch('matchlab.companion_voice.russian_audio', new=AsyncMock(return_value=b'RIFFtest')):
+            first = self.client.post(path, json=payload)
+            self.assertEqual(first.status_code, 200, first.text)
+            data = first.json()
+            self.assertEqual(set(data), {'audio','context'})
+            self.assertNotIn('Слышу тебя', first.text)
+            self.assertEqual(base64.b64decode(data['audio']), b'RIFFtest')
+            followup = self.client.post(path, json={**payload, 'context':data['context']})
+            self.assertEqual(followup.status_code, 200)
+            prompt = self.provider.call_args.kwargs['json']['messages']
+            self.assertEqual([m['content'] for m in prompt[1:]], ['Слышу тебя','Привет!','Слышу тебя'])
+            history = self.client.get('/api/chat').json()
+            self.assertEqual((history['turns'], history['revision']), ([], 0))
+            self.client.cookies.clear()
+            self.register('secondcaller')
+            self.assertEqual(self.client.post(path, json={**payload,'context':data['context']}).status_code,403)
+            self.assertEqual(self.client.post(path, json={**payload,'context':'broken'}).status_code,409)
+
 
 class VoiceWireTests(unittest.IsolatedAsyncioTestCase):
     async def test_existing_whisper_and_kokoro_frames(self):

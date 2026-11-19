@@ -94,7 +94,17 @@ def create_chat_app(settings=None):
     accounts.install(app, repo, settings)
     social_login.install(app, repo, settings)
     companion_admin.install(app, repo)
-    companion_voice.install(app, repo, dialog)
+    def call_reply(history, text):
+        prompt = [{"role": "system", "content": PERSONA +
+                   "\nСейчас вы разговариваете по телефону. Отвечай вслух по-русски. "
+                   "Обычно достаточно одной-трёх коротких фраз. Используй естественные паузы. "
+                   "Не пиши смайлики, ремарки или разметку. Числа и иностранные имена произноси словами."}]
+        for question, answer in history:
+            prompt.extend([{"role": "user", "content": question}, {"role": "assistant", "content": answer}])
+        prompt.append({"role": "user", "content": text})
+        return qwen._completion(replace(settings, qwen_enable_thinking=False), prompt, temperature=0.75)
+
+    companion_voice.install(app, repo, dialog, call_reply)
 
     @app.middleware("http")
     async def chat_headers(request, call_next):

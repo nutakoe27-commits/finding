@@ -5,9 +5,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#172b3c" />
     <title>Мира · Сообщения</title>
-    <link rel="stylesheet" href="/chat-assets/chat.css?v=2" />
-    <script defer src="/chat-assets/chat.js?v=2"></script>
-    <script defer src="/chat-assets/voice.js?v=2"></script>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=3" />
+    <script defer src="/chat-assets/chat.js?v=3"></script>
+    <script defer src="/chat-assets/voice.js?v=3"></script>
+    <script defer src="/chat-assets/call.js?v=3"></script>
   </head>
   <body>
     <main class="messenger">
@@ -52,11 +53,6 @@
           <div id="messages" role="log" aria-live="off"></div>
         </section>
         <footer>
-          <div id="callbar" hidden>
-            <div><strong>Голосовой чат</strong><small>Нажмите «Говорить», затем «Отправить».</small></div>
-            <button type="button" class="primary" id="talk">Говорить</button
-            ><button type="button" id="endCall" aria-label="Завершить голосовой чат">Завершить</button>
-          </div>
           <div id="status" role="status"></div>
           <div id="recording" hidden>
             <span class="recDot"></span><strong id="recTime">Запись · 0:00</strong
@@ -94,6 +90,37 @@
         </footer>
       </section>
     </main>
+    <dialog id="callScreen" aria-labelledby="callName" aria-describedby="callState">
+      <div class="callStage">
+        <div class="callTop"><span>Аудиозвонок</span><time id="callTime" hidden>00:00</time></div>
+        <div class="caller">
+          <div class="orbit"><img src="/chat-assets/mira.webp" alt="" /></div>
+          <h2 id="callName">Мира</h2>
+          <p id="callState" role="status">Вызов…</p>
+        </div>
+        <div class="callControls">
+          <button type="button" id="callMic" aria-pressed="false" disabled>
+            <span class="disc"
+              ><svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="13" rx="3" />
+                <path d="M5 11v1a7 7 0 0 0 14 0v-1M12 19v3" />
+                <path class="micSlash" d="m3 3 18 18" /></svg></span
+            ><span>Микрофон</span>
+          </button>
+          <button type="button" id="endCall" autofocus>
+            <span class="disc"
+              ><svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 14c4-7 16-7 20 0l-3 3-4-2v-3a11 11 0 0 0-6 0v3l-4 2z" /></svg></span
+            ><span>Завершить</span>
+          </button>
+          <button type="button" id="callAction" hidden>
+            <span class="disc"
+              ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 12 4 4 8-9" /></svg></span
+            ><span id="actionLabel">Готово</span>
+          </button>
+        </div>
+      </div>
+    </dialog>
     <dialog id="sheet">
       <form method="dialog"><button class="close" aria-label="Закрыть">×</button></form>
       <h2 id="sheetTitle">Войти в чат</h2>

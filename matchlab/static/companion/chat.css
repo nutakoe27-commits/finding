@@ -495,29 +495,6 @@ input:not([type='checkbox']) {
 #profile {
   margin-left: 0;
 }
-#callbar {
-  max-width: 850px;
-  margin: 0 auto 8px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-#callbar div {
-  margin-right: auto;
-}
-#callbar strong,
-#callbar small {
-  display: block;
-}
-#callbar strong {
-  font-size: 0.94rem;
-}
-#callbar small {
-  font-size: 0.77rem;
-}
-#recording {
-  margin-top: 5px;
-}
 @media (max-width: 480px) {
   #call span {
     position: absolute;
@@ -529,10 +506,170 @@ input:not([type='checkbox']) {
   #call {
     padding: 10px;
   }
-  #callbar {
-    flex-wrap: wrap;
+}
+
+#callScreen {
+  color-scheme: dark;
+  width: min(440px, calc(100vw - 28px));
+  padding: 0;
+  max-height: calc(100dvh - 24px);
+  margin: auto;
+  overflow: auto;
+  color: #fff6ec;
+  border: 1px solid #496171;
+  border-radius: 30px;
+  background: radial-gradient(ellipse at 50% 30%, #3a515a 0, #203748 44%, #132738 85%);
+  box-shadow: 0 26px 95px #06172666;
+}
+#callScreen::backdrop {
+  background: #071522ab;
+  backdrop-filter: blur(7px);
+}
+.callStage {
+  min-height: min(570px, calc(100dvh - 30px));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 28px 24px;
+}
+.callTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #d5dfe1;
+  font-size: 0.85rem;
+}
+#callTime {
+  font-variant-numeric: tabular-nums;
+}
+.caller {
+  text-align: center;
+  padding: 30px 0;
+}
+.orbit {
+  position: relative;
+  width: clamp(100px, 18vh, 142px);
+  aspect-ratio: 1;
+  margin: 0 auto 26px;
+  isolation: isolate;
+}
+.orbit img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid #ddb89c;
+}
+.orbit::before,
+.orbit::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  z-index: -1;
+  border: 1px solid #efc6a5;
+  opacity: 0.22;
+  border-radius: 50%;
+}
+.orbit::after {
+  inset: -17px;
+  opacity: 0.1;
+}
+[data-phase='ringing'] .orbit::before,
+[data-phase='ringing'] .orbit::after {
+  animation: ripple 2s ease-out infinite;
+}
+[data-phase='ringing'] .orbit::after {
+  animation-delay: -1s;
+}
+[data-phase='speaking'] .orbit::before {
+  animation: ripple 1.2s ease-in-out infinite;
+}
+@keyframes ripple {
+  from {
+    transform: scale(0.93);
+    opacity: 0.65;
   }
-  #callbar div {
-    flex-basis: 100%;
+  to {
+    transform: scale(1.29);
+    opacity: 0;
+  }
+}
+#callName {
+  font:
+    500 46px/1.15 Georgia,
+    serif;
+  letter-spacing: -0.045em;
+  margin: 0 0 6px;
+}
+#callState {
+  color: #e1d5c9;
+  min-height: 1.6em;
+  max-width: 33ch;
+  margin: auto;
+}
+.callControls {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  align-items: start;
+}
+.callControls button {
+  padding: 0;
+  width: 86px;
+  background: none;
+  border: 0;
+  color: #f6eee6;
+  font-size: 0.77rem;
+}
+.disc {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 7px;
+  border-radius: 50%;
+  background: #3d5261;
+  color: white;
+}
+.disc svg {
+  width: 23px;
+  height: 23px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#endCall .disc {
+  background: #c54943;
+}
+#endCall svg {
+  fill: currentColor;
+}
+#callMic[aria-pressed='true'] .disc {
+  background: #ebc2a7;
+  color: #342515;
+}
+#callMic[aria-pressed='false'] .micSlash {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #callScreen .orbit::before,
+  #callScreen .orbit::after {
+    animation: none;
+  }
+}
+@media (max-width: 540px) {
+  #callScreen {
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+  .callStage {
+    height: 100%;
+    padding: max(24px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom));
   }
 }

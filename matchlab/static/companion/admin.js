@@ -23,6 +23,8 @@ const methods = {
   mail: 'Mail.ru',
 };
 const actions = {
+  call_turn: 'Обменялся голосовой репликой с Мирой',
+  call_turn_failed: 'Ошибка голосового звонка',
   opened: 'Открыл чат',
   cleared: 'Удалил переписку',
   text_turn: 'Отправил текст и получил ответ',

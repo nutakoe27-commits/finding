@@ -12,7 +12,9 @@ from fastapi import HTTPException, Request, Response
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
-from . import accounts, companion_admin
+from starlette.concurrency import run_in_threadpool
+
+from . import accounts, call_context, companion_admin, russian_voice
 
 SAMPLE_RATE = 16000
 MAX_PCM = 20 * SAMPLE_RATE * 2
@@ -70,23 +72,28 @@ async def kokoro(text):
 
 
 async def russian_audio(text):
-    # Portable offline fallback for devices without a local Russian voice.
-    process = await asyncio.create_subprocess_exec(
-        "espeak-ng", "-v", "ru+f3", "-s", "155", "--stdout", "--stdin",
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-    )
+    return await run_in_threadpool(russian_voice.synthesize, text)
+
+
+async def reply_audio(text):
+    if re.search(r"[a-z]", text, re.I) and not re.search(r"[А-Яа-яЁё]", text):
+        return await kokoro(text)
+    return await russian_audio(text)
+
+
+def decode_recording(data):
+    if not isinstance(data.get("audio"), str):
+        raise HTTPException(422, "Запись отсутствует.")
     try:
-        audio, _ = await process.communicate(text.encode())
-    finally:
-        if process.returncode is None:
-            process.kill()
-            await process.wait()
-    if process.returncode or not audio.startswith(b"RIFF"):
-        raise ValueError("Russian voice unavailable")
-    return audio
+        pcm = base64.b64decode(data["audio"], validate=True)
+    except (ValueError, binascii.Error):
+        raise HTTPException(422, "Некорректная запись.")
+    if not 3200 <= len(pcm) <= MAX_PCM or len(pcm) % 2:
+        raise HTTPException(422, "Запишите фразу длительностью до 20 секунд.")
+    return pcm
 
 
-def install(app, repo, dialog):
+def install(app, repo, dialog, call_reply):
     slots = asyncio.Semaphore(4)
 
     def authorize(request, operation):
@@ -95,7 +102,7 @@ def install(app, repo, dialog):
         if not accounts.agreements_current(repo, user["id"]):
             raise HTTPException(403, "Подтвердите условия голосового общения в профиле.")
         accounts.limited(repo, "voice:" + operation + ":" + user["id"], 12, 60)
-        return user["id"]
+        return user
 
     async def run(user_id, action, provider, argument):
         if slots.locked():
@@ -113,16 +120,9 @@ def install(app, repo, dialog):
 
     @app.post("/api/chat/transcribe")
     async def recognize(request: Request):
-        user_id = authorize(request, "stt")
+        user_id = authorize(request, "stt")["id"]
         data = await accounts.body(request, (MAX_PCM * 4 // 3) + 64)
-        if not isinstance(data.get("audio"), str):
-            raise HTTPException(422, "Запись отсутствует.")
-        try:
-            pcm = base64.b64decode(data["audio"], validate=True)
-        except (ValueError, binascii.Error):
-            raise HTTPException(422, "Некорректная запись.")
-        if not 3200 <= len(pcm) <= MAX_PCM or len(pcm) % 2:
-            raise HTTPException(422, "Запишите фразу длительностью до 20 секунд.")
+        pcm = decode_recording(data)
         text = await run(user_id, "transcribed", transcribe, pcm)
         if not text:
             raise HTTPException(422, "Не удалось разобрать слова. Попробуйте ещё раз.")
@@ -130,9 +130,35 @@ def install(app, repo, dialog):
             raise HTTPException(422, "Фраза слишком длинная. Разделите её на части.")
         return {"text": text}
 
+    @app.post("/api/chat/call/turn")
+    async def call_turn(request: Request):
+        user = authorize(request, "call")
+        accounts.limited(repo, "chat:" + user["id"], 8, 60)
+        data = await accounts.body(request, MAX_PCM * 4 // 3 + 66000)
+        pcm = decode_recording(data)
+        box = call_context.cipher(app.state.settings.data_dir)
+        history = call_context.unpack(box, user["session_hash"], data.get("context"))
+
+        async def exchange(pcm):
+            text = (await transcribe(pcm)).strip()
+            if not text:
+                raise HTTPException(422, "Не расслышала. Скажите ещё раз.")
+            if len(text) > 2000:
+                raise HTTPException(422, "Фраза слишком длинная. Попробуйте короче.")
+            answer = await run_in_threadpool(call_reply, history, text)
+            # Preserve full sentences when a model unexpectedly answers at essay length.
+            if len(answer) > 800:
+                sentences = re.split(r"(?<=[.!?…])\s+", answer[:800])
+                answer = " ".join(sentences[:-1]) or answer[:800].rsplit(" ", 1)[0] + "."
+            audio = await reply_audio(answer)
+            return {"audio": base64.b64encode(audio).decode("ascii"),
+                    "context": call_context.pack(box, user["session_hash"], history + [[text, answer]])}
+
+        return await run(user["id"], "call_turn", exchange, pcm)
+
     @app.post("/api/chat/speak")
     async def speak(request: Request):
-        user_id = authorize(request, "tts")
+        user_id = authorize(request, "tts")["id"]
         data = await accounts.body(request)
         with repo.connection() as db:
             _, turns = dialog(db, user_id)
@@ -140,6 +166,5 @@ def install(app, repo, dialog):
         if not turn:
             raise HTTPException(404, "Сообщение уже удалено.")
         text = turn["assistant"]
-        provider = russian_audio if re.search(r"[А-Яа-яЁё]", text) else kokoro
-        audio = await run(user_id, "synthesized", provider, text)
+        audio = await run(user_id, "synthesized", reply_audio, text)
         return Response(audio, media_type="audio/wav")

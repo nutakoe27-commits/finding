@@ -231,12 +231,10 @@ el('compose').onsubmit = guard(async () => {
   if (pending || voice.busy) return;
   const message = el('message').value.trim();
   if (!message) return;
-  const callSession = voice.callSession;
   const channel = voice.draft ? 'voice' : 'text';
   if (!retry || retry.message !== message || retry.revision !== revision)
     retry = { message, revision, id: crypto.randomUUID(), channel };
   pending = true;
-  el('talk').disabled = true;
   el('send').disabled = true;
   el('message').readOnly = true;
   el('profile').disabled = true;
@@ -258,20 +256,18 @@ el('compose').onsubmit = guard(async () => {
     el('status').textContent = '';
     voice.draft = false;
   } catch (err) {
-    if (voice.callMode) voice.endCall();
     preview.remove();
     el('welcome').hidden = el('messages').childElementCount > 0;
     if ([401, 403, 409].includes(err.status)) await refresh();
     throw err;
   } finally {
     pending = false;
-    el('talk').disabled = false;
     el('send').disabled = false;
     el('message').readOnly = false;
     el('profile').disabled = false;
     el('mic').disabled = false;
   }
-  if (channel === 'voice' && reply && callSession === voice.callSession)
+  if (channel === 'voice' && reply)
     await voice.play(reply, el('messages').lastElementChild?.querySelector('.listen'));
 });
 el('message').oninput = () => {
