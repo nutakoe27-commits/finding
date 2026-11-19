@@ -18,6 +18,7 @@ async function api(path, method = 'GET', body) {
 }
 function bubble(content, mine, stamp, turn) {
   const item = document.createElement('div');
+  if (stamp) item.dataset.at = stamp;
   item.className = mine ? 'bubble mine' : 'bubble';
   const text = document.createElement('p');
   text.textContent = content;
@@ -168,6 +169,7 @@ el('retryFollowup').onclick = scheduleFollowup;
 function draw(data) {
   revision = data.revision;
   const list = el('messages');
+  const photoCards = [...list.querySelectorAll('[data-photo]')];
   list.replaceChildren();
   let previousDay = '';
   for (const turn of data.turns) {
@@ -181,6 +183,7 @@ function draw(data) {
     if (day && day !== previousDay) {
       const heading = document.createElement('p');
       heading.className = 'day';
+      heading.dataset.at = turn.sent_at;
       heading.textContent = day;
       list.append(heading);
       previousDay = day;
@@ -196,7 +199,7 @@ function draw(data) {
   el('preview').textContent =
     latestTurn?.parts?.at(-1)?.text || latestTurn?.assistant || 'Начать разговор';
   scheduleFollowup();
-  el('welcome').hidden = data.turns.length > 0;
+  photos.render(photoCards);
   scrollEnd();
   if (!el('finder').hidden) searchMessages();
 }
@@ -213,12 +216,13 @@ async function refresh() {
     session.user?.display_name || session.user?.username || 'Войти в аккаунт';
   for (const id of ['adminLink', 'adminMobile']) el(id).hidden = session.user?.role !== 'admin';
   if (session.user) {
-    const data = await api('chat');
+    const [data] = await Promise.all([api('chat'), photos.load().catch(() => {})]);
     session.accepted = data.accepted;
     draw(data);
     applyPreferences(data.preferences);
     if (!data.accepted) confirmDocuments();
   } else {
+    photos.reset();
     draw({ revision: 0, turns: [] });
     applyPreferences({ theme: 'system', enter_sends: true, autoplay: true });
   }
@@ -254,6 +258,7 @@ el('clear').onclick = guard(async () => {
     await delivery;
     pauseFollowup();
     await api('chat', 'DELETE');
+    photos.reset();
     voice.stopPlayback();
     voice.draft = false;
     el('message').value = '';
@@ -267,6 +272,11 @@ el('compose').onsubmit = guard(async () => {
   if (pending || voice.busy) return;
   const message = el('message').value.trim();
   if (!message) return;
+  const scene = photos.enabled && photos.requestedScene(message);
+  if (scene) {
+    photos.open(message, scene);
+    return;
+  }
   const channel = voice.draft ? 'voice' : 'text';
   pending = true;
   pauseFollowup();
@@ -307,7 +317,7 @@ el('compose').onsubmit = guard(async () => {
     el('mic').disabled = false;
   }
   if (channel === 'voice' && reply && prefs.autoplay)
-    await voice.play(reply, el('messages').lastElementChild?.querySelector('.listen'));
+    await voice.play(reply, [...el('messages').querySelectorAll('.listen')].at(-1));
 });
 el('message').oninput = () => {
   el('message').rows = Math.min(4, el('message').value.split('\n').length);

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import accounts, billing, companion_admin, companion_voice, qwen, social_login
+from . import accounts, billing, companion_admin, companion_photos, companion_voice, qwen, social_login
 from .billing_fiscal import Worker as ReceiptWorker
 from .config import Settings
 from .storage import Repository
@@ -132,6 +132,7 @@ def create_chat_app(settings=None):
     accounts.install(app, repo, settings)
     social_login.install(app, repo, settings)
     companion_admin.install(app, repo)
+    companion_photos.install(app, repo, settings)
     def call_reply(history, text):
         prompt = conversation_prompt(history, text, call=True)
         return qwen._completion(replace(settings, qwen_enable_thinking=False), prompt, temperature=0.75)
@@ -232,6 +233,7 @@ def create_chat_app(settings=None):
             db.execute("BEGIN IMMEDIATE")
             db.execute("INSERT OR IGNORE INTO companion_dialogs VALUES (?,0,'[]')", (user["id"],))
             db.execute("UPDATE companion_dialogs SET revision=revision+1, turns='[]' WHERE user_id=?", (user["id"],))
+            db.execute("DELETE FROM companion_photos WHERE user_id=?", (user["id"],))
             companion_admin.record(db, user["id"], "cleared")
         return {"ok":True}
 
@@ -282,6 +284,9 @@ def create_chat_app(settings=None):
         message = message.strip()
         with repo.connection() as db:
             revision, turns = dialog(db,user["id"])
+            latest_photo = db.execute("SELECT scene,created_at FROM companion_photos WHERE user_id=? "
+                                      "AND state='ready' ORDER BY created_at DESC,id DESC LIMIT 1",
+                                      (user["id"],)).fetchone()
         for turn in turns:
             if turn["id"] == key and turn["user"] == message:
                 return transcript(revision, turns)
@@ -292,6 +297,11 @@ def create_chat_app(settings=None):
             ((turn["user"], turn["assistant"]) for turn in turns[-8:]), message,
             dictated=channel == "voice", days_away=pause_days(turns, sent_at),
         )
+        if latest_photo and (len(turns) < 8 or latest_photo["created_at"] >= (turns[-8].get("sent_at") or "")):
+            scene = companion_photos.SCENES[latest_photo["scene"]]
+            prompt[0]["content"] += (f"\nПоследнее фото в вашей переписке — {scene}. "
+                                     "Если человек говорит о снимке, учитывай его сюжет. "
+                                     "Возвращайся к нему, только если собеседник сам о нём заговорил.")
         try:
             answer = await run_in_threadpool(
                 qwen._completion,

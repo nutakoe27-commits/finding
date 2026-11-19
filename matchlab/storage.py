@@ -46,6 +46,13 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS companion_dialogs (
                     user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, turns TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS companion_photos (
+                    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, scene TEXT NOT NULL,
+                    created_at TEXT NOT NULL, state TEXT NOT NULL, deadline INTEGER NOT NULL,
+                    claim_id TEXT, jpeg BLOB
+                );
+                CREATE INDEX IF NOT EXISTS companion_photo_history ON companion_photos(user_id,created_at);
+                CREATE INDEX IF NOT EXISTS companion_photo_queue ON companion_photos(state,deadline);
                 CREATE TABLE IF NOT EXISTS companion_preferences (
                     user_id TEXT PRIMARY KEY, theme TEXT NOT NULL,
                     enter_sends INTEGER NOT NULL, autoplay INTEGER NOT NULL

@@ -23,6 +23,7 @@ const methods = {
   mail: 'Mail.ru',
 };
 const actions = {
+  photo_requested: 'Запросил фото Миры',
   call_turn: 'Обменялся голосовой репликой с Мирой',
   call_turn_failed: 'Ошибка голосового звонка',
   opened: 'Открыл чат',

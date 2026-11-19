@@ -791,3 +791,70 @@ input:not([type='checkbox']) {
 #deliveryState [hidden] {
   display: none;
 }
+
+.photo-tool {
+  color: var(--sub);
+  background: transparent;
+}
+#photoScenes {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  border: 0;
+  padding: 0;
+}
+#photoScenes legend {
+  color: var(--sub);
+  margin-bottom: 10px;
+}
+#photoScenes label {
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+#photoScenes label:has(:checked) {
+  border-color: var(--accent);
+}
+#photoScenes input,
+#photoConsent input {
+  width: auto;
+  accent-color: var(--accent);
+}
+#photoError {
+  color: var(--accent);
+}
+.photo-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.photo-card {
+  padding: 10px;
+}
+.photo-card p {
+  font-size: 13px;
+}
+.photo-card img {
+  display: block;
+  width: min(260px, 100%);
+  height: auto;
+  margin-top: 6px;
+  border-radius: 10px;
+}
+.photo-card small {
+  color: var(--sub);
+}
+
+.photo-card time {
+  display: block;
+  color: var(--sub);
+  font-size: 11px;
+  text-align: right;
+  margin-top: 4px;
+}
