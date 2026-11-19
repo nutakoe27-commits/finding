@@ -1,4 +1,5 @@
 """Single GPU consumer. Credentials and chat history never enter diffusion prompts."""
+import argparse
 import io
 import json
 import logging
@@ -24,19 +25,104 @@ NEGATIVE = ("illustration, CGI, waxy skin, excessive retouching, blur, double fa
             "distorted anatomy, extra limbs, watermark, signature, lettering")
 
 
-class Portraits:
+REALVIS = "SG161222/RealVisXL_V5.0"
+REALVIS_REV = "ac93e0dda1f6d448cae19bbfab8c5e720a5e48bc"
+ADAPTER = "h94/IP-Adapter"
+ADAPTER_REV = "018e402774aeeddd60609b4ecdb7e298259dc729"
+FACE_WEIGHTS = "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+
+
+def select_gpu():
+    import torch
+
+    if torch.cuda.device_count() != 1 or torch.cuda.get_device_capability(0) != (7, 0):
+        raise RuntimeError("Select exactly one V100 via CUDA_VISIBLE_DEVICES")
+    if "sm_70" not in torch.cuda.get_arch_list():
+        raise RuntimeError("The installed torch wheel does not support V100")
+    if torch.cuda.mem_get_info()[0] < 8 * 1024**3:
+        raise RuntimeError("Less than 8 GiB free before loading portraits")
+    torch.cuda.set_per_process_memory_fraction(0.25, 0)
+
+
+def xl_files():
+    from huggingface_hub import snapshot_download
+
+    def fetch(repo, revision, patterns):
+        # Try the pinned files in the cache first, including when the host is offline.
+        from huggingface_hub.errors import LocalEntryNotFoundError
+        try:
+            directory = Path(snapshot_download(repo, revision=revision, local_files_only=True))
+            if all((directory / name).is_file() for name in patterns):
+                return str(directory)
+        except LocalEntryNotFoundError:
+            pass
+        return snapshot_download(repo, revision=revision, allow_patterns=patterns)
+
+    files = ["model_index.json", "scheduler/scheduler_config.json"]
+    for folder, weights in (("unet", "diffusion_pytorch_model"), ("vae", "diffusion_pytorch_model"),
+                            ("text_encoder", "model"), ("text_encoder_2", "model")):
+        files.extend([f"{folder}/config.json", f"{folder}/{weights}.fp16.safetensors"])
+    for folder in ("tokenizer", "tokenizer_2"):
+        files.extend(f"{folder}/{name}" for name in
+                     ("merges.txt", "vocab.json", "tokenizer_config.json", "special_tokens_map.json"))
+    return (fetch(REALVIS, REALVIS_REV, files),
+            fetch(ADAPTER, ADAPTER_REV, ["models/image_encoder/config.json", "models/image_encoder/model.safetensors",
+                                         f"sdxl_models/{FACE_WEIGHTS}"]))
+
+
+class RealVisPortraits:
+    def __init__(self):
+        import torch
+        from diffusers import DPMSolverMultistepScheduler, StableDiffusionXLPipeline
+        from PIL import Image, ImageOps
+
+        model_path, face_path = xl_files()
+        self.pipe = StableDiffusionXLPipeline.from_pretrained(
+            model_path, variant="fp16", torch_dtype=torch.float16, use_safetensors=True,
+            local_files_only=True, add_watermarker=False)
+        self.pipe.load_ip_adapter(face_path, subfolder="sdxl_models", weight_name=FACE_WEIGHTS,
+                                  image_encoder_folder="models/image_encoder", local_files_only=True)
+        self.pipe.set_ip_adapter_scale(0.65)
+        self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+            self.pipe.scheduler.config, algorithm_type="sde-dpmsolver++", use_karras_sigmas=True)
+        self.pipe.enable_vae_tiling()
+        self.pipe.enable_model_cpu_offload(gpu_id=0)
+        self.pipe.set_progress_bar_config(disable=True)
+        with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
+            self.reference = ImageOps.fit(avatar.convert("RGB"), (224, 224), Image.Resampling.LANCZOS)
+
+    def render(self, scene, seed=None):
+        import torch
+
+        prompt = ("Candid photograph of a 28-year-old adult woman, short wavy brunette bob, "
+                  "hazel-green eyes, olive complexion, " + SCENES[scene] +
+                  ", lifelike skin, fine flyaway hairs, candid expression, subtle film grain")
+        with torch.inference_mode():
+            image = self.pipe(prompt=prompt, negative_prompt=NEGATIVE + ", bad hands, airbrushed, plastic skin",
+                              ip_adapter_image=self.reference, width=768, height=960, num_inference_steps=32,
+                              guidance_scale=5.0, generator=torch.Generator("cpu").manual_seed(
+                                  secrets.randbits(32) if seed is None else seed)).images[0]
+        return encode_jpeg(image)
+
+
+def encode_jpeg(image):
+    image = image.convert("RGB")
+    if all(high - low < 8 for low, high in image.getextrema()):
+        raise RuntimeError("Model returned a nearly blank image")
+    for quality in (92, 84):
+        out = io.BytesIO()
+        image.save(out, "JPEG", quality=quality, optimize=True)
+        if out.tell() <= 800_000:  # Receiver upload limit.
+            return out.getvalue()
+    raise RuntimeError("Photo exceeds the upload limit")
+
+
+class SD15Portraits:
     def __init__(self):
         import torch
         from PIL import Image, ImageOps
         from diffusers import DPMSolverMultistepScheduler, StableDiffusionImg2ImgPipeline, StableDiffusionPipeline
 
-        if torch.cuda.device_count() != 1 or torch.cuda.get_device_capability(0) != (7, 0):
-            raise RuntimeError("Select exactly one V100 via CUDA_VISIBLE_DEVICES")
-        if "sm_70" not in torch.cuda.get_arch_list():
-            raise RuntimeError("The installed torch wheel does not support V100")
-        if torch.cuda.mem_get_info()[0] < 8 * 1024**3:
-            raise RuntimeError("Less than 8 GiB free before loading portraits")
-        torch.cuda.set_per_process_memory_fraction(0.25, 0)
         with Image.open(Path(__file__).with_name("mira.webp")) as avatar:
             self.portrait = ImageOps.fit(avatar.convert("RGB"), (512, 640), Image.Resampling.LANCZOS)
         # All four compositions are authored locally and depict a single adult character.
@@ -52,14 +138,13 @@ class Portraits:
             pipe.enable_vae_slicing()
             pipe.set_progress_bar_config(disable=True)
 
-    def render(self, scene):
+    def render(self, scene, seed=None):
         import torch
         from PIL import Image
 
+        generator = torch.Generator("cuda").manual_seed(secrets.randbits(32) if seed is None else seed)
         params = dict(prompt=PORTRAIT + SCENES[scene], negative_prompt=NEGATIVE,
-                      guidance_scale=6.5, generator=torch.Generator("cuda").manual_seed(secrets.randbits(32)))
-        start = time.monotonic()
-        torch.cuda.reset_peak_memory_stats()
+                      guidance_scale=6.5, generator=generator)
         with torch.inference_mode():
             if scene == "selfie":
                 first = self.refine(**params, image=self.portrait, strength=0.53, num_inference_steps=32).images[0]
@@ -67,23 +152,48 @@ class Portraits:
                 first = self.base(**params, width=512, height=640, num_inference_steps=28).images[0]
             enlarged = first.resize((640, 800), Image.Resampling.LANCZOS)
             image = self.refine(**params, image=enlarged, strength=0.28, num_inference_steps=30).images[0]
-        out = io.BytesIO()
-        image.convert("RGB").save(out, "JPEG", quality=92, optimize=True)
-        logging.info("640x800 in %.1fs, torch peak %s MiB", time.monotonic() - start,
-                     torch.cuda.max_memory_reserved() // 2**20)
-        return out.getvalue()
+        return encode_jpeg(image)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--download-xl", action="store_true", help="cache pinned XL weights without touching CUDA")
+    parser.add_argument("--preview", type=Path, help="render a local JPEG without connecting to the chat")
+    parser.add_argument("--scene", choices=SCENES, default="selfie")
+    parser.add_argument("--seed", type=int)
+    args = parser.parse_args()
+    if args.download_xl:
+        xl_files()
+        return
+
+    import torch
+
+    profile = os.environ.get("MIRA_PHOTO_MODEL", "realvisxl")
+    if profile not in ("realvisxl", "sd15"):
+        raise ValueError("MIRA_PHOTO_MODEL must be realvisxl or sd15")
+    select_gpu()
+    generator = RealVisPortraits() if profile == "realvisxl" else SD15Portraits()
+
+    def render(scene, seed=None):
+        started = time.monotonic()
+        torch.cuda.reset_peak_memory_stats()
+        jpeg = generator.render(scene, seed)
+        logging.info("%s in %.1fs, torch peak %d MiB", profile, time.monotonic() - started,
+                     torch.cuda.max_memory_reserved() // 2**20)
+        return jpeg
+
+    if args.preview:
+        args.preview.write_bytes(render(args.scene, args.seed))
+        logging.info("Preview saved to %s", args.preview)
+        return
     site = os.environ.get("MIRA_SITE", "https://prognozich.online").rstrip("/")
     if urlsplit(site).scheme != "https":
         raise ValueError("MIRA_SITE requires HTTPS")
     token = Path(__file__).with_name("photo-worker.key").read_text().strip()
     session = requests.Session()
     session.headers["Authorization"] = "Bearer " + token
-    generator = Portraits()
-    logging.info("Photo worker ready")
+    logging.info("Photo worker ready (%s)", profile)
     while True:
         try:
             resp = session.post(site + "/api/photo-worker/claim", timeout=15, allow_redirects=False)
@@ -93,9 +203,9 @@ def main():
             resp.raise_for_status()
             job = resp.json()
             try:
-                jpeg = generator.render(job["scene"])
-            except Exception as exc:
-                logging.error("Generation failed: %s", type(exc).__name__)
+                jpeg = render(job["scene"])
+            except Exception:
+                logging.exception("Generation failed for %s", profile)
                 jpeg = b""
             url = site + "/api/photo-worker/" + job["id"] + "/" + job["claim"]
             for attempt in range(3):

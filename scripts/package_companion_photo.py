@@ -30,7 +30,8 @@ def main():
     try:
         with tarfile.open(temp, "w:gz") as package:
             for path in (key, ROOT / "matchlab/static/companion/mira.webp",
-                         ROOT / "deploy/companion_photo/worker.py", ROOT / "deploy/companion_photo/mira-photo.service"):
+                         ROOT / "deploy/companion_photo/worker.py", ROOT / "deploy/companion_photo/upgrade-xl.sh",
+                         ROOT / "deploy/companion_photo/mira-photo.service"):
                 package.add(path, arcname=path.name)
         os.replace(temp, dest)
     finally:
