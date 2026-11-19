@@ -23,3 +23,5 @@ requests==2.34.2
 mcp==1.29.0
 PyMySQL[rsa]==1.1.2
 sqlglot==27.29.0
+
+websockets==15.0.1

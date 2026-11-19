@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS admin_audit (
  target TEXT,details TEXT NOT NULL);
 """
 HASH_SLOTS = BoundedSemaphore(3)
-LEGAL_VERSION = '2026-11-19.companion.v1'
+LEGAL_VERSION = '2026-11-19.companion.v2'
 LEGAL_DOCUMENTS = ('terms','personal_data_consent','age_attestation')
 AI_ROUTE = re.compile(
     r"^/api/(?:explain|(?:bookmakers|archive)/events/[^/]+/explain)/?$"
@@ -236,7 +236,13 @@ def public_user(user, settings):
         'local_login_available':str(user['password_hash']).startswith('scrypt$'),'login_provider':user['last_login_provider']}
 
 
-def authenticated_response(request, user_id, status=200, old_token=None):
+def record_account_event(request, db, user_id, action):
+    record = getattr(request.app.state, "record_account_activity", None)
+    if record and agreements_current(request.app.state.repository, user_id):
+        record(db, user_id, action)
+
+
+def authenticated_response(request, user_id, status=200, old_token=None, *, registered=False):
     repo = request.app.state.repository
     from .social_login import invalidate
     with repo.connection() as db:invalidate(db,request)
@@ -248,6 +254,7 @@ def authenticated_response(request, user_id, status=200, old_token=None):
     token = make_session(repo, user_id)
     with repo.connection() as db:
         user = dict(db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone())
+        record_account_event(request, db, user_id, "registered" if status == 201 or registered else "login")
     response = JSONResponse(
         {"user": public_user(user, request.app.state.settings), "csrf": csrf(token)},
         status_code=status,
@@ -523,11 +530,12 @@ def install(app, repo, settings):
 
     @app.post("/api/auth/logout")
     def logout(request: Request):
-        current_user(request)
+        user = current_user(request)
         mutation(request)
         with repo.connection() as db:
             from .social_login import invalidate
             invalidate(db,request)
+            record_account_event(request, db, user["id"], "logout")
             db.execute(
                 "DELETE FROM user_sessions WHERE token_hash=?",
                 (token_hash(request.cookies[cookie_name(request)]),),

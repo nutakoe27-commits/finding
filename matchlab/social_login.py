@@ -131,6 +131,8 @@ def session_redirect(request,user_id,provider,return_to):
         if old:db.execute('DELETE FROM user_sessions WHERE token_hash=?',(accounts.token_hash(old),))
         db.execute('UPDATE users SET last_login_provider=? WHERE id=?',(provider,user_id))
     token=accounts.make_session(repo,user_id);response=landing(request,'success',return_to)
+    with repo.connection() as db:
+        accounts.record_account_event(request, db, user_id, "login")
     response.set_cookie(accounts.cookie_name(request),token,max_age=7*86400,httponly=True,
         secure=accounts.origin(request).startswith('https://'),samesite='lax',path='/')
     clear_cookies(response,request);return response
@@ -279,7 +281,7 @@ def install(app,repo,settings):
                 db.execute('UPDATE users SET last_login_provider=? WHERE id=?',(attempt['provider'],identifier))
                 invalidate(db,request)
         except AuthFailure:raise HTTPException(409,'Регистрация недоступна. Повторите вход или обратитесь в поддержку.') from None
-        response=accounts.authenticated_response(request,identifier)
+        response=accounts.authenticated_response(request,identifier,registered=not existing)
         clear_cookies(response,request);return response
 
     @app.get('/api/auth/social/connections')

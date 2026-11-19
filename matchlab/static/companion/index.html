@@ -1,10 +1,152 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Мира · Личный чат</title><link rel="stylesheet" href="/chat-assets/chat.css"><script defer src="/chat-assets/chat.js"></script></head><body>
-<main><header><span class="avatar" aria-hidden="true">М</span><div><h1>Мира</h1><small>Виртуальная собеседница</small></div><button id="profile">Войти</button></header>
-<section id="thread" aria-label="Переписка"><div id="welcome"><span class="kicker">Первый разговор</span><h2>Привет, я Мира.</h2><p>О чём тебе хочется поговорить?</p><div id="starters"><button>Расскажу, как прошёл день</button><button>Задай мне вопрос</button></div></div><div id="messages"></div></section>
-<footer><p role="status" id="status"></p><form id="compose"><textarea rows="2" maxlength="2000" id="message" aria-label="Сообщение Мире" placeholder="Написать Мире…" required></textarea><button class="primary" id="send">Отправить</button></form><small>Бесплатный чат с ИИ · <a href="/chat-assets/rules.html">Условия и данные</a></small></footer></main>
-<dialog id="sheet"><form method="dialog"><button class="close" aria-label="Закрыть">×</button></form><h2 id="sheetTitle">Войти в чат</h2>
-<div id="loginBox"><div id="providers"></div><form id="login"><label>Логин<input name="username" autocomplete="username" required></label><label>Пароль<input name="password" type="password" autocomplete="current-password" required></label><button class="primary">Войти</button></form><button id="registerToggle">Создать аккаунт</button></div>
-<form id="register" hidden><div id="credentials"><label>Логин<input name="username" autocomplete="username" pattern="[a-zA-Z0-9_]{3,32}" placeholder="От 3 латинских букв или цифр" required></label><label>Пароль<input name="password" autocomplete="new-password" type="password" minlength="12" maxlength="128" placeholder="От 12 символов" required></label></div>
-<label class="check"><input type="checkbox" required>Мне есть 18 лет. Принимаю <a href="/chat-assets/rules.html" target="_blank">условия чата</a>.</label>
-<label class="check"><input type="checkbox" required>Соглашаюсь на <a href="/chat-assets/rules.html#data" target="_blank">обработку данных</a>.</label><button id="agree" class="primary">Создать аккаунт</button></form>
-<section id="account" hidden><p id="identity"></p><div id="payments"></div><button id="clear">Удалить переписку</button><button id="logout">Выйти</button></section><p role="status" id="notice"></p></dialog></body></html>
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#172b3c" />
+    <title>Мира · Сообщения</title>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=2" />
+    <script defer src="/chat-assets/chat.js?v=2"></script>
+    <script defer src="/chat-assets/voice.js?v=2"></script>
+  </head>
+  <body>
+    <main class="messenger">
+      <aside class="rail" aria-label="Навигация">
+        <a class="wordmark" href="/" aria-label="Мира, на главную">мира<span>.</span></a>
+        <h2>Сообщения</h2>
+        <a class="contact" aria-current="page" href="/"
+          ><img src="/chat-assets/mira.webp" alt="" /><span
+            ><strong>Мира</strong><small id="preview">Начать разговор</small></span
+          ></a
+        >
+        <div class="railfoot">
+          <a id="adminLink" href="/admin" hidden>Администрирование ↗</a
+          ><button id="profileSide">Войти в аккаунт</button
+          ><a href="/chat-assets/rules.html">Условия и данные</a>
+        </div>
+      </aside>
+      <section class="conversation" aria-label="Чат с Мирой">
+        <header class="chathead">
+          <img class="headphoto" src="/chat-assets/mira.webp" alt="" />
+          <div>
+            <h1>Мира</h1>
+            <small>ИИ-собеседница</small>
+          </div>
+          <button type="button" id="call" aria-pressed="false" title="Открыть голосовой чат">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3 16v-4a9 9 0 0 1 18 0v4M3 13h3v7H4a1 1 0 0 1-1-1zm18 0h-3v7h2a1 1 0 0 0 1-1z"
+              /></svg
+            ><span>Голосовой чат</span></button
+          ><button id="profile">Войти</button>
+        </header>
+        <section id="thread" aria-label="Переписка">
+          <div id="welcome">
+            <img class="portrait" src="/chat-assets/mira.webp" alt="Портрет Миры" />
+            <h2>Привет, я Мира<span>.</span></h2>
+            <p>О чём тебе хочется поговорить?</p>
+            <div id="starters">
+              <button>Расскажу, как прошёл день</button><button>Задай мне вопрос</button>
+            </div>
+          </div>
+          <div id="messages" role="log" aria-live="off"></div>
+        </section>
+        <footer>
+          <div id="callbar" hidden>
+            <div><strong>Голосовой чат</strong><small>Нажмите «Говорить», затем «Отправить».</small></div>
+            <button type="button" class="primary" id="talk">Говорить</button
+            ><button type="button" id="endCall" aria-label="Завершить голосовой чат">Завершить</button>
+          </div>
+          <div id="status" role="status"></div>
+          <div id="recording" hidden>
+            <span class="recDot"></span><strong id="recTime">Запись · 0:00</strong
+            ><button id="cancelRec">Отмена</button><button id="finishRec">Готово</button>
+          </div>
+          <form id="compose">
+            <textarea
+              rows="1"
+              maxlength="2000"
+              id="message"
+              aria-label="Сообщение Мире"
+              placeholder="Написать Мире…"
+              required
+            ></textarea>
+            <button
+              type="button"
+              class="icon"
+              id="mic"
+              aria-label="Записать голосовое сообщение"
+              title="Записать голосовое сообщение"
+            >
+              <svg viewBox="0 0 24 24">
+                <rect x="9" y="2" width="6" height="13" rx="3" />
+                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3" />
+              </svg>
+            </button>
+            <button class="primary icon" id="send" aria-label="Отправить" title="Отправить">
+              <svg viewBox="0 0 24 24"><path d="M4 12 20 4l-5 16-4-6-7-2Zm7 2 9-10" /></svg>
+            </button>
+          </form>
+          <small class="privacy"
+            >Текст диалога доступен администратору ·
+            <a href="/chat-assets/rules.html#data">Подробнее</a></small
+          >
+        </footer>
+      </section>
+    </main>
+    <dialog id="sheet">
+      <form method="dialog"><button class="close" aria-label="Закрыть">×</button></form>
+      <h2 id="sheetTitle">Войти в чат</h2>
+      <div id="loginBox">
+        <div id="providers"></div>
+        <form id="login">
+          <label>Логин<input name="username" autocomplete="username" required /></label
+          ><label
+            >Пароль<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required /></label
+          ><button class="primary">Войти</button>
+        </form>
+        <button id="registerToggle">Создать аккаунт</button>
+      </div>
+      <form id="register" hidden>
+        <div id="credentials">
+          <label
+            >Логин<input
+              name="username"
+              autocomplete="username"
+              pattern="[a-zA-Z0-9_]{3,32}"
+              placeholder="От 3 латинских букв или цифр"
+              required /></label
+          ><label
+            >Пароль<input
+              name="password"
+              autocomplete="new-password"
+              type="password"
+              minlength="12"
+              maxlength="128"
+              placeholder="От 12 символов"
+              required
+          /></label>
+        </div>
+        <label class="check"
+          ><input type="checkbox" required />Мне есть 18 лет. Принимаю
+          <a href="/chat-assets/rules.html" target="_blank">условия чата</a>.</label
+        >
+        <label class="check"
+          ><input type="checkbox" required />Соглашаюсь на
+          <a href="/chat-assets/rules.html#data" target="_blank">обработку данных</a>.</label
+        ><button id="agree" class="primary">Создать аккаунт</button>
+      </form>
+      <section id="account" hidden>
+        <p id="identity"></p>
+        <a id="adminMobile" href="/admin" hidden>Управление пользователями</a>
+        <div id="payments"></div>
+        <button id="clear">Удалить переписку</button><button id="logout">Выйти</button>
+      </section>
+      <p role="status" id="notice"></p>
+    </dialog>
+  </body>
+</html>

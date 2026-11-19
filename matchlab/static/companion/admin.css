@@ -1,0 +1,140 @@
+.desk {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.deskhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--rail);
+  color: #fff;
+  padding: 20px 26px;
+  border-radius: 18px;
+}
+.deskhead .wordmark {
+  margin: 0;
+  font-size: 36px;
+}
+.deskhead a {
+  color: #ffcfad;
+  font-size: 0.9rem;
+}
+.desk h1 {
+  font:
+    500 clamp(32px, 5vw, 50px) / 1.2 Georgia,
+    serif;
+  letter-spacing: -0.04em;
+  margin: 26px 0 18px;
+}
+.panels {
+  display: grid;
+  align-items: start;
+  grid-template-columns: minmax(260px, 32%) 1fr;
+  gap: 16px;
+}
+.adminpanel {
+  padding: 20px;
+  min-width: 0;
+}
+.directory form {
+  margin-bottom: 16px;
+}
+.directory label {
+  font-size: 0.86rem;
+  margin: 0 0 6px;
+}
+.directory form div,
+nav,
+.switch {
+  display: flex;
+  gap: 6px;
+}
+.directory input {
+  min-width: 0;
+}
+.person {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+}
+.person small,
+.person strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.person[aria-pressed='true'],
+.switch button[aria-pressed='true'] {
+  background: var(--tint);
+  color: var(--accent);
+}
+nav {
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.detail h2 {
+  font-size: 1.3rem;
+  overflow-wrap: anywhere;
+}
+#hint {
+  color: var(--sub);
+  margin-top: 6px;
+}
+dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+}
+dt {
+  font-size: 0.78rem;
+  color: var(--sub);
+}
+dd {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+.switch {
+  margin: 18px 0;
+}
+#entries {
+  max-height: 65dvh;
+  overflow: auto;
+}
+.event {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+.event small {
+  white-space: nowrap;
+}
+#feedback {
+  color: var(--accent);
+}
+@media (max-width: 720px) {
+  .desk {
+    padding: 10px;
+  }
+  .panels {
+    display: block;
+  }
+  .detail {
+    margin-top: 12px;
+  }
+  .directory #people {
+    max-height: 32dvh;
+    overflow: auto;
+  }
+  .deskhead,
+  .adminpanel {
+    padding: 16px;
+  }
+}

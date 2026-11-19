@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Пользователи · Мира</title>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=2" />
+    <link rel="stylesheet" href="/chat-assets/admin.css" />
+    <script defer src="/chat-assets/admin.js"></script>
+  </head>
+  <body>
+    <main class="desk">
+      <header class="deskhead">
+        <span class="wordmark">мира<span>.</span></span
+        ><a href="/">Вернуться в чат ↗</a>
+      </header>
+      <h1>Пользователи</h1>
+      <div class="panels">
+        <section class="adminpanel directory">
+          <form id="filter">
+            <label for="search">Поиск по имени или логину</label>
+            <div>
+              <input id="search" type="search" maxlength="80" placeholder="Имя или логин" /><button>
+                Найти
+              </button>
+            </div>
+          </form>
+          <div id="people" aria-label="Аккаунты"></div>
+          <nav><button id="prev">Назад</button><button id="next">Дальше</button></nav>
+        </section>
+        <section class="adminpanel detail" id="detail">
+          <h2 id="name">Карточка пользователя</h2>
+          <p id="hint">Выберите аккаунт, чтобы открыть переписку и историю действий.</p>
+          <div id="card" hidden>
+            <dl id="facts"></dl>
+            <div class="switch">
+              <button id="tabChat" aria-pressed="true">Переписка</button
+              ><button id="tabEvents" aria-pressed="false">Действия</button>
+            </div>
+            <div id="entries"></div>
+          </div>
+        </section>
+      </div>
+      <p role="status" id="feedback"></p>
+    </main>
+  </body>
+</html>

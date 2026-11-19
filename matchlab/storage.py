@@ -46,6 +46,11 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS companion_dialogs (
                     user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, turns TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS companion_activity (
+                    id INTEGER PRIMARY KEY, user_id TEXT NOT NULL,
+                    at TEXT NOT NULL, action TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS companion_activity_user ON companion_activity(user_id,id);
                 CREATE TABLE IF NOT EXISTS matches (
                     date TEXT NOT NULL,
                     season TEXT NOT NULL,

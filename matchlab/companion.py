@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import accounts, billing, qwen, social_login
+from . import accounts, billing, companion_admin, companion_voice, qwen, social_login
 from .billing_fiscal import Worker as ReceiptWorker
 from .config import Settings
 from .storage import Repository
@@ -90,8 +90,23 @@ def create_chat_app(settings=None):
 
     app = FastAPI(title="Мира", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.settings = settings
+    app.state.record_account_activity = companion_admin.record
     accounts.install(app, repo, settings)
     social_login.install(app, repo, settings)
+    companion_admin.install(app, repo)
+    companion_voice.install(app, repo, dialog)
+
+    @app.middleware("http")
+    async def chat_headers(request, call_next):
+        response = await call_next(request)
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+            "media-src 'self' blob:; connect-src 'self'; worker-src 'self'; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+        )
+        return response
+
     # Reuse settlement, receipt and cancellation handlers for existing orders.
     finance = APIRouter()
     billing.install(finance, repo, settings)
@@ -112,9 +127,12 @@ def create_chat_app(settings=None):
     @app.get("/api/chat")
     def history(request: Request):
         user = accounts.current_user(request)
+        accepted = accounts.agreements_current(repo, user["id"])
         with repo.connection() as db:
             revision, turns = dialog(db, user["id"])
-        return {"revision":revision, "turns":turns, "accepted":accounts.agreements_current(repo,user["id"])}
+            if accepted:
+                companion_admin.record(db, user["id"], "opened")
+        return {"revision":revision, "turns":turns, "accepted":accepted}
 
     @app.delete("/api/chat")
     def clear(request: Request):
@@ -124,6 +142,7 @@ def create_chat_app(settings=None):
             db.execute("BEGIN IMMEDIATE")
             db.execute("INSERT OR IGNORE INTO companion_dialogs VALUES (?,0,'[]')", (user["id"],))
             db.execute("UPDATE companion_dialogs SET revision=revision+1, turns='[]' WHERE user_id=?", (user["id"],))
+            companion_admin.record(db, user["id"], "cleared")
         return {"ok":True}
 
     @app.post("/api/chat")
@@ -140,6 +159,10 @@ def create_chat_app(settings=None):
             key = str(UUID(str(data.get("id"))))
         except ValueError:
             raise HTTPException(422,"Обновите страницу.")
+        channel = data.get("channel", "text")
+        if channel not in ("text", "voice"):
+            raise HTTPException(422, "Неизвестный формат сообщения.")
+        sent_at = accounts.now()
         message = message.strip()
         with repo.connection() as db:
             revision, turns = dialog(db,user["id"])
@@ -161,8 +184,12 @@ def create_chat_app(settings=None):
                 temperature=0.75,
             )
         except ValueError:
+            with repo.connection() as db:
+                companion_admin.record(db, user["id"], "reply_failed")
             raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.")
-        turns = (turns + [{"id":key,"user":message,"assistant":answer}])[-40:]
+        turn = {"id":key, "user":message, "assistant":answer, "channel":channel,
+                "sent_at":sent_at, "answered_at":accounts.now(), "shared_version":accounts.LEGAL_VERSION}
+        turns = (turns + [turn])[-40:]
         with repo.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             db.execute("INSERT OR IGNORE INTO companion_dialogs VALUES (?,0,'[]')",(user["id"],))
@@ -170,6 +197,7 @@ def create_chat_app(settings=None):
                                 (revision+1,json.dumps(turns,ensure_ascii=False),user["id"],revision))
             if result.rowcount != 1:
                 raise HTTPException(409,"Диалог изменился. Обновите переписку.")
+            companion_admin.record(db, user["id"], channel + "_turn")
         return {"revision":revision+1,"turns":turns}
 
     return app
