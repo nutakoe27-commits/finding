@@ -62,6 +62,69 @@ function bubble(content, mine, stamp, turn) {
 function scrollEnd() {
   el('thread').scrollTop = el('thread').scrollHeight;
 }
+const messenger = document.querySelector('.messenger');
+el('backChats').onclick = () => {
+  messenger.dataset.pane = 'list';
+  el('openChat').focus();
+};
+el('openChat').onclick = () => {
+  messenger.dataset.pane = 'chat';
+  el(matchMedia('(max-width: 700px)').matches ? 'backChats' : 'message').focus();
+};
+
+let matches = [];
+let matchIndex = -1;
+function showMatch(index) {
+  matches[matchIndex]?.classList.remove('match-current');
+  matchIndex = matches.length ? (index + matches.length) % matches.length : -1;
+  const hit = matches[matchIndex];
+  if (hit) {
+    hit.classList.add('match-current');
+    hit.scrollIntoView({ block: 'nearest' });
+  }
+  el('found').textContent = !el('query').value.trim()
+    ? ''
+    : hit
+      ? matchIndex + 1 + ' из ' + matches.length
+      : 'Не найдено';
+  el('findNext').disabled = el('findPrev').disabled = matches.length < 2;
+}
+function searchMessages() {
+  matches[matchIndex]?.classList.remove('match-current');
+  const query = el('query').value.trim().toLocaleLowerCase('ru');
+  matches = query
+    ? Array.from(el('messages').querySelectorAll('.bubble')).filter((node) =>
+        node.querySelector('p').textContent.toLocaleLowerCase('ru').includes(query),
+      )
+    : [];
+  matchIndex = -1;
+  showMatch(matches.length - 1);
+}
+function toggleFinder(open) {
+  el('finder').hidden = !open;
+  el('find').setAttribute('aria-expanded', String(open));
+  el('query').value = '';
+  searchMessages();
+  if (open) el('query').focus();
+  else {
+    el('find').focus();
+    scrollEnd();
+  }
+}
+el('find').onclick = () => toggleFinder(el('finder').hidden);
+el('endFind').onclick = () => toggleFinder(false);
+el('query').oninput = searchMessages;
+el('findPrev').onclick = () => showMatch(matchIndex - 1);
+el('finder').onsubmit = (event) => {
+  event.preventDefault();
+  showMatch(matchIndex + 1);
+};
+el('finder').onkeydown = (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    toggleFinder(false);
+  }
+};
 function draw(data) {
   revision = data.revision;
   const list = el('messages');
@@ -90,6 +153,7 @@ function draw(data) {
   el('preview').textContent = data.turns.at(-1)?.assistant || 'Начать разговор';
   el('welcome').hidden = data.turns.length > 0;
   scrollEnd();
+  if (!el('finder').hidden) searchMessages();
 }
 function canChat() {
   if (!session?.user) openSheet('Войти в чат', 'loginBox');
@@ -100,7 +164,7 @@ function canChat() {
 async function refresh() {
   session = await api('auth/me');
   el('profile').textContent = session.user ? 'Профиль' : 'Войти';
-  el('profileSide').textContent =
+  el('profileLabel').textContent =
     session.user?.display_name || session.user?.username || 'Войти в аккаунт';
   for (const id of ['adminLink', 'adminMobile']) el(id).hidden = session.user?.role !== 'admin';
   if (session.user) {
@@ -114,7 +178,9 @@ async function refresh() {
     providers.replaceChildren();
     for (const p of session.providers.filter((x) => x !== 'local')) {
       const button = document.createElement('button');
-      button.textContent = { yandex: 'Яндекс', vk: 'ВКонтакте', ok: 'Одноклассники', mail: 'Mail.ru' }[p];
+      button.textContent = { yandex: 'Яндекс', vk: 'ВКонтакте', ok: 'Одноклассники', mail: 'Mail.ru' }[
+        p
+      ];
       button.onclick = guard(async () => {
         const result = await api('auth/social/' + p + '/start', 'POST', { action: 'login' });
         location.assign(result.authorization_url);
@@ -284,7 +350,7 @@ for (const button of el('starters').children)
   button.onclick = () => {
     if (pending || voice.busy) return;
     voice.draft = false;
-    el('message').value = button.textContent;
+    el('message').value = button.textContent.trim();
     el('message').focus();
   };
 guard(async () => {

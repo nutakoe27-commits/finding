@@ -1,41 +1,57 @@
 .desk {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 24px;
+  min-height: 100dvh;
+  background: var(--bg);
 }
 .deskhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   background: var(--rail);
   color: #fff;
-  padding: 20px 26px;
-  border-radius: 18px;
-}
-.deskhead .wordmark {
-  margin: 0;
-  font-size: 36px;
+  padding: 17px clamp(16px, 3vw, 46px);
 }
 .deskhead a {
   color: #ffcfad;
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 .desk h1 {
-  font:
-    500 clamp(32px, 5vw, 50px) / 1.2 Georgia,
-    serif;
+  margin-bottom: 18px;
+  font-size: 24px;
   letter-spacing: -0.04em;
-  margin: 26px 0 18px;
 }
 .panels {
   display: grid;
-  align-items: start;
-  grid-template-columns: minmax(260px, 32%) 1fr;
-  gap: 16px;
+  grid-template-columns: clamp(260px, 29vw, 390px) minmax(0, 1fr);
+  min-height: calc(100dvh - 73px);
 }
 .adminpanel {
-  padding: 20px;
   min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: clamp(14px, 2vw, 32px);
+}
+.directory {
+  border-right: 1px solid var(--line);
+}
+.detail {
+  background: var(--bg) url('/chat-assets/paper.png');
+}
+.detail dl {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  padding: 15px;
+}
+.detail .switch {
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  padding: 3px;
+}
+.switch button {
+  border: 0;
 }
 .directory form {
   margin-bottom: 16px;
@@ -121,13 +137,14 @@ dd {
 }
 @media (max-width: 720px) {
   .desk {
-    padding: 10px;
+    padding: 0;
   }
   .panels {
     display: block;
   }
   .detail {
-    margin-top: 12px;
+    margin-top: 0;
+    border-top: 1px solid var(--line);
   }
   .directory #people {
     max-height: 32dvh;

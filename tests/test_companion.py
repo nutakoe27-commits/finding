@@ -74,6 +74,16 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"], 1400)
         self.assertFalse(payload["chat_template_kwargs"]["enable_thinking"])
 
+    def test_pause_after_return_is_grounded_in_saved_reply_time(self):
+        from matchlab.companion import conversation_prompt, pause_days
+        now = "2026-11-19T10:00:00+00:00"
+        self.assertEqual(pause_days([{}], now), 0)
+        history = [{"answered_at": "2026-11-17T09:51:00+00:00"}]
+        prompt = conversation_prompt([("Завтра концерт", "Удачи!")], "Он прошёл!",
+                                     days_away=pause_days(history, now))
+        self.assertIn("полных суток: 2", prompt[0]["content"])
+        self.assertEqual(prompt[-1], {"role": "user", "content": "Он прошёл!"})
+
     def test_admin_review_is_private_and_clear_removes_transcript(self):
         self.assertEqual(self.client.get('/admin').status_code, 401)
         self.register('writer')
