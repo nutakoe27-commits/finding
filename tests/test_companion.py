@@ -5,7 +5,7 @@ from unittest.mock import patch
 from uuid import uuid4
 from fastapi.testclient import TestClient
 from matchlab import accounts
-from matchlab.companion import create_chat_app
+from matchlab.companion import PERSONA, create_chat_app
 from matchlab.config import Settings
 
 
@@ -13,8 +13,12 @@ class CompanionTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.client = self.enterContext(TestClient(create_chat_app(Settings(data_dir=Path(tmp.name)))))
-        self.provider = self.enterContext(patch("matchlab.companion.qwen._completion",return_value="Привет!"))
+        settings = Settings(data_dir=Path(tmp.name), qwen_base_url="http://qwen.test/v1",
+                            qwen_model="test", qwen_max_tokens=1400)
+        self.client = self.enterContext(TestClient(create_chat_app(settings)))
+        self.provider = self.enterContext(patch("matchlab.qwen._request", return_value={
+            "choices": [{"finish_reason": "stop", "message": {"content": "Привет!"}}],
+        }))
 
     def register(self, name):
         response = self.client.post('/api/auth/register',json=dict(username=name,password="local-password-test",
@@ -50,3 +54,22 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/chat',json=req).status_code,503)
         self.assertEqual(self.client.get('/api/chat').json()['turns'],[])
         self.assertEqual(self.client.get('/api/billing/wallet').json()['orders'],[])
+
+    def test_followup_uses_chat_voice_and_actual_history(self):
+        self.register("reader")
+        for revision, message in enumerate(["Привет, Мира", "Я к тебе за советом"]):
+            response = self.client.post("/api/chat", json={
+                "message": message, "revision": revision, "id": str(uuid4()),
+            })
+            self.assertEqual(response.status_code, 200, response.text)
+
+        payload = self.provider.call_args.kwargs["json"]
+        self.assertEqual(payload["messages"], [
+            {"role": "system", "content": PERSONA},
+            {"role": "user", "content": "Привет, Мира"},
+            {"role": "assistant", "content": "Привет!"},
+            {"role": "user", "content": "Я к тебе за советом"},
+        ])
+        self.assertEqual(payload["temperature"], 0.75)
+        self.assertEqual(payload["max_tokens"], 1400)
+        self.assertFalse(payload["chat_template_kwargs"]["enable_thinking"])

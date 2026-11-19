@@ -88,11 +88,11 @@ def _chat_choice(data: dict) -> tuple[dict, dict]:
     return choice, message
 
 
-def _completion(settings: Settings, messages: list[dict]) -> str:
+def _completion(settings: Settings, messages: list[dict], *, temperature: float = 0.2) -> str:
     if not settings.qwen_configured:
         raise ValueError("Сервер Qwen ещё не подключён.")
     payload = {
-        "model": settings.qwen_model, "temperature": 0.2,
+        "model": settings.qwen_model, "temperature": temperature,
         "max_tokens": settings.qwen_max_tokens, "stream": False, "messages": messages,
     }
     if settings.qwen_enable_thinking is not None:
