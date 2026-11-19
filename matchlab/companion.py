@@ -131,6 +131,20 @@ def create_chat_app(settings=None):
     app.mount("/chat-assets", StaticFiles(directory=STATIC / "companion"), name="chat-assets")
     app.mount("/static/legal", StaticFiles(directory=STATIC / "legal"), name="legal")
 
+    app.mount("/static/auth", StaticFiles(directory=STATIC / "auth"), name="auth-icons")
+
+    @app.get("/static/icon.svg")
+    def brand_icon():
+        return FileResponse(STATIC / "icon.svg")
+
+    @app.get("/static/social-login.js")
+    def social_script():
+        return FileResponse(STATIC / "social-login.js")
+
+    @app.get("/static/social-login.css")
+    def social_styles():
+        return FileResponse(STATIC / "social-login.css")
+
     @app.get("/")
     def index():
         return FileResponse(STATIC / "companion/index.html", headers={"Cache-Control":"no-store"})
@@ -139,15 +153,49 @@ def create_chat_app(settings=None):
     def health():
         return {"status":"ok"}
 
+    @app.post("/api/chat/sessions/revoke-others")
+    def revoke_other_sessions(request: Request):
+        user = accounts.current_user(request)
+        accounts.mutation(request)
+        with repo.connection() as db:
+            db.execute("DELETE FROM user_sessions WHERE user_id=? AND token_hash<>?",
+                       (user["id"], user["session_hash"]))
+        return {"ok": True}
+
+    @app.put("/api/chat/preferences")
+    async def save_preferences(request: Request):
+        user = accounts.current_user(request)
+        accounts.mutation(request)
+        data = await accounts.body(request)
+        name, theme = data.get("display_name"), data.get("theme")
+        enter, autoplay = data.get("enter_sends"), data.get("autoplay")
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 64 or not name.strip().isprintable():
+            raise HTTPException(422, "Введите имя длиной от 1 до 64 символов.")
+        if theme not in ("system", "light", "dark") or type(enter) is not bool or type(autoplay) is not bool:
+            raise HTTPException(422, "Проверьте настройки чата.")
+        with repo.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("UPDATE users SET display_name=? WHERE id=?", (name.strip(), user["id"]))
+            db.execute("""INSERT INTO companion_preferences (user_id,theme,enter_sends,autoplay) VALUES (?,?,?,?)
+                          ON CONFLICT(user_id) DO UPDATE SET theme=excluded.theme,
+                          enter_sends=excluded.enter_sends, autoplay=excluded.autoplay""",
+                       (user["id"], theme, int(enter), int(autoplay)))
+        return {"display_name": name.strip(), "theme": theme, "enter_sends": enter, "autoplay": autoplay}
+
     @app.get("/api/chat")
     def history(request: Request):
         user = accounts.current_user(request)
         accepted = accounts.agreements_current(repo, user["id"])
         with repo.connection() as db:
             revision, turns = dialog(db, user["id"])
+            row = db.execute("SELECT theme,enter_sends,autoplay FROM companion_preferences WHERE user_id=?",
+                             (user["id"],)).fetchone()
+            preferences = {"theme": row["theme"] if row else "system",
+                           "enter_sends": bool(row["enter_sends"]) if row else True,
+                           "autoplay": bool(row["autoplay"]) if row else True}
             if accepted:
                 companion_admin.record(db, user["id"], "opened")
-        return {"revision":revision, "turns":turns, "accepted":accepted}
+        return {"revision":revision, "turns":turns, "accepted":accepted, "preferences":preferences}
 
     @app.delete("/api/chat")
     def clear(request: Request):

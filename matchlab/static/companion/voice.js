@@ -161,13 +161,16 @@ const voice = {
     el('status').textContent = '';
     try {
       if (!keep) return;
-      if (cap.size < (rate || 16000) / 5) throw new Error('Запись слишком короткая. Попробуйте ещё раз.');
+      if (cap.size < (rate || 16000) / 5)
+        throw new Error('Запись слишком короткая. Попробуйте ещё раз.');
       el('status').textContent = 'Распознаём речь…';
       const audio = await encodeMicrophone(cap.chunks, cap.size, rate);
       const data = await api('chat/transcribe', 'POST', { audio });
       el('message').value = data.text;
       this.draft = true;
-      el('status').textContent = 'Проверьте текст и нажмите «Отправить». Мира озвучит ответ.';
+      el('status').textContent = prefs.autoplay
+        ? 'Проверьте текст и нажмите «Отправить». Мира озвучит ответ.'
+        : 'Проверьте текст и нажмите «Отправить».';
     } finally {
       this.busy = false;
       el('mic').disabled = false;

@@ -16,8 +16,22 @@
     'Segoe UI',
     sans-serif;
 }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #18252f;
+  --card: #202f3b;
+  --ink: #f5f2ed;
+  --sub: #bec9d0;
+  --line: #41505b;
+  --tint: #533728;
+  --accent: #ffb388;
+  --rail: #122230;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #18252f;
     --card: #202f3b;
     --ink: #f5f2ed;
@@ -596,63 +610,6 @@ input:not([type='checkbox']) {
 }
 .legal p {
   margin: 14px 0;
-}
-#sheet {
-  padding: 0 22px 22px;
-  border-radius: 22px;
-  box-shadow: 0 26px 85px #10203544;
-}
-#sheet h2 {
-  background: var(--rail);
-  color: #fffaf5;
-  padding: 21px 58px 20px 22px;
-  margin: 0 -22px 18px;
-  line-height: 1.25;
-}
-#sheet .close {
-  position: absolute;
-  right: 13px;
-  top: 13px;
-  border: 0;
-  border-radius: 50%;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  color: #fff;
-  background: #ffffff20;
-  font-size: 24px;
-}
-#sheet .primary {
-  width: 100%;
-}
-#account > button {
-  display: block;
-  width: 100%;
-  text-align: left;
-}
-#identity {
-  font-size: 21px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-#notice:not(:empty) {
-  padding-top: 12px;
-}
-@media (max-width: 540px) {
-  #sheet {
-    position: fixed;
-    inset: auto 0 0;
-    margin: 0 auto;
-    width: 100%;
-    max-width: none;
-    border-radius: 22px 22px 0 0;
-    padding-bottom: max(22px, env(safe-area-inset-bottom));
-  }
-  .legal {
-    margin: 0;
-    padding: 20px;
-    border-radius: 0;
-  }
 }
 #callScreen {
   color-scheme: dark;

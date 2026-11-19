@@ -46,6 +46,10 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS companion_dialogs (
                     user_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, turns TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS companion_preferences (
+                    user_id TEXT PRIMARY KEY, theme TEXT NOT NULL,
+                    enter_sends INTEGER NOT NULL, autoplay INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS companion_activity (
                     id INTEGER PRIMARY KEY, user_id TEXT NOT NULL,
                     at TEXT NOT NULL, action TEXT NOT NULL

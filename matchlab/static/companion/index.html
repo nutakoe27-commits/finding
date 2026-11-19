@@ -5,9 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#172b3c" />
     <title>Мира · Сообщения</title>
-    <link rel="stylesheet" href="/chat-assets/chat.css?v=5" />
-    <script defer src="/chat-assets/chat.js?v=5"></script>
-    <script defer src="/chat-assets/voice.js?v=3"></script>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=6" />
+    <script defer src="/chat-assets/chat.js?v=6"></script>
+    <link rel="stylesheet" href="/static/social-login.css" />
+    <link rel="stylesheet" href="/chat-assets/account.css?v=1" />
+    <script defer src="/chat-assets/account-ui.js?v=1"></script>
+    <script defer src="/static/social-login.js"></script>
+    <script defer src="/chat-assets/voice.js?v=4"></script>
     <script defer src="/chat-assets/call.js?v=4"></script>
   </head>
   <body>
@@ -190,59 +194,292 @@
         </div>
       </div>
     </dialog>
-    <dialog id="sheet" aria-labelledby="sheetTitle">
-      <form method="dialog"><button class="close" aria-label="Закрыть">×</button></form>
-      <h2 id="sheetTitle">Войти в чат</h2>
-      <div id="loginBox">
-        <div id="providers"></div>
-        <form id="login">
-          <label>Логин<input name="username" autocomplete="username" required /></label
-          ><label
-            >Пароль<input
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required /></label
-          ><button class="primary">Войти</button>
-        </form>
-        <button id="registerToggle">Создать аккаунт</button>
+    <dialog
+      id="auth-dialog"
+      class="auth-dialog social-auth-dialog ym-hide-content"
+      aria-labelledby="auth-title"
+    >
+      <button id="auth-close" class="dialog-close" type="button" aria-label="Закрыть">×</button>
+      <div class="auth-brand">
+        <img src="/static/icon.svg" width="40" height="40" alt="" /><span
+          >prognozich <strong>ai</strong></span
+        >
       </div>
-      <form id="register" hidden>
-        <div id="credentials">
-          <label
-            >Логин<input
-              name="username"
-              autocomplete="username"
-              pattern="[a-zA-Z0-9_]{3,32}"
-              placeholder="От 3 латинских букв или цифр"
-              required /></label
-          ><label
-            >Пароль<input
+      <p class="eyebrow">ЛИЧНЫЙ АККАУНТ</p>
+      <h2 id="auth-title">Вход и регистрация</h2>
+      <p id="auth-description" class="muted">Выберите удобный способ входа.</p>
+      <div id="auth-social" class="social-options" hidden>
+        <button id="social-yandex" class="social-yandex" type="button" data-social="yandex" hidden>
+          <img src="/static/auth/yandex.svg" alt="" width="28" height="28" /><span
+            >Войти через Яндекс</span
+          >
+        </button>
+        <div id="social-icon-row" class="social-icon-row">
+          <button
+            class="social-icon social-vk"
+            type="button"
+            data-social="vk"
+            aria-label="Войти через ВКонтакте"
+            title="ВКонтакте"
+            hidden
+          >
+            <img src="/static/auth/vk.svg" alt="" width="28" height="28" /></button
+          ><button
+            class="social-icon social-ok"
+            type="button"
+            data-social="ok"
+            aria-label="Войти через Одноклассники"
+            title="Одноклассники"
+            hidden
+          >
+            <img src="/static/auth/ok.svg" alt="" width="28" height="28" /></button
+          ><button
+            class="social-icon social-mail"
+            type="button"
+            data-social="mail"
+            aria-label="Войти через Mail.ru"
+            title="Mail.ru"
+            hidden
+          >
+            <img src="/static/auth/mail.svg" alt="" width="28" height="28" />
+          </button>
+        </div>
+        <p class="social-hint">Ваша переписка сохраняется в личном аккаунте.</p>
+      </div>
+      <div id="social-completion" hidden>
+        <p id="social-completion-name" class="social-profile"></p>
+        <form id="social-complete-form">
+          <fieldset class="auth-legal">
+            <legend class="sr-only">Подтверждения для регистрации</legend>
+            <label class="legal-check"
+              ><input id="social-terms" type="checkbox" required /><span
+                >Принимаю
+                <a href="/chat-assets/rules.html" target="_blank" rel="noopener"
+                  >пользовательское соглашение</a
+                >
+                и ознакомлен(а) с
+                <a href="/chat-assets/rules.html#data" target="_blank" rel="noopener"
+                  >политикой конфиденциальности</a
+                >.</span
+              ></label
+            >
+            <label class="legal-check"
+              ><input id="social-data" type="checkbox" required /><span
+                >Даю
+                <a href="/chat-assets/rules.html#data" target="_blank" rel="noopener"
+                  >согласие на обработку персональных данных</a
+                >
+                для работы аккаунта.</span
+              ></label
+            >
+            <label class="legal-check"
+              ><input id="social-age" type="checkbox" required /><span
+                >Мне исполнилось 18 лет.</span
+              ></label
+            >
+          </fieldset>
+          <button id="social-complete-submit" class="primary-button" type="submit">
+            Создать аккаунт и продолжить
+          </button>
+        </form>
+        <p class="social-existing-note">
+          Уже есть аккаунт с покупками? Войдите по логину и подключите соцсеть в личном кабинете.
+        </p>
+        <button id="social-existing-login" class="text-button" type="button">
+          У меня уже есть аккаунт
+        </button>
+      </div>
+      <div id="auth-native-area">
+        <button
+          id="auth-native-toggle"
+          class="social-native-toggle"
+          type="button"
+          aria-controls="auth-form"
+          aria-expanded="false"
+        >
+          Зарегистрироваться по логину
+        </button>
+        <form id="auth-form" hidden>
+          <label for="auth-username">Логин</label
+          ><input
+            id="auth-username"
+            name="username"
+            autocomplete="username"
+            pattern="[A-Za-z0-9_]{3,32}"
+            minlength="3"
+            maxlength="32"
+            required
+          />
+          <label for="auth-password">Пароль</label>
+          <div class="password-field">
+            <input
+              id="auth-password"
               name="password"
-              autocomplete="new-password"
               type="password"
+              autocomplete="new-password"
               minlength="12"
               maxlength="128"
-              placeholder="От 12 символов"
               required
-          /></label>
-        </div>
-        <label class="check"
-          ><input type="checkbox" required />Мне есть 18 лет. Принимаю
-          <a href="/chat-assets/rules.html" target="_blank">условия чата</a>.</label
+            /><button
+              id="auth-password-toggle"
+              type="button"
+              aria-controls="auth-password"
+              aria-pressed="false"
+            >
+              Показать
+            </button>
+          </div>
+          <p class="small muted">Логин: латинские буквы, цифры и _. Пароль: от 12 символов.</p>
+          <fieldset id="auth-legal" class="auth-legal">
+            <legend class="sr-only">Подтверждения для регистрации</legend>
+            <label class="legal-check"
+              ><input id="auth-terms" type="checkbox" required /><span
+                >Принимаю
+                <a href="/chat-assets/rules.html" target="_blank" rel="noopener"
+                  >пользовательское соглашение</a
+                >
+                и ознакомлен(а) с
+                <a href="/chat-assets/rules.html#data" target="_blank" rel="noopener"
+                  >политикой конфиденциальности</a
+                >.</span
+              ></label
+            ><label class="legal-check"
+              ><input id="auth-personal-data" type="checkbox" required /><span
+                >Даю
+                <a href="/chat-assets/rules.html#data" target="_blank" rel="noopener"
+                  >согласие на обработку персональных данных</a
+                >
+                для работы аккаунта.</span
+              ></label
+            ><label class="legal-check"
+              ><input id="auth-age" type="checkbox" required /><span
+                >Подтверждаю, что мне исполнилось 18 лет.</span
+              ></label
+            >
+          </fieldset>
+          <button id="auth-submit" type="submit" class="primary-button">Создать аккаунт</button>
+        </form>
+        <button id="auth-switch" type="button" class="text-button" hidden></button>
+      </div>
+      <p id="auth-error" class="form-error" role="alert"></p>
+      <p class="auth-public-note small muted">
+        Общение с Мирой бесплатно. Сервис для пользователей 18+.
+      </p>
+    </dialog>
+    <dialog id="confirmDocs" class="auth-dialog" aria-labelledby="docsTitle">
+      <form method="dialog"><button class="dialog-close" aria-label="Закрыть">×</button></form>
+      <h2 id="docsTitle">Условия общения</h2>
+      <form id="renew">
+        <label class="legal-check"
+          ><input type="checkbox" name="terms" required />Принимаю
+          <a href="/chat-assets/rules.html" target="_blank" rel="noopener">условия чата</a>.</label
         >
-        <label class="check"
-          ><input type="checkbox" required />Соглашаюсь на
-          <a href="/chat-assets/rules.html#data" target="_blank">обработку данных</a>.</label
-        ><button id="agree" class="primary">Создать аккаунт</button>
+        <label class="legal-check"
+          ><input type="checkbox" name="data" required />Соглашаюсь на
+          <a href="/chat-assets/rules.html#data" target="_blank" rel="noopener">обработку данных</a
+          >.</label
+        >
+        <label class="legal-check"
+          ><input type="checkbox" name="age" required />Мне исполнилось 18 лет.</label
+        >
+        <button class="primary-button">Продолжить</button>
       </form>
-      <section id="account" hidden>
-        <p id="identity"></p>
-        <a id="adminMobile" href="/admin" hidden>Управление пользователями</a>
-        <div id="payments"></div>
-        <button id="clear">Удалить переписку</button><button id="logout">Выйти</button>
-      </section>
-      <p role="status" id="notice"></p>
+      <p id="docsError" role="alert"></p>
+    </dialog>
+    <dialog id="profileDialog" aria-labelledby="profileTitle">
+      <header class="profile-top">
+        <h2 id="profileTitle">Личный кабинет</h2>
+        <form method="dialog">
+          <button class="profile-close" aria-label="Закрыть профиль">×</button>
+        </form>
+      </header>
+      <div class="profile-body">
+        <div class="profile-identity">
+          <span id="initials" aria-hidden="true"></span>
+          <div>
+            <h3 id="identity"></h3>
+            <small id="loginMethod"></small>
+          </div>
+          <button id="logout">Выйти</button>
+        </div>
+        <div class="profile-sections" role="group" aria-label="Раздел профиля">
+          <button data-panel="settingsPane" aria-pressed="true">Настройки</button
+          ><button data-panel="billingPane" aria-pressed="false">Платежи</button>
+        </div>
+        <div id="settingsPane">
+          <form id="preferences" class="settings-card">
+            <h3>Профиль и общение</h3>
+            <label for="displayName">Имя в профиле</label
+            ><input
+              id="displayName"
+              name="display_name"
+              required
+              maxlength="64"
+              autocomplete="nickname"
+            />
+            <label class="pref-row"
+              >Оформление<select id="theme">
+                <option value="system">Как в системе</option>
+                <option value="light">Светлое</option>
+                <option value="dark">Тёмное</option>
+              </select></label
+            >
+            <label class="pref-row">Отправлять по Enter<input type="checkbox" id="enterSends" /></label>
+            <label class="pref-row"
+              >Озвучивать ответ на диктовку<input type="checkbox" id="autoplay"
+            /></label>
+            <button class="primary">Сохранить настройки</button>
+          </form>
+          <details id="account-social-card" class="settings-card" hidden>
+            <summary>Способы входа</summary>
+            <label id="social-link-password-row" hidden
+              >Текущий пароль<input
+                id="social-link-password"
+                type="password"
+                autocomplete="current-password"
+            /></label>
+            <div id="account-social-connections"></div>
+            <p role="alert" id="social-link-error"></p>
+          </details>
+          <details id="security" class="settings-card">
+            <summary>Сменить пароль</summary>
+            <form id="passwordForm">
+              <label
+                >Текущий пароль<input
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  required
+                  maxlength="128"
+              /></label>
+              <label
+                >Новый пароль<input
+                  name="new_password"
+                  type="password"
+                  autocomplete="new-password"
+                  required
+                  minlength="12"
+                  maxlength="128"
+                  placeholder="От 12 символов"
+              /></label>
+              <button class="primary">Сменить пароль</button>
+            </form>
+          </details>
+          <details class="settings-card">
+            <summary>Конфиденциальность и сеансы</summary>
+            <button id="endSessions">Выйти на других устройствах</button>
+            <p>Удаление очистит переписку в чате и в карточке администратора.</p>
+            <a href="/chat-assets/rules.html#data">Как используются данные</a
+            ><button id="clear">Удалить переписку</button>
+          </details>
+          <a id="adminMobile" href="/admin" hidden>Управление пользователями</a>
+        </div>
+        <div id="billingPane" class="settings-card" hidden>
+          <h3>Платежи и подписки</h3>
+          <div id="payments"></div>
+        </div>
+        <p id="account-message" role="status"></p>
+      </div>
     </dialog>
   </body>
 </html>

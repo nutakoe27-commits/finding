@@ -1,0 +1,303 @@
+.auth-dialog {
+  --text: light-dark(#192b3e, #f4f4f3);
+  --muted: light-dark(#5e7084, #aeb9c3);
+  --line: light-dark(#dce4ed, #37424b);
+  --lime: light-dark(#a64716, #ffac75);
+  background: light-dark(white, #20282f);
+  color: var(--text);
+  width: min(470px, calc(100vw - 24px));
+  max-height: calc(100dvh - 28px);
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: 0 28px 100px #0007;
+}
+.auth-dialog::backdrop {
+  background: #070d10b8;
+  backdrop-filter: blur(5px);
+}
+.auth-dialog .auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  font-size: 20px;
+  font-weight: 650;
+}
+.auth-brand strong,
+.auth-dialog .text-button {
+  color: var(--lime);
+}
+.auth-dialog .eyebrow {
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+.auth-dialog h2 {
+  margin: 14px 0;
+  font-size: 25px;
+  font-weight: 680;
+  line-height: 1.3;
+  letter-spacing: -0.6px;
+}
+.auth-dialog p {
+  margin: 12px 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.auth-dialog .muted,
+.social-existing-note {
+  color: var(--muted);
+}
+.auth-dialog #auth-description {
+  font-size: 14px;
+  margin: 14px 0;
+}
+.auth-dialog .social-hint {
+  margin: 0;
+}
+.auth-dialog button {
+  font-family: inherit;
+}
+.auth-dialog .social-yandex,
+.auth-dialog .social-icon {
+  padding: 1px 6px;
+}
+.auth-dialog .dialog-close {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+  font-size: 27px;
+}
+.auth-dialog .password-field {
+  position: relative;
+}
+.auth-dialog .password-field input {
+  padding-right: 86px;
+}
+.password-field button {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  bottom: 5px;
+  color: var(--lime);
+  font-size: 12px;
+  border: none;
+  background: transparent;
+}
+.auth-dialog label {
+  margin: 17px 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auth-dialog input:not([type='checkbox']) {
+  min-height: 44px;
+  background: light-dark(#f7f9fb, #19232c);
+  border-color: var(--line);
+}
+.auth-dialog .primary-button {
+  background: #ec752b;
+  color: #2b180c;
+  min-height: 44px;
+  padding: 10px 15px;
+  margin-top: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 650;
+  font-size: 12px;
+}
+.auth-legal {
+  margin: 16px 0 8px;
+  padding: 0;
+  border: 0;
+}
+.auth-dialog .legal-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--text);
+}
+#confirmDocs .legal-check {
+  display: block;
+}
+.legal-check input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  accent-color: var(--lime);
+  margin: 1px 5px 0 0;
+}
+.auth-dialog .text-button {
+  display: block;
+  margin: 16px auto;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.form-error,
+#social-link-error,
+#docsError {
+  color: var(--accent);
+}
+#profileDialog {
+  padding: 0;
+  width: min(660px, calc(100vw - 32px));
+  max-height: 90dvh;
+  box-shadow: 0 20px 90px #10203533;
+}
+.profile-top {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+}
+.profile-top h2 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: -0.04em;
+}
+.profile-close {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 24px;
+}
+.profile-body {
+  padding: 20px clamp(16px, 4vw, 28px);
+}
+.profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.profile-identity > div {
+  flex: 1;
+  min-width: 0;
+}
+#identity,
+#loginMethod {
+  overflow-wrap: anywhere;
+}
+#initials {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 15px;
+  background: var(--tint);
+  color: var(--accent);
+  font-weight: 700;
+}
+.profile-sections {
+  display: flex;
+  gap: 4px;
+  margin: 20px 0 14px;
+}
+.profile-sections button {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border-color: transparent;
+}
+.profile-sections button[aria-pressed='true'] {
+  background: var(--rail);
+  color: #fff;
+}
+.settings-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  margin: 10px 0;
+}
+.settings-card h3 {
+  font-size: 16px;
+}
+.settings-card label {
+  font-size: 14px;
+  margin: 12px 0 6px;
+}
+.settings-card input:not([type='checkbox']) {
+  margin-top: 4px;
+}
+.settings-card summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.settings-card p {
+  margin: 10px 0;
+  font-size: 14px;
+}
+.settings-card .pref-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  min-height: 40px;
+}
+.pref-row input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+.pref-row select {
+  background: var(--card);
+  color: var(--ink);
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+}
+#profileDialog .primary,
+#profileDialog #clear {
+  display: block;
+  margin-top: 14px;
+}
+#account-message:not(:empty) {
+  margin-top: 12px;
+  color: var(--accent);
+}
+@media (max-width: 650px) {
+  .auth-dialog {
+    padding: 24px 21px;
+    max-height: calc(100dvh - 24px);
+  }
+  .auth-dialog h2 {
+    font-size: 24px;
+  }
+  #profileDialog {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+  .profile-body {
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+}

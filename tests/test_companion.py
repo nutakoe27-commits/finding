@@ -43,6 +43,37 @@ class CompanionTests(unittest.TestCase):
         self.register('second')
         self.assertEqual(self.client.get('/api/chat').json()['turns'],[])
 
+    def test_preferences_belong_to_account_and_survive_chat_clear(self):
+        data = {"display_name": "  Михаил  ", "theme": "dark", "enter_sends": False, "autoplay": False}
+        route = "/api/chat/preferences"
+        self.assertEqual(self.client.put(route, json=data).status_code, 401)
+        self.register("michael")
+        initial = self.client.get("/api/chat").json()["preferences"]
+        self.assertEqual(initial, {"theme": "system", "enter_sends": True, "autoplay": True})
+        self.assertEqual(self.client.put(route, json=data, headers={"x-csrf-token":"bad"}).status_code, 403)
+        self.assertEqual(self.client.put(route, json=data).json()["display_name"], "Михаил")
+        self.assertEqual(self.client.put(route, json={**data, "enter_sends": "false"}).status_code, 422)
+        self.client.delete("/api/chat", headers={"content-type":"application/json"})
+        self.client.cookies.clear()
+        self.register("another")
+        self.assertEqual(self.client.get("/api/chat").json()["preferences"], initial)
+        self.client.cookies.clear()
+        self.client.post("/api/auth/login", json={"username":"michael", "password":"local-password-test"})
+        self.assertEqual(self.client.get("/api/auth/me").json()["user"]["display_name"], "Михаил")
+        self.assertEqual(self.client.get("/api/chat").json()["preferences"],
+                         {"theme":"dark", "enter_sends":False, "autoplay":False})
+
+    def test_revoke_other_sessions_keeps_current_session(self):
+        self.register("sessions")
+        with TestClient(self.client.app) as other:
+            other.post("/api/auth/login", json={"username":"sessions", "password":"local-password-test"})
+            self.assertIsNotNone(other.get("/api/auth/me").json()["user"])
+            path = "/api/chat/sessions/revoke-others"
+            self.assertEqual(self.client.post(path, json={}, headers={"x-csrf-token":"bad"}).status_code, 403)
+            self.assertEqual(self.client.post(path, json={}).status_code, 200)
+            self.assertIsNone(other.get("/api/auth/me").json()["user"])
+            self.assertEqual(self.client.get("/api/auth/me").json()["user"]["username"], "sessions")
+
     def test_free_and_protected(self):
         self.assertEqual(self.client.get('/api/chat').status_code,401)
         self.register('account')
