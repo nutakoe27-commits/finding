@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime
 import json
+import logging
 from pathlib import Path
 from uuid import UUID
 
@@ -299,10 +300,11 @@ def create_chat_app(settings=None):
                 try:
                     plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude)
                     if plan is None and companion_photos.PRIVATE_PHOTO.search(answer):
-                        raise ValueError("Internal photo metadata in reply")
+                        raise companion_photos.PhotoPlanError("Internal photo metadata in reply")
                     needs_plan = direct and plan is None
-                except ValueError:
+                except companion_photos.PhotoPlanError as exc:
                     malformed_plan = True
+                    logging.getLogger("uvicorn.error").info("Photo plan needs repair: %s", exc)
                     needs_plan = True
                 if needs_plan:
                     # Some chat models acknowledge a direct request in prose. Recover the actual job.
@@ -311,12 +313,15 @@ def create_chat_app(settings=None):
                                    if require_nude else
                                    "Проверь мой последний запрос. Если я просил снимок, верни [[PHOTO]] и JSON "
                                    "по прежним правилам. Иначе верни NONE.")
+                    instruction += (' Пример формата: [[PHOTO]]{"scene":"portrait","caption":"У окна",'
+                                    '"prompt":"blue shirt","shot":"window light","camera":"front","exclude":""}. '
+                                    'Заполни поля деталями последней просьбы.')
                     repair = [*prompt, {"role": "assistant", "content": companion_photos.clean_old_reply(answer)},
                               {"role": "user", "content": instruction}]
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
                     plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude)
                     if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or require_nude):
-                        raise ValueError("Incomplete photo description")
+                        raise companion_photos.PhotoPlanError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):
                 plan, answer = None, "Хорошо, просто поболтаем."
             if plan and plan[0] in companion_photos.ADULT and not companion_photos.wants_intimate_photo(
@@ -324,12 +329,15 @@ def create_chat_app(settings=None):
                     previous_scene=latest_photo["scene"] if after_photo else None, requested_scene=plan[0]):
                 plan, answer = None, "Ты хочешь именно интимное фото?"
             if not plan and companion_photos.PRIVATE_PHOTO.search(answer):
-                raise ValueError("Internal photo metadata in chat reply")
+                raise companion_photos.PhotoPlanError("Internal photo metadata in chat reply")
             parts = ["Сейчас сделаю снимок."] if plan else reply_parts(answer)
-        except ValueError:
+        except ValueError as exc:
             with repo.connection() as db:
                 companion_admin.record(db, user["id"], "reply_failed")
-            raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.")
+            if isinstance(exc, companion_photos.PhotoPlanError):
+                logging.getLogger("uvicorn.error").warning("Photo plan rejected: %s", exc)
+                raise HTTPException(503, "Не удалось подготовить описание фото. Попробуйте ещё раз.") from exc
+            raise HTTPException(503,"Мира сейчас не может ответить. Попробуйте ещё раз.") from exc
         turn = {"id":key, "user":message, "assistant":parts[0] if channel == "text" else " ".join(parts), "channel":channel,
                 "sent_at":sent_at, "answered_at":accounts.now(), "shared_version":accounts.LEGAL_VERSION}
         if plan:

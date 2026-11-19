@@ -91,6 +91,19 @@ def wants_intimate_photo(message, last_answer, *, previous_scene=None, requested
                  and re.search(r"фото|снимок|селфи|показать|прислать", last_answer, re.I)))
 
 
+class PhotoPlanError(ValueError):
+    """Validation reasons contain only fixed labels, safe to use in service logs."""
+
+
+PHOTO_PUNCTUATION = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-", "‑": "-"})
+
+
+def photo_text(value):
+    if isinstance(value, str):
+        return " ".join(value.translate(PHOTO_PUNCTUATION).split())
+    return value
+
+
 def read_plan(answer, *, allow_json=False, require_nude=False):
     raw = answer.strip()
     marked = "[[PHOTO]]" in raw
@@ -102,31 +115,33 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.I)[:-3].strip()
     try:
         data = json.loads(raw)
-    except ValueError:
+    except json.JSONDecodeError as exc:
         if marked or allow_json:
-            raise
+            raise PhotoPlanError("Invalid photo JSON") from exc
         return None
     if not (marked or allow_json) and not (isinstance(data, dict) and {"scene", "caption", "prompt"} <= data.keys()):
         return None
     if not isinstance(data, dict) or data.get("scene") not in ("portrait", "boudoir", "nude"):
-        raise ValueError("Invalid photo scene")
-    prompt, caption = data.get("prompt"), data.get("caption")
+        raise PhotoPlanError("Invalid photo scene")
+    prompt, caption = photo_text(data.get("prompt")), data.get("caption")
     if not isinstance(prompt, str) or not re.fullmatch(r"[ -~]{3,400}", prompt) or not re.search("[a-zA-Z]", prompt):
-        raise ValueError("Invalid photo description")
+        raise PhotoPlanError("Invalid photo description")
     if not isinstance(caption, str) or not caption.strip() or len(caption) > 120 or not caption.isprintable():
-        raise ValueError("Invalid photo caption")
-    shot = data.get("shot")
+        raise PhotoPlanError("Invalid photo caption")
+    shot = photo_text(data.get("shot"))
     if not isinstance(shot, str) or not re.fullmatch(r"[ -~]{3,160}", shot) or not re.search("[a-zA-Z]", shot):
-        raise ValueError("Invalid camera description")
+        raise PhotoPlanError("Invalid camera description")
     prompt = prompt.strip() + ", " + shot.strip()
-    if len(prompt.split()) > 40:
-        raise ValueError("Photo description exceeds the word budget")
-    exclude = data.get("exclude", "")
+    exclude = photo_text(data.get("exclude", ""))
     if not isinstance(exclude, str) or not re.fullmatch(r"[ -~]{0,120}", exclude):
-        raise ValueError("Invalid photo exclusions")
+        raise PhotoPlanError("Invalid photo exclusions")
     camera = data.get("camera", "custom")
+    if isinstance(camera, str):
+        camera = camera.strip().lower().replace("_", " ").replace("-", " ")
+        camera = {"front camera": "front", "selfie": "front", "mirror selfie": "mirror",
+                  "self timer": "timer", "tripod": "timer"}.get(camera, camera)
     if not isinstance(camera, str) or camera not in CAMERAS:
-        raise ValueError("Invalid camera mode")
+        raise PhotoPlanError("Invalid camera mode")
     if CAMERAS[camera]:
         prompt = CAMERAS[camera] + ", " + prompt
     if camera == "front":
@@ -138,11 +153,11 @@ def read_plan(answer, *, allow_json=False, require_nude=False):
         elif re.search(r"\b(lingerie|underwear)\b", prompt, re.I):
             scene = "boudoir"
     if PRIVATE_PHOTO.search(caption):
-        raise ValueError("Internal photo caption")
+        raise PhotoPlanError("Internal photo caption")
     if require_nude:
         outfit = re.search(r"\b(?:clothed|dressed in|knit(?:ted)? top|lingerie|bra|sweater|t-shirt)\b", prompt, re.I)
         if scene != "nude" or outfit or re.search(r"\b(?:nudity|nude|naked)\b", exclude, re.I):
-            raise ValueError("Photo scene contradicts request")
+            raise PhotoPlanError("Photo scene contradicts request")
         prompt = "Unclothed adult woman, " + prompt
         exclude = ", ".join(filter(None, ("clothing, underwear", exclude.strip())))
     return scene, prompt, caption.strip(), exclude.strip()

@@ -225,6 +225,22 @@ class PhotoIntegration(unittest.TestCase):
             db.execute("UPDATE companion_dialogs SET turns=? WHERE user_id=?", (json.dumps(turns), user_id))
         self.assertEqual(self.site.get("/api/chat").json()["turns"][0]["assistant"], "Поняла.")
 
+    def test_typographic_prompt_and_camera_alias_get_to_worker_in_one_call(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=gpu)
+        plan = {"scene":"portrait", "caption":"У окна", "prompt":"blue shirt, morning light",
+                "shot":"arm’s length\nslightly high angle", "camera":"Front-Camera", "exclude":""}
+        with patch("matchlab.qwen._completion", return_value="[[PHOTO]]"+json.dumps(plan)) as qwen:
+            reply = self.site.post("/api/chat", json={"id":str(uuid4()), "revision":0, "message":"Пришли своё фото"})
+        reply.raise_for_status()
+        qwen.assert_called_once()
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertIn("arm's length slightly high angle", job["photo_prompt"])
+        self.assertIn("handheld front-camera selfie", job["photo_prompt"])
+        image = b"\xff\xd8\xfftest\xff\xd9"
+        self.finish(job, image).raise_for_status()
+        self.assertEqual(self.site.get(f"/api/chat/photos/{job['id']}/image").content, image)
+
     def test_queue_failure_timeout_and_retry(self):
         self.create()
         self.assertEqual(self.finish(self.claim(), b"").status_code, 204)
