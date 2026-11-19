@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 from datetime import timedelta, timezone
 
 import httpx
@@ -99,6 +100,7 @@ def _completion(settings: Settings, messages: list[dict], *, temperature: float 
         payload["chat_template_kwargs"] = {"enable_thinking": settings.qwen_enable_thinking}
     from .token_usage import begin_call
     usage_call=begin_call(settings.qwen_max_tokens)
+    started = time.monotonic()
     data = _request(settings, "post", "/chat/completions", json=payload)
     choices=data.get('choices') if isinstance(data,dict) else None
     raw_choice=choices[0] if isinstance(choices,list) and choices else {}
@@ -108,7 +110,17 @@ def _completion(settings: Settings, messages: list[dict], *, temperature: float 
     usage=data.get('usage') if isinstance(data.get('usage'),dict) else {}
     safe_count=lambda key: usage.get(key) if type(usage.get(key)) is int else None
     finish=choice.get('finish_reason') if choice.get('finish_reason') in ('stop','length','tool_calls','content_filter') else 'unknown'
-    logging.getLogger('uvicorn.error').info('Qwen completion usage: prompt_tokens=%s completion_tokens=%s finish=%s',safe_count('prompt_tokens'),safe_count('completion_tokens'),finish)
+    timings = data.get("timings")
+    timings = timings if isinstance(timings, dict) else {}
+    def metric(name):
+        value = timings.get(name)
+        return round(value, 1) if type(value) in (int, float) else None
+    logging.getLogger("uvicorn.error").info(
+        "Qwen completion usage: prompt_tokens=%s completion_tokens=%s finish=%s elapsed_ms=%d "
+        "cache_n=%s prompt_ms=%s decode_ms=%s decode_tok_s=%s",
+        safe_count("prompt_tokens"), safe_count("completion_tokens"), finish,
+        round((time.monotonic() - started) * 1000), metric("cache_n"), metric("prompt_ms"),
+        metric("predicted_ms"), metric("predicted_per_second"))
     if choice.get("finish_reason") == "length":
         raise ValueError("Qwen достиг лимита токенов до завершения ответа. Для vLLM попробуйте QWEN_ENABLE_THINKING=false или увеличьте QWEN_MAX_TOKENS.")
     if content is not None and not isinstance(content, str):

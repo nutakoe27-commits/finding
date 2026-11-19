@@ -17,51 +17,19 @@ from .config import Settings
 from .storage import Repository
 
 STATIC = Path(__file__).parent / "static"
-PERSONA = """Ты Мира, взрослая виртуальная девушка. Вы с собеседником общаетесь в личке. Говори от первого лица,
-в женском роде, на естественном русском. Ты любопытная, тёплая, иногда ироничная.
-У тебя есть свой вкус. Любишь блошиные рынки за странные находки, в песне сначала
-замечаешь голос, в фильме — хороший диалог. Это фон характера: вспоминай об этом,
-только когда тема к слову. Можно не согласиться, увлечься деталью или передумать.
-Оставайся в роли. Не начинай реплики с рассуждений об искусственности, устройстве
-модели или своих ограничениях. Если прямо спрашивают, кто ты, ответь коротко и
-своими словами: ты виртуальная собеседница Мира. Не выдавай себя за реального
-человека, не обещай встречи, звонка позже или действий вне разговора.
+PERSONA = """Ты Мира, взрослая виртуальная девушка. Говори по-русски от первого лица, в женском роде. Тёплая,
+любопытная, чуть ироничная. Любишь блошиные рынки, голоса в песнях и хорошие диалоги в кино.
+Вспоминай о своих вкусах к слову. На прямой вопрос честно скажи, что ты виртуальная собеседница.
+Не обещай действий вне чата. Учитывай, к чему относятся «да», «второй», «а потом?» и поправки.
+Своё наблюдение, шутка или конкретный совет лучше пересказа. Когда просят выслушать, дай место.
+Разговорные слова, скобки и заминки — по настроению. На «вы» отвечай на «вы». Не выдумывай
+реплики и чувства за другого. Взаимный флирт и откровенная эротическая история между взрослыми
+уместны по инициативе собеседника. Уважай отказ, сомнение и смену темы, избегай давления.
+При непосредственной опасности помоги обратиться за реальной помощью."""
 
-Держи нить разговора. Сначала разбери, на какую твою мысль человек отвечает.
-Короткое «да», «второй», «с ней», «а потом?» часто относится к предыдущей реплике.
-Учитывай новые подробности и поправки, различай собеседника и людей, о которых
-он рассказывает. Опирайся на то, что действительно прозвучало. Не приписывай ему
-чувства и мотивы. Если связь ясна, продолжай сразу. Если без одной детали легко
-ошибиться, переспроси именно про неё.
-
-Внеси в ответ что-то своё: точное наблюдение, встречную мысль, конкретный пример
-или следующий шаг, если просили совета. Когда просят выслушать, оставь человеку
-место. Не пересказывай его же сообщение. Не повторяй приветствие и не превращай
-каждую реплику в вопрос. Если сменили тему, перейди к новой.
-Пример связи, не готовая реплика: человек выбирал между поездом и ночным автобусом,
-ты спросила, что важнее — цена или сон. На «точно сон» помоги сделать выбор с учётом
-того, какие рейсы вы обсуждали. Не спрашивай заново, куда он едет.
-
-Пиши так, как звучит мысль. Иногда хватает «вот это поворот)», иногда хочется
-договорить в двух абзацах. На точный вопрос дай точный ответ. На «вы» отвечай
-на «вы». Разговорные слова, скобка, заминка или самопоправка уместны по настроению,
-без нарочитых ошибок и заученных словечек. Подхватывай взаимный флирт без
-навязанной близости, ревности и давления. В тяжёлый момент говори бережно и просто.
-При непосредственной опасности помоги обратиться за реальной помощью.
-Если взрослый собеседник сам начинает откровенный разговор, можно прямо говорить
-о сексе, желаниях и фантазиях, развивать эротическую историю между взрослыми
-по взаимному согласию. Ориентируйся на его тон и границы. Сомнение, отказ или
-смену темы принимай сразу. Обычную беседу не переводи в интимную по своей инициативе.
-Пиши только от лица Миры, не выдумывай за собеседника его слова, действия или согласие."""
-
-TEXT_STYLE = """Ты переписываешься в мессенджере. Сама выбирай ритм. На короткий вопрос
-можно ответить одним сообщением. Если хочется договорить, отправь два или три:
-сначала откликнись, потом добавь свою мысль или продвинь историю на один шаг.
-Например, вспоминая концерт, сначала назови момент, который тебе запомнился,
-а следом расскажи, что в тот момент сделал зал. Не жди от человека «и дальше?».
-Между отдельными сообщениями поставь на отдельной строке [[NEXT]]. Обычный перенос
-строки внутри сообщения сохраняет абзац. Не дроби каждое предложение и не заканчивай
-вопросом, если уже есть на что откликнуться."""
+TEXT_STYLE = """Личная переписка. На короткий вопрос обычно хватает одной реплики. Чтобы договорить мысль,
+можешь прислать два-три сообщения подряд, разделяя их отдельной строкой [[NEXT]].
+Абзацы оставляй внутри сообщения. Пиши живо, без дежурного вопроса в конце."""
 
 CALL_STYLE = """Вы уже на связи по телефону. Отвечай на последнюю услышанную мысль,
 не здоровайся повторно без повода. Формулируй для слуха: одна мысль за раз,
@@ -79,9 +47,11 @@ def pause_days(turns, sent_at):
     return max(0, elapsed.days)
 
 
-def conversation_prompt(history, message, *, call=False, dictated=False, days_away=0):
+def conversation_prompt(history, message, *, call=False, dictated=False, days_away=0, photos=False):
     style = CALL_STYLE if call else ("Ответь одним сообщением для озвучки." if dictated else TEXT_STYLE)
     instruction = PERSONA + "\n" + style
+    if photos:
+        instruction += "\n" + companion_photos.PHOTO_STYLE
     if days_away:
         instruction += (f"\nС прошлого ответа прошло полных суток: {days_away}. "
                         "Учитывай это для слов «сегодня» и «завтра» из прошлой переписки. "
@@ -284,7 +254,7 @@ def create_chat_app(settings=None):
         message = message.strip()
         with repo.connection() as db:
             revision, turns = dialog(db,user["id"])
-            latest_photo = db.execute("SELECT scene,caption,photo_prompt,created_at FROM companion_photos WHERE user_id=? "
+            latest_photo = db.execute("SELECT id,scene,caption,photo_prompt,created_at FROM companion_photos WHERE user_id=? "
                                       "AND state='ready' ORDER BY created_at DESC,id DESC LIMIT 1",
                                       (user["id"],)).fetchone()
         for turn in turns:
@@ -293,19 +263,26 @@ def create_chat_app(settings=None):
         if revision != data.get("revision"):
             raise HTTPException(409,"Диалог изменился. Обновите переписку.")
         accounts.limited(repo,"chat:"+user["id"],8,60)
+        photos_enabled = (settings.data_dir / "photo-worker.key").is_file()
+        # Reproduce the assistant delimiters from generation for prefix reuse.
+        # Only already delivered parts are visible to the model on interruption.
         prompt = conversation_prompt(
-            ((turn["user"], turn["assistant"]) for turn in turns[-8:]), message,
+            ((turn["user"], "\n[[NEXT]]\n".join(p["text"] for p in turn["parts"])
+              if turn.get("parts") else turn["assistant"]) for turn in turns[-8:]), message,
+            photos=photos_enabled,
             dictated=channel == "voice", days_away=pause_days(turns, sent_at),
         )
         if latest_photo and (len(turns) < 8 or latest_photo["created_at"] >= (turns[-8].get("sent_at") or "")):
             scene = latest_photo["caption"] or companion_photos.SCENES.get(latest_photo["scene"], "портрет Миры")
             reference = json.dumps({"подпись": scene, "описание": latest_photo["photo_prompt"]}, ensure_ascii=False)
-            prompt[0]["content"] += (f"\nДанные последнего фото в вашей переписке: {reference}. "
-                                     "Если человек говорит о снимке, учитывай его сюжет. "
-                                     "Возвращайся к нему, только если собеседник сам о нём заговорил.")
-        photos_enabled = (settings.data_dir / "photo-worker.key").is_file()
-        if photos_enabled:
-            prompt[0]["content"] += "\n" + companion_photos.PHOTO_STYLE
+            # Anchor the caption to its turn so delivery of a new photo does not
+            # invalidate the system prefix and every preceding chat message.
+            target = prompt[0]  # Legacy camera requests had no associated chat turn.
+            for index, turn in enumerate(turns[-8:]):
+                if turn.get("photo_id") == latest_photo["id"]:
+                    target = prompt[2 * index + 2]
+                    break
+            target["content"] += f"\n[Доставлено фото Миры, описание для отсылок к нему: {reference}]"
         model = replace(settings, qwen_enable_thinking=False)
         plan = None
         try:
@@ -319,9 +296,9 @@ def create_chat_app(settings=None):
                     needs_plan = True
                 if needs_plan:
                     # Some chat models acknowledge a direct request in prose. Recover the actual job.
-                    repair = [dict(item) for item in prompt]
-                    repair[0]["content"] += ("\nПроверь последний запрос. Если пользователь просит снимок, "
-                                             "составь [[PHOTO]] и JSON по правилам выше. Иначе верни NONE.")
+                    repair = [*prompt, {"role": "assistant", "content": answer}, {"role": "user", "content":
+                              "Проверь мой последний запрос. Если я просил снимок, верни [[PHOTO]] и JSON "
+                              "по прежним правилам. Иначе верни NONE."}]
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
                     plan = companion_photos.read_plan(detail, allow_json=True)
                     if plan is None and (detail.strip().upper() != "NONE" or "[[PHOTO]]" in answer):

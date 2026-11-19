@@ -131,7 +131,7 @@ class CompanionTests(unittest.TestCase):
         self.provider.return_value["choices"][0]["message"]["content"] = "Да, давай."
         self.client.post("/api/chat", json={"message":"Давай про другое", "id":str(uuid4()), "revision":2})
         history = self.provider.call_args.kwargs["json"]["messages"]
-        self.assertEqual(history[-2]["content"], "Я нашла тот билет.\n\nНа обороте рисунок!")
+        self.assertEqual(history[-2]["content"], "Я нашла тот билет.\n[[NEXT]]\nНа обороте рисунок!")
         final = self.client.post("/api/chat/continue", json={**step, "revision":2})
         self.assertNotIn("Секретная", final.text)
         self.assertNotIn("has_more", final.text)

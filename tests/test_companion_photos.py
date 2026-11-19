@@ -111,11 +111,14 @@ class PhotoIntegration(unittest.TestCase):
     def test_explicit_request_recovers_text_only_ack(self):
         self.site.post("/api/photo-worker/claim", headers={**self.gpu, "X-Mira-Photo-Context": "1"})
         plan = '[[PHOTO]]{"scene":"portrait","caption":"В синем","prompt":"blue dress, candlelight"}'
-        with patch("matchlab.qwen._completion", side_effect=["Сейчас!", plan]):
+        with patch("matchlab.qwen._completion", side_effect=["Сейчас!", plan]) as model:
             r = self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0,
                                "message": "Пришли фото в синем платье при свечах"})
             self.assertEqual(r.status_code, 200, r.text)
             self.assertEqual(r.json()["photo"]["scene"], "portrait")
+            initial, repair = (call.args[1] for call in model.call_args_list)
+            self.assertEqual(repair[:len(initial)], initial)
+            self.assertEqual(repair[-2], {"role":"assistant", "content":"Сейчас!"})
 
     def test_queue_failure_timeout_and_retry(self):
         self.create()

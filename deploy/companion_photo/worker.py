@@ -5,6 +5,9 @@ import json
 import logging
 import os
 import secrets
+import subprocess
+import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -155,38 +158,57 @@ class SD15Portraits:
         return encode_jpeg(image)
 
 
+def render_job(job):
+    # The process lifetime releases private RAM, CUDA allocations and offload
+    # hooks after each photo, including on CUDA errors. Only the poller stays up.
+    with tempfile.TemporaryDirectory(prefix="mira-render-") as directory:
+        path = Path(directory) / "photo.jpg"
+        payload = json.dumps({"scene": job["scene"], "photo_prompt": job.get("photo_prompt")}).encode()
+        subprocess.run([sys.executable, __file__, "--job-output", str(path)], input=payload,
+                       check=True, timeout=285)
+        return path.read_bytes()
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     parser = argparse.ArgumentParser()
+    parser.add_argument("--download-sd15", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--download-xl", action="store_true", help="cache pinned XL weights without touching CUDA")
     parser.add_argument("--preview", type=Path, help="render a local JPEG without connecting to the chat")
+    parser.add_argument("--job-output", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--scene", choices=SCENES, default="selfie")
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
+    if args.download_sd15:
+        from diffusers import StableDiffusionPipeline
+        StableDiffusionPipeline.download(MODEL, revision=REVISION, variant="fp16",
+                                         use_safetensors=True, safety_checker=None)
+        return
     if args.download_xl:
         xl_files()
         return
 
-    import torch
-
     profile = os.environ.get("MIRA_PHOTO_MODEL", "realvisxl")
     if profile not in ("realvisxl", "sd15"):
         raise ValueError("MIRA_PHOTO_MODEL must be realvisxl or sd15")
-    select_gpu()
-    generator = RealVisPortraits() if profile == "realvisxl" else SD15Portraits()
+    if args.preview or args.job_output:
+        import torch
 
-    def render(scene, seed=None, photo_prompt=None):
-        started = time.monotonic()
+        job = json.load(sys.stdin) if args.job_output else {"scene": args.scene}
+        select_gpu()
+        start = time.monotonic()
+        generator = RealVisPortraits() if profile == "realvisxl" else SD15Portraits()
+        loaded = time.monotonic()
         torch.cuda.reset_peak_memory_stats()
-        jpeg = generator.render(scene, seed, photo_prompt)
-        logging.info("%s in %.1fs, torch peak %d MiB", profile, time.monotonic() - started,
-                     torch.cuda.max_memory_reserved() // 2**20)
-        return jpeg
-
-    if args.preview:
-        args.preview.write_bytes(render(args.scene, args.seed))
-        logging.info("Preview saved to %s", args.preview)
+        jpeg = generator.render(job["scene"], args.seed, job.get("photo_prompt"))
+        (args.job_output or args.preview).write_bytes(jpeg)
+        logging.info("%s loaded in %.1fs, rendered in %.1fs, torch peak %d MiB", profile,
+                     loaded - start, time.monotonic() - loaded, torch.cuda.max_memory_reserved() // 2**20)
         return
+    # Finish large first-time downloads before accepting a leased job. The poller
+    # will not import torch or map any model weights itself.
+    download = "--download-xl" if profile == "realvisxl" else "--download-sd15"
+    subprocess.run([sys.executable, __file__, download], check=True)
     site = os.environ.get("MIRA_SITE", "https://prognozich.online").rstrip("/")
     if urlsplit(site).scheme != "https":
         raise ValueError("MIRA_SITE requires HTTPS")
@@ -203,7 +225,7 @@ def main():
             resp.raise_for_status()
             job = resp.json()
             try:
-                jpeg = render(job["scene"], photo_prompt=job.get("photo_prompt"))
+                jpeg = render_job(job)
             except Exception:
                 logging.exception("Generation failed for %s", profile)
                 jpeg = b""
