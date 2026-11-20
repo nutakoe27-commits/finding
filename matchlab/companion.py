@@ -293,6 +293,12 @@ def create_chat_app(settings=None):
                                     "исключения": latest_photo["negative_prompt"] or ""}, ensure_ascii=False)
             # Keep renderer metadata out of the examples of Mira's conversational voice.
             prompt[0]["content"] += "\nСправка для следующего кадра (не выводи в чат): " + reference
+        pose_terms = companion_photos.requested_pose(photo_request) if photos_enabled else ()
+        if pose_terms:
+            pose_instruction = ("В задании на фото помести в поле pose запрошенную позу по-английски: "
+                                + ", ".join(term for _, term in pose_terms)
+                                + ". Выбери общий план, помести ноги в кадр. Убери прежний портретный ракурс.")
+            prompt[0]["content"] += "\n" + pose_instruction
         if confirming:
             # Includes confirmations from older releases which did not retain the plan.
             prompt[-1]["content"] = "Да, подтверждаю предыдущий запрос фото: " + photo_request
@@ -301,18 +307,21 @@ def create_chat_app(settings=None):
             prompt[0]["content"] += "\n" + companion_photos.EXPLICIT_PLAN
         model = replace(settings, qwen_enable_thinking=False)
         plan = previous.get("pending_photo_plan") if confirming else None
+        if plan and pose_terms and not plan[1].startswith("full-body photograph, "):
+            # An outstanding confirmation can carry an older portrait-only plan.
+            plan = None
         pending_plan = None
         after_photo = bool(latest_photo and previous.get("photo_id") == latest_photo["id"])
         try:
             answer = "" if plan else await run_in_threadpool(qwen._completion, model, prompt, temperature=0.75)
             if photos_enabled and not plan:
                 require_nude = companion_photos.requires_nude_scene(photo_request, after_photo)
-                required_plan = confirming or bool(subject) or explicit_selfie or require_nude
+                required_plan = confirming or bool(subject) or explicit_selfie or require_nude or bool(after_photo and pose_terms)
                 direct = required_plan or bool(companion_photos.DIRECT_REQUEST.match(photo_request))
                 malformed_plan = False
                 try:
                     plan = companion_photos.read_plan(answer, allow_json=direct, require_nude=require_nude,
-                                                      explicit_selfie=explicit_selfie, detail_subject=subject)
+                                                      explicit_selfie=explicit_selfie, detail_subject=subject, pose_terms=pose_terms)
                     if plan is None and companion_photos.PRIVATE_PHOTO.search(answer):
                         raise companion_photos.PhotoPlanError("Internal photo metadata in reply")
                     needs_plan = direct and plan is None
@@ -334,9 +343,11 @@ def create_chat_app(settings=None):
                               {"role": "user", "content": instruction}]
                     if explicit_selfie:
                         repair[-1]["content"] = companion_photos.EXPLICIT_PLAN
+                    if pose_terms:
+                        repair[-1]["content"] += " " + pose_instruction
                     detail = await run_in_threadpool(qwen._completion, model, repair, temperature=0.15)
                     plan = companion_photos.read_plan(detail, allow_json=True, require_nude=require_nude,
-                                                      explicit_selfie=explicit_selfie, detail_subject=subject)
+                                                      explicit_selfie=explicit_selfie, detail_subject=subject, pose_terms=pose_terms)
                     if plan is None and (detail.strip().upper() != "NONE" or malformed_plan or required_plan):
                         raise companion_photos.PhotoPlanError("Incomplete photo description")
             if plan and companion_photos.DECLINE.match(message):

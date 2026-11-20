@@ -265,6 +265,39 @@ class PhotoIntegration(unittest.TestCase):
         with self.assertRaises(companion_photos.PhotoPlanError):
             companion_photos.read_plan("[[PHOTO]]"+json.dumps(data | {"scene":"explicit"}))
 
+    def test_pose_must_reach_renderer_after_confirmation(self):
+        gpu = {**self.gpu, "X-Mira-Photo-Context": "1", "X-Mira-Photo-Pose": "1"}
+        old_gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
+        self.site.post("/api/photo-worker/claim", headers=old_gpu)
+        message = "Теперь ляг на кровать и раздвинь ноги"
+        wrong = {"scene": "nude", "caption": "Поза на кровати", "prompt": "beside lamp",
+                 "shot": "head and shoulders", "camera": "front"}
+        good = wrong | {"pose": "lying on the bed with legs apart", "shot": "evening light",
+                        "camera": "timer"}
+        plans = ["[[PHOTO]]" + json.dumps(data) for data in (wrong, good)]
+        with patch("matchlab.qwen._completion", side_effect=plans) as model:
+            first = self.site.post("/api/chat", json={"id": str(uuid4()), "revision": 0, "message": message})
+            first.raise_for_status()
+            self.assertIsNone(first.json()["photo"])
+            confirmation = {"id": str(uuid4()), "revision": 1, "message": "Да"}
+            stale = self.site.post("/api/chat", json=confirmation)
+            self.assertEqual(stale.status_code, 503)
+            self.assertIn("проверкой позы", stale.text)
+            self.site.post("/api/photo-worker/claim", headers=gpu)
+            yes = self.site.post("/api/chat", json=confirmation)
+            yes.raise_for_status()
+            self.assertEqual(model.call_count, 2)
+            self.assertEqual(yes.json()["photo"]["caption"], "Снимок по запросу")
+        self.assertEqual(self.site.post("/api/photo-worker/claim", headers=old_gpu).status_code, 204)
+        job = self.site.post("/api/photo-worker/claim", headers=gpu).json()
+        self.assertTrue(job["photo_prompt"].startswith("full-body photograph, lying on the bed with legs apart"))
+        self.assertIn("cropped legs", job["negative_prompt"])
+        terms = companion_photos.requested_pose(message)
+        for bad in (good | {"shot": "waist-up"}, good | {"pose": "lying on bed"}, wrong):
+            with self.assertRaises(companion_photos.PhotoPlanError):
+                companion_photos.read_plan("[[PHOTO]]" + json.dumps(bad), pose_terms=terms)
+        self.assertFalse(companion_photos.requested_pose("Теперь ляг на кровать для крупного плана лица"))
+
     def test_confirmation_queues_original_detail_once_and_hides_internal_plan(self):
         gpu = {**self.gpu, "X-Mira-Photo-Context": "1"}
         self.site.post("/api/photo-worker/claim", headers=gpu)

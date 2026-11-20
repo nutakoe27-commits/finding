@@ -23,7 +23,8 @@ caption — короткое название кадра по-русски. prom
 одежда и место из просьбы. При поправке сохрани остальное из прошлого кадра; для nude убери одежду.
 camera: front — селфи с руки; mirror — отражение с телефоном; timer — телефон на опоре для общего плана
 или когда заняты руки; detail — крупный план запрошенной детали вне лица; custom — заданная съёмка, например студийная. shot: крупность, угол телефона,
-взгляд и источник света на месте. Для бытового кадра одна живая деталь: край плеча обрезан, блик или неровная
+взгляд и источник света на месте. Для позы всем телом добавь поле pose на английском: положение тела, ног и опора.
+При изменении позы обнови крупность так, чтобы нужные части тела были видны. Для лица и деталей опусти pose. Для бытового кадра одна живая деталь: край плеча обрезан, блик или неровная
 тень. Уважай заданный ракурс и свет. prompt + shot до 40 слов. exclude — явно исключённые предметы через
 запятую. Береги личные данные; служебное описание не цитируй."""
 # Put the essential camera geometry into the stored render prompt once, so a retry
@@ -49,6 +50,24 @@ SHOW_DETAIL = re.compile(r"покажи\s+(?:мне\s+)?(?:сво(?:й|ю|[её]
 def requested_detail(message):
     match = SHOW_DETAIL.fullmatch(message)
     return DETAIL_SUBJECTS.get(match[1].lower()) if match else None
+
+
+# Ground short pose edits against the original turn, including after confirmation.
+POSE_EDIT = re.compile(r"^(?:(?:а |и )?(?:теперь|давай|пожалуйста)[, ]+)*(?:ляг|ложись)\b", re.I)
+POSE_CROP = re.compile(r"\b(?:headshot|portrait close[- ]?up|close[- ]?up|waist[- ]up|head and shoulders)\b", re.I)
+
+
+def requested_pose(message):
+    if not POSE_EDIT.match(message) or re.search(r"\b(?:не|нет|передумал\w*)\b|[?]", message, re.I):
+        return ()
+    if not re.search(r"\b(?:ног[уиа]|колен[ои]|в полный рост|целиком)\b", message, re.I):
+        return ()
+    terms = [(r"\b(?:lying|laying|reclining|reclined|supine|prone)\b", "lying down")]
+    if re.search(r"\b(?:на кроват[ьи]|в постел[ьи])\b", message, re.I):
+        terms.append((r"\bbed\b", "on a bed"))
+    if re.search(r"\bраздвинь\s+ноги\b", message, re.I):
+        terms.append((r"\blegs?\b.{0,24}\b(?:apart|spread|open)\b|\b(?:spread|open)\b.{0,16}\blegs?\b", "legs apart"))
+    return terms
 
 
 DIRECT_REQUEST = re.compile(r"^(?:мира[,!]?[ ]+)?(?:пришли|скинь|вышли|отправь|покажи|сделай|можно)"
@@ -144,7 +163,7 @@ def photo_text(value):
     return value
 
 
-def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=False, detail_subject=None):
+def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=False, detail_subject=None, pose_terms=()):
     raw = answer.strip()
     marked = "[[PHOTO]]" in raw
     if marked:
@@ -188,6 +207,20 @@ def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=F
         camera = "detail"
     if explicit_selfie and camera not in ("front", "mirror"):
         raise PhotoPlanError("Expected a selfie camera")
+    pose = photo_text(data.get("pose", ""))
+    if not isinstance(pose, str) or not re.fullmatch(r"[ -~]{0,160}", pose):
+        raise PhotoPlanError("Invalid pose")
+    if pose_terms:
+        rendered = pose + ", " + prompt
+        if not all(re.search(pattern, rendered, re.I) for pattern, _ in pose_terms):
+            raise PhotoPlanError("Requested pose missing from render instructions")
+        missing = [term for pattern, term in pose_terms if not re.search(pattern, pose, re.I)]
+        pose = ", ".join(filter(None, (pose, *missing)))
+    if pose_terms and camera == "detail":
+        raise PhotoPlanError("Detail camera hides the requested pose")
+    body_frame = bool(pose and camera != "detail")
+    if body_frame and (POSE_CROP.search(prompt) or POSE_CROP.search(pose)):
+        raise PhotoPlanError("Crop hides the requested pose")
     if CAMERAS[camera]:
         prompt = CAMERAS[camera] + ", " + prompt
     if camera == "front":
@@ -200,15 +233,23 @@ def read_plan(answer, *, allow_json=False, require_nude=False, explicit_selfie=F
             scene = "boudoir"
     if PRIVATE_PHOTO.search(caption):
         raise PhotoPlanError("Internal photo caption")
+    if body_frame:
+        prompt = "full-body photograph, " + pose + ", head and feet in frame, " + prompt
+        exclude = ", ".join(filter(None, (exclude.strip(), "headshot, cropped legs")))
+        caption = "Снимок по запросу"
     if explicit_selfie:
         # Older clients use "nude" to conceal the image until opened. The
         # renderer receives the requested genre and full composition in text.
-        return "nude", "Sexually explicit adult selfie, " + prompt, caption.strip(), exclude.strip()
+        if body_frame:
+            prompt += ", sexually explicit adult selfie"
+        else:
+            prompt = "Sexually explicit adult selfie, " + prompt
+        return "nude", prompt, caption.strip(), exclude.strip()
     if require_nude:
         outfit = re.search(r"\b(?:clothed|dressed in|knit(?:ted)? top|lingerie|bra|sweater|t-shirt)\b", prompt, re.I)
         if scene != "nude" or outfit or re.search(r"\b(?:nudity|nude|naked)\b", exclude, re.I):
             raise PhotoPlanError("Photo scene contradicts request")
-        prompt = "Unclothed adult woman, " + prompt
+        prompt = prompt + ", unclothed adult woman" if body_frame else "Unclothed adult woman, " + prompt
         exclude = ", ".join(filter(None, ("clothing, underwear", exclude.strip())))
     if camera == "detail":
         if detail_subject:
@@ -253,6 +294,8 @@ def install(app, repo, settings):
 
     context_heartbeat = settings.data_dir / "photo-worker-context.alive"
 
+    pose_heartbeat = settings.data_dir / "photo-worker-pose.alive"
+
     def enqueue(db, user_id, key, scene, photo_prompt=None, caption=None, negative_prompt=None):
         now = int(time.time())
         row = db.execute(f"SELECT {METADATA},user_id FROM companion_photos WHERE id=?", (key,)).fetchone()
@@ -260,6 +303,8 @@ def install(app, repo, settings):
             if row["user_id"] != user_id or row["scene"] != scene:
                 raise HTTPException(409, "Повторите запрос.")
             return public(row, now)
+        if (photo_prompt or "").startswith("full-body photograph") and now - last_poll(pose_heartbeat) > 300:
+            raise HTTPException(503, "Обработчик фото с проверкой позы пока недоступен.")
         if now - last_poll(context_heartbeat if photo_prompt else heartbeat) > 300:
             raise HTTPException(503, "Мира пока не может прислать фото. Попробуйте позже.")
         active = db.execute("SELECT user_id FROM companion_photos WHERE "
@@ -336,7 +381,12 @@ def install(app, repo, settings):
         for path in ((heartbeat, context_heartbeat) if contextual else (heartbeat,)):
             if now - last_poll(path) > 25:
                 path.touch()
+        pose_capable = contextual and request.headers.get("X-Mira-Photo-Pose") == "1"
+        if pose_capable and now - last_poll(pose_heartbeat) > 25:
+            pose_heartbeat.touch()
         compatible = "" if contextual else "AND photo_prompt IS NULL "
+        if contextual and not pose_capable:
+            compatible = "AND (photo_prompt IS NULL OR photo_prompt NOT LIKE 'full-body photograph%') "
         # Idle polls need no write lock. Recheck eligibility in the conditional update.
         with repo.connection() as db:
             row = db.execute("SELECT id,scene,photo_prompt,negative_prompt FROM companion_photos WHERE state='queued' AND deadline>? "
