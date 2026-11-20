@@ -51,5 +51,12 @@ class RetirePhotos(unittest.TestCase):
         strata_gpu.configure(config, context=131072, slots=1)
         self.assertEqual(config["parallel"], 1)
         self.assertEqual(config["args"], ["--resident-budget-gib", "34", "--vram-reserve-later-mib",
-                                          "2048", "--max-context", "131072", "--batch", "1"])
-        self.assertEqual(config["user_args"], ["--max-context", "131072", "--batch", "1"])
+                                          "2048", "--max-context", "131072"])
+        self.assertEqual(config["user_args"], ["--max-context", "131072"])
+
+    def test_repair_profile_after_conflicting_batch_was_saved(self):
+        config = {"args": ["--max-context", "131072", "--batch", "2"],
+                  "args_written": ["--slots", "2", "--max-context", "131072"]}
+        strata_gpu.configure(config, context=131072, slots=2)
+        self.assertEqual(config, {"parallel": 2, "args": ["--max-context", "131072"],
+                                  "args_written": ["--max-context", "131072"]})

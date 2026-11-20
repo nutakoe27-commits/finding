@@ -15,31 +15,36 @@ ARRAYS = ("args", "args_written", "args_derived", "user_args")
 def configure(config, *, retire=False, context=None, slots=None):
     if not isinstance(config.get("args"), list):
         raise ValueError("Нет массива args в конфигурации Strata")
+    split_engine = bool(config.get("split_engine_note"))
     for name in ARRAYS:
         if name not in config:
             continue
         args = config[name]
         if not isinstance(args, list):
             raise ValueError(f"Неизвестный формат {name}")
-        for flag, value in ((RESERVE, None), ("--max-context", context), ("--batch", slots)):
+        for flag, value in ((RESERVE, None), ("--max-context", context), ("--batch", slots), ("--slots", slots)):
             if (flag == RESERVE and not retire) or (flag != RESERVE and value is None):
                 continue
             if any(isinstance(a, str) and a.startswith((flag + "=", flag + " ")) for a in args):
                 raise ValueError(f"Неизвестный формат {flag} в {name}")
-            for i, arg in enumerate(args):
+            # The serve CLI rejects an explicit engine slot count alongside --parallel.
+            for i in reversed(range(len(args))):
+                arg = args[i]
                 if arg != flag:
                     continue
                 if i + 1 == len(args) or not str(args[i + 1]).isdigit():
                     raise ValueError(f"Некорректное значение {flag} в {name}")
-                if flag == RESERVE:
+                if flag in ("--batch", "--slots") and not split_engine:
+                    del args[i:i + 2]
+                elif flag == RESERVE:
                     # Only replace the two budgets previously set for diffusion.
                     if str(args[i + 1]) in ("9216", "16384"):
                         args[i + 1] = "2048"
                 else:
                     args[i + 1] = str(value)
-            if flag != RESERVE and name == "args" and flag not in args:
+            if name == "args" and flag not in args and (flag == "--max-context" or (flag == "--batch" and split_engine and "--slots" not in args)):
                 args.extend((flag, str(value)))
-    if slots is not None and "parallel" in config:
+    if slots is not None:
         config["parallel"] = slots
 
 
