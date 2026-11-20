@@ -12,7 +12,7 @@ git pull --ff-only origin feat/companion-chat &&
 systemctl restart matchlab.service
 ```
 
-На GPU-сервере войдите как пользователь, под которым работал генератор. Скрипт удаляет его службу, основные файлы запуска и отдельную Python-среду. В профиле Strata прежний резерв для фото 9216 или 16384 МиБ заменяется на 2048 МиБ для CUDA. При изменении профиля скрипт печатает путь к резервной копии. Общие кэши весов, ранее созданные изображения и службы распознавания и синтеза речи сохраняются.
+На GPU-сервере войдите как пользователь, под которым работал генератор. Скрипт удаляет его службу, основные файлы запуска и отдельную Python-среду. В профиле Strata прежний резерв для фото 9216 или 16384 МиБ заменяется на 2048 МиБ для CUDA. Скрипт определяет профиль по аргументу `--profile` или `--config` работающей службы и печатает путь к резервной копии при изменении. При остановленной службе путь можно указать явно через `--profile`. Общие кэши весов, ранее созданные изображения и службы распознавания и синтеза речи сохраняются.
 
 ```bash
 cd ~ &&
@@ -61,8 +61,8 @@ sudo systemctl restart englishbot-huihui.service
 
 ```bash
 read -r -p 'Полный путь к резервной копии профиля: ' strata_backup
-config_path="$HOME/.local/state/strata/launch/englishbot-huihui-live.json"
-test -f "$strata_backup" &&
+read -r -p 'Полный путь к активному JSON-профилю службы: ' config_path
+test -f "$strata_backup" && test -f "$config_path" &&
 python3 -m json.tool "$strata_backup" >/dev/null &&
 cp -- "$strata_backup" "$config_path" &&
 sudo systemctl restart englishbot-huihui.service

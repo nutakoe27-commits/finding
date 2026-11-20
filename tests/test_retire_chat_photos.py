@@ -23,7 +23,7 @@ class RetirePhotos(unittest.TestCase):
             (folder / ".venv").mkdir(parents=True)
             for name in ("worker.py", ".venv/pyvenv.cfg", "existing.jpg"):
                 (folder / name).touch()
-            with patch.object(Path, "home", return_value=home), patch.object(sys, "argv", ["test", "--retire-photos"]), \
+            with patch.object(Path, "home", return_value=home), patch.object(sys, "argv", ["test", "--retire-photos", "--profile", str(conf)]), \
                     patch.object(strata_gpu.subprocess, "run") as run:
                 run.return_value.stdout = "loaded"
                 strata_gpu.main()
@@ -38,6 +38,12 @@ class RetirePhotos(unittest.TestCase):
             expected = ["2048" if x == "16384" else x for x in flags]
             for args in json.loads(conf.read_bytes()).values():
                 self.assertEqual(args, expected)
+
+    def test_active_service_profile_overrides_conventional_name(self):
+        argv = b"python3\0strata.py\0serve\0--profile\0/home/user/live-cache-root-test.json\0--parallel\x002\0"
+        with patch.object(strata_gpu.subprocess, "check_output", return_value="321\n"), \
+                patch.object(Path, "read_bytes", return_value=argv):
+            self.assertEqual(strata_gpu.active_profile(), Path("/home/user/live-cache-root-test.json"))
 
     def test_trial_options_keep_separate_gpu_and_ram_budgets(self):
         config = {"args": ["--resident-budget-gib", "34", "--vram-reserve-later-mib", "2048"],

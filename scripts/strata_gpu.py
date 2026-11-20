@@ -63,8 +63,31 @@ def retire_worker(home):
         shutil.rmtree(venv)
 
 
+def active_profile():
+    unit = "englishbot-huihui.service"
+    pid = subprocess.check_output(["systemctl", "show", unit, "-p", "MainPID", "--value"], text=True).strip()
+    if not pid.isdigit() or int(pid) == 0:
+        raise ValueError("Служба Strata остановлена. Укажите путь через --profile")
+    proc = Path("/proc") / pid
+    argv = [os.fsdecode(v) for v in (proc / "cmdline").read_bytes().split(b"\0") if v]
+    profiles = []
+    for i, argument in enumerate(argv):
+        flag, sep, value = argument.partition("=")
+        if flag in ("--profile", "--config"):
+            if not sep:
+                value = argv[i + 1] if i + 1 < len(argv) else ""
+            if not value or value.startswith("--"):
+                raise ValueError("Пустой путь к профилю службы")
+            path = Path(value)
+            profiles.append(path if path.is_absolute() else (proc / "cwd").resolve() / path)
+    if len(set(profiles)) != 1:
+        raise ValueError("Не удалось определить единственный профиль службы. Укажите путь через --profile")
+    return profiles[0]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", type=Path, help="JSON профиля (по умолчанию из команды запущенной службы)")
     parser.add_argument("--retire-photos", action="store_true")
     parser.add_argument("--context", type=int, choices=(32768, 65536, 131072))
     parser.add_argument("--slots", type=int, choices=(1, 2, 4, 6))
@@ -74,7 +97,7 @@ def main():
     if (args.context is None) != (args.slots is None):
         parser.error("--context и --slots передаются вместе")
     home = Path.home()
-    path = home / ".local/state/strata/launch/englishbot-huihui-live.json"
+    path = args.profile if args.profile is not None else active_profile()
     if path.is_symlink():
         raise ValueError("Конфигурация Strata является ссылкой")
     raw = path.read_bytes()
