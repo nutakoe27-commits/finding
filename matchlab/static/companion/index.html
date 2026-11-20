@@ -5,12 +5,11 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#172b3c" />
     <title>Мира · Сообщения</title>
-    <link rel="stylesheet" href="/chat-assets/chat.css?v=9" />
-    <script defer src="/chat-assets/chat.js?v=9"></script>
-    <script defer src="/chat-assets/photos.js?v=2"></script>
+    <link rel="stylesheet" href="/chat-assets/chat.css?v=10" />
+    <script defer src="/chat-assets/chat.js?v=10"></script>
     <link rel="stylesheet" href="/static/social-login.css" />
     <link rel="stylesheet" href="/chat-assets/account.css?v=1" />
-    <script defer src="/chat-assets/account-ui.js?v=1"></script>
+    <script defer src="/chat-assets/account-ui.js?v=2"></script>
     <script defer src="/static/social-login.js"></script>
     <script defer src="/chat-assets/voice.js?v=5"></script>
     <script defer src="/chat-assets/call.js?v=4"></script>
@@ -136,9 +135,6 @@
             <button id="cancelRec">Отмена</button><button id="finishRec">Готово</button>
           </div>
           <form id="compose">
-            <button class="icon photo-tool" type="button" id="photoTool" aria-label="Попросить фото" title="Попросить фото" hidden>
-              <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
-            </button>
             <textarea
               rows="1"
               maxlength="2000"
@@ -432,6 +428,7 @@
                 <option value="dark">Тёмное</option>
               </select></label
             >
+            <label class="pref-row">Учитывать в ответах до 40 пар сообщений<input type="checkbox" id="extendedHistory" /></label>
             <label class="pref-row">Отправлять по Enter<input type="checkbox" id="enterSends" /></label>
             <label class="pref-row"
               >Озвучивать ответ на диктовку<input type="checkbox" id="autoplay"

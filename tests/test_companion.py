@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -26,6 +27,35 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(response.status_code,201,response.text)
         self.client.headers['X-CSRF-Token']=response.json()['csrf']
 
+    def test_personal_chat_can_use_retained_history_after_opt_in(self):
+        from matchlab.storage import Repository
+        self.register("longmemory")
+        turns = [{"id":str(uuid4()), "user":f"вопрос {i}", "assistant":f"ответ {i}"} for i in range(20)]
+        with Repository(self.client.app.state.settings.database).connection() as db:
+            user_id = db.execute("SELECT id FROM users WHERE username=?", ("longmemory",)).fetchone()["id"]
+            db.execute("INSERT INTO companion_dialogs VALUES (?,0,?)", (user_id, json.dumps(turns)))
+        prefs = {"display_name":"Михаил", "theme":"system", "enter_sends":True, "autoplay":True}
+        for revision, extended in enumerate((False, True, False)):
+            self.client.put("/api/chat/preferences", json={**prefs, "extended_history":extended}).raise_for_status()
+            with patch("matchlab.qwen._completion", return_value="Помню.") as model:
+                self.client.post("/api/chat", json={"id":str(uuid4()), "revision":revision, "message":"Напомни"}).raise_for_status()
+                messages = model.call_args.args[1]
+                self.assertEqual(any(m["content"] == "вопрос 0" for m in messages), extended)
+                self.assertEqual(messages[-1]["content"], "Напомни")
+
+    def test_retired_photo_endpoints_stay_closed_with_old_worker_key(self):
+        self.register("retired")
+        (self.client.app.state.settings.data_dir / "photo-worker.key").write_text("retired-worker")
+        for method, url in [("get", "/api/chat/photos"), ("post", "/api/chat/photos"),
+                            ("get", "/api/chat/photos/old/image"), ("post", "/api/photo-worker/claim"),
+                            ("post", "/api/photo-worker/old/claim"), ("get", "/chat-assets/photos.js")]:
+            self.assertEqual(self.client.request(method, url, headers={"Authorization": "Bearer retired-worker"}).status_code, 404)
+        self.assertNotIn("photoTool", self.client.get("/").text)
+        reply = self.client.post("/api/chat", json={"id": str(uuid4()), "message": "Пришли фото", "revision": 0})
+        reply.raise_for_status()
+        self.assertNotIn("photo", reply.json())
+        self.provider.assert_called_once()
+
     def test_personal_history_retries_and_clear(self):
         self.register('first')
         req=dict(message="Привет",revision=0,id=str(uuid4()))
@@ -49,7 +79,7 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(self.client.put(route, json=data).status_code, 401)
         self.register("michael")
         initial = self.client.get("/api/chat").json()["preferences"]
-        self.assertEqual(initial, {"theme": "system", "enter_sends": True, "autoplay": True})
+        self.assertEqual(initial, {"theme": "system", "enter_sends": True, "autoplay": True, "extended_history": False})
         self.assertEqual(self.client.put(route, json=data, headers={"x-csrf-token":"bad"}).status_code, 403)
         self.assertEqual(self.client.put(route, json=data).json()["display_name"], "Михаил")
         self.assertEqual(self.client.put(route, json={**data, "enter_sends": "false"}).status_code, 422)
@@ -61,7 +91,7 @@ class CompanionTests(unittest.TestCase):
         self.client.post("/api/auth/login", json={"username":"michael", "password":"local-password-test"})
         self.assertEqual(self.client.get("/api/auth/me").json()["user"]["display_name"], "Михаил")
         self.assertEqual(self.client.get("/api/chat").json()["preferences"],
-                         {"theme":"dark", "enter_sends":False, "autoplay":False})
+                         {"theme":"dark", "enter_sends":False, "autoplay":False, "extended_history":False})
 
     def test_revoke_other_sessions_keeps_current_session(self):
         self.register("sessions")

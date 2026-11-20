@@ -169,7 +169,6 @@ el('retryFollowup').onclick = scheduleFollowup;
 function draw(data) {
   revision = data.revision;
   const list = el('messages');
-  const photoCards = [...list.querySelectorAll('[data-photo]')];
   list.replaceChildren();
   let previousDay = '';
   for (const turn of data.turns) {
@@ -199,7 +198,6 @@ function draw(data) {
   el('preview').textContent =
     latestTurn?.parts?.at(-1)?.text || latestTurn?.assistant || 'Начать разговор';
   scheduleFollowup();
-  photos.render(photoCards);
   scrollEnd();
   if (!el('finder').hidden) searchMessages();
 }
@@ -216,13 +214,12 @@ async function refresh() {
     session.user?.display_name || session.user?.username || 'Войти в аккаунт';
   for (const id of ['adminLink', 'adminMobile']) el(id).hidden = session.user?.role !== 'admin';
   if (session.user) {
-    const [data] = await Promise.all([api('chat'), photos.load().catch(() => {})]);
+    const data = await api('chat');
     session.accepted = data.accepted;
     draw(data);
     applyPreferences(data.preferences);
     if (!data.accepted) confirmDocuments();
   } else {
-    photos.reset();
     draw({ revision: 0, turns: [] });
     applyPreferences({ theme: 'system', enter_sends: true, autoplay: true });
   }
@@ -258,7 +255,6 @@ el('clear').onclick = guard(async () => {
     await delivery;
     pauseFollowup();
     await api('chat', 'DELETE');
-    photos.reset();
     voice.stopPlayback();
     voice.draft = false;
     el('message').value = '';
@@ -292,9 +288,7 @@ el('compose').onsubmit = guard(async () => {
   try {
     const data = await api('chat', 'POST', retry);
     reply = data.turns.find((t) => t.id === retry.id);
-    if (data.photo && !photos.items.some((item) => item.id === data.photo.id)) photos.items.push(data.photo);
     draw(data);
-    if (reply?.photo_id) photos.load().catch(() => {});
     retry = null;
     el('message').value = '';
     el('message').rows = 1;

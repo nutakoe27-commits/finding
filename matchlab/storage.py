@@ -55,7 +55,7 @@ class Repository:
                 CREATE INDEX IF NOT EXISTS companion_photo_queue ON companion_photos(state,deadline);
                 CREATE TABLE IF NOT EXISTS companion_preferences (
                     user_id TEXT PRIMARY KEY, theme TEXT NOT NULL,
-                    enter_sends INTEGER NOT NULL, autoplay INTEGER NOT NULL
+                    enter_sends INTEGER NOT NULL, autoplay INTEGER NOT NULL, extended_history INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS companion_activity (
                     id INTEGER PRIMARY KEY, user_id TEXT NOT NULL,
@@ -154,6 +154,9 @@ class Repository:
             db.executescript(SCHEMA)
             from .accounts import SCHEMA as ACCOUNT_SCHEMA
             db.executescript(ACCOUNT_SCHEMA)
+            pref_columns = {row["name"] for row in db.execute("PRAGMA table_info(companion_preferences)")}
+            if "extended_history" not in pref_columns:
+                db.execute("ALTER TABLE companion_preferences ADD COLUMN extended_history INTEGER NOT NULL DEFAULT 0")
             photo_columns = {row["name"] for row in db.execute("PRAGMA table_info(companion_photos)")}
             for column in ("photo_prompt", "caption", "negative_prompt"):
                 if column not in photo_columns:

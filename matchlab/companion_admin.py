@@ -8,7 +8,7 @@ from . import accounts
 
 
 def visible_turn(turn):
-    visible = {key: value for key, value in turn.items() if key not in ("queued", "pending_photo_plan")}
+    visible = {key: value for key, value in turn.items() if key not in ("queued", "pending_photo_plan", "photo_id")}
     if turn.get("queued"):
         visible["has_more"] = True
     return visible

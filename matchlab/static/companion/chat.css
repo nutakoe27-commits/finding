@@ -791,32 +791,3 @@ input:not([type='checkbox']) {
 #deliveryState [hidden] {
   display: none;
 }
-
-.photo-tool {
-  color: var(--sub);
-  background: transparent;
-}
-.photo-card {
-  padding: 10px;
-}
-.photo-card p {
-  font-size: 13px;
-}
-.photo-card img {
-  display: block;
-  width: min(260px, 100%);
-  height: auto;
-  margin-top: 6px;
-  border-radius: 10px;
-}
-.photo-card small {
-  color: var(--sub);
-}
-
-.photo-card time {
-  display: block;
-  color: var(--sub);
-  font-size: 11px;
-  text-align: right;
-  margin-top: 4px;
-}

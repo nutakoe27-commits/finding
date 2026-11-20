@@ -186,6 +186,7 @@ async function showProfile() {
   el('displayName').value = session.user.display_name || session.user.username;
   el('theme').value = prefs.theme;
   el('enterSends').checked = prefs.enter_sends;
+  el('extendedHistory').checked = !!prefs.extended_history;
   el('autoplay').checked = prefs.autoplay;
   el('security').hidden = !session.user.local_login_available;
   el('account-message').textContent = '';
@@ -223,6 +224,7 @@ el('preferences').onsubmit = guard(async () => {
       theme: el('theme').value,
       enter_sends: el('enterSends').checked,
       autoplay: el('autoplay').checked,
+      extended_history: el('extendedHistory').checked,
     });
     session.user.display_name = el('displayName').value = display_name;
     applyPreferences(value);
